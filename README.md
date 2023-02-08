@@ -1,17 +1,14 @@
-# Nome do meu projeto
+# Portifólio HTML - Gabriel Barão
 
-Rápida descrição do objetivo de fazer esse projeto
+Portifólio pessoal com breve descrição pessoal e objetivos pessoais.
 
-| :placard: Vitrine.Dev |     |
+| :placard: Vitrine.Dev
 | -------------  | --- |
-| :sparkles: Nome        | **Titulo do meu projeto**
-| :label: Tecnologias | java, html, ruby, c# (tecnologias utilizadas)
+| :sparkles: Gabriel Barao  | Portifólio HTML
+| :label: Tecnologias | html e css
 | :rocket: URL         | https://url-deploy.com.br
 | :fire: Desafio     | https://url-do-desafio.com.br
 
-<!-- Inserir imagem com a #vitrinedev ao final do link -->
-![](https://via.placeholder.com/1200x500.png?text=imagem+lindona+do+meu+projeto#vitrinedev)
+Pagina html criada com o objetivo de iniciar um portifólio pessoal de trabalhos criados com objetivos educacional e profissionais
 
-## Detalhes do projeto
-
-Textos e imagens que descrevam seu projeto, suas conquistas, seus desafios, próximos passos, etc...
+![Portifolio](https://user-images.githubusercontent.com/123328967/217641239-36502951-4ea2-430a-a6c4-1aa70ab01132.png)
