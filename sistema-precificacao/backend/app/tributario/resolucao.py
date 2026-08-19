@@ -153,9 +153,9 @@ def resolver(
         if not esta_vigente(regra, contexto.data_operacao):
             resolucao.vencidas.append(regra)
             resolucao.alertas.append(
-                f"Regra {getattr(regra, 'codigo', tributo)} ({tributo}) esta fora de "
-                f"vigencia em {contexto.data_operacao.isoformat()}: "
-                f"cotacao definitiva bloqueada ate revalidacao."
+                f"Regra {getattr(regra, 'codigo', tributo)} ({tributo}) está fora "
+                f"de vigência em {contexto.data_operacao.isoformat()}: cotação "
+                f"definitiva bloqueada até revalidação."
             )
             continue
 
@@ -169,8 +169,8 @@ def resolver(
         if tributo not in candidatas:
             resolucao.alertas.append(
                 f"Nenhuma regra vigente para {tributo} em "
-                f"{contexto.data_operacao.isoformat()}: calculo marcado como "
-                f"provisorio."
+                f"{contexto.data_operacao.isoformat()}: cálculo marcado como "
+                f"provisório."
             )
 
     return resolucao

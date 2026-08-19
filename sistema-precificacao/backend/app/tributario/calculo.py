@@ -87,7 +87,7 @@ def aplicar_regra(
         efetiva_final = ZERO
         if tratamento == "DIFERIMENTO":
             alertas.append(
-                f"{_v(regra, 'tributo')} diferido: nao onera esta operacao, mas o "
+                f"{_v(regra, 'tributo')} diferido: não onera esta operação, mas o "
                 f"tributo permanece na cadeia e deve ser acompanhado."
             )
     else:
@@ -110,9 +110,9 @@ def aplicar_regra(
             if requer_confirmacao and not condicao_confirmada:
                 recuperavel = ZERO
                 alertas.append(
-                    f"Credito de {_v(regra, 'tributo')} condicionado e nao "
-                    f"confirmado: nao reduziu o custo. Condicao: "
-                    f"{_v(regra, 'condicao_descricao', 'nao descrita')}"
+                    f"Crédito de {_v(regra, 'tributo')} condicionado e não "
+                    f"confirmado: não reduziu o custo. Condição: "
+                    f"{_v(regra, 'condicao_descricao', 'não descrita')}"
                 )
             else:
                 recuperavel = credito * dec(_v(regra, "percentual_recuperavel", UM))
@@ -121,7 +121,7 @@ def aplicar_regra(
             recuperavel = ZERO
             if recuperabilidade == "VEDADA":
                 alertas.append(
-                    f"Credito de {_v(regra, 'tributo')} vedado neste regime: "
+                    f"Crédito de {_v(regra, 'tributo')} vedado neste regime: "
                     f"o valor permanece como custo."
                 )
 
@@ -159,11 +159,11 @@ def aplicar_regra(
         memoria.registrar(
             f"{resultado.tributo} ({resultado.tipo_operacao})",
             {
-                FORMA_POR_DENTRO: "valor = base × aliquota (tributo por dentro)",
-                FORMA_BASE_REDUZIDA: "base = receita × presuncao; valor = base × aliquota",
+                FORMA_POR_DENTRO: "valor = base × alíquota (tributo por dentro)",
+                FORMA_BASE_REDUZIDA: "base = receita × presunção; valor = base × alíquota",
                 FORMA_VALOR_FIXO: "valor fixo definido em regra",
-                FORMA_PAUTA: "base = pauta unitaria × quantidade; valor = base × aliquota",
-            }.get(forma, "base = base bruta × (1 - reducao); valor = base × aliquota"),
+                FORMA_PAUTA: "base = pauta unitária × quantidade; valor = base × alíquota",
+            }.get(forma, "base = base bruta × (1 - redução); valor = base × alíquota"),
             {
                 "base_bruta": base_bruta,
                 "base_calculo": base,

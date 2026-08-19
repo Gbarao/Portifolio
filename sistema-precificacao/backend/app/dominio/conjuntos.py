@@ -49,15 +49,15 @@ def ratear_por_vrl(
     """Distribui o custo conjunto pelo valor realizavel liquido relativo."""
 
     if not produtos:
-        raise ParametroInvalidoError("Rateio exige ao menos um produto de saida.")
+        raise ParametroInvalidoError("Rateio exige ao menos um produto de saída.")
 
     vrls = {p.codigo: p.valor_realizavel_liquido for p in produtos}
     soma_vrl = sum(vrls.values(), ZERO)
 
     if soma_vrl <= ZERO:
         raise ParametroInvalidoError(
-            "Soma dos valores realizaveis liquidos e zero ou negativa: "
-            "revise precos estimados e gastos posteriores antes de ratear."
+            "Soma dos valores realizáveis líquidos é zero ou negativa: "
+            "revise preços estimados e gastos posteriores antes de ratear."
         )
 
     custo = dec(custo_conjunto)
@@ -96,7 +96,7 @@ def ratear_por_vrl(
         for rateio in rateios:
             memoria.registrar(
                 f"Rateio do custo conjunto para {rateio.codigo}",
-                "VRL_i = quantidade × (preco estimado - gastos posteriores); "
+                "VRL_i = quantidade × (preço estimado - gastos posteriores); "
                 "fator_i = VRL_i / Σ VRL; custo_i = custo conjunto × fator_i",
                 {
                     "VRL_i": rateio.valor_realizavel_liquido,
@@ -130,14 +130,14 @@ def creditar_subproduto(
         if memoria is not None:
             memoria.registrar(
                 "Receita de subproduto",
-                "mantida como receita; custo conjunto nao reduzido",
+                "mantida como receita; custo conjunto não reduzido",
                 {"receita_liquida": receita_liquida_subproduto},
                 dec(custo_conjunto),
                 "BRL",
                 status_dado="CONFIRMADO",
                 alerta=(
-                    "Politica de credito de subproduto nao aprovada: a receita nao "
-                    "reduziu o custo conjunto."
+                    "Política de crédito de subproduto não aprovada: a receita "
+                    "não reduziu o custo conjunto."
                 ),
             )
         return dec(custo_conjunto)
@@ -145,8 +145,8 @@ def creditar_subproduto(
     reduzido = dec(custo_conjunto) - dec(receita_liquida_subproduto)
     if memoria is not None:
         memoria.registrar(
-            "Custo conjunto liquido de subproduto",
-            "custo conjunto - receita liquida do subproduto",
+            "Custo conjunto líquido de subproduto",
+            "custo conjunto - receita líquida do subproduto",
             {
                 "custo_conjunto": custo_conjunto,
                 "receita_liquida": receita_liquida_subproduto,

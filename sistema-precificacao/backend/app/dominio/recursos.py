@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from app.dominio.memoria import Memoria
-from app.dominio.unidades import ZERO, dec, dividir
+from app.dominio.unidades import ZERO, dec, dividir, percentual_br
 
 
 # --------------------------------------------------------------------------
@@ -69,7 +69,7 @@ def calcular_custo_empregado(
     if memoria is not None:
         memoria.registrar(
             "Custo mensal integral do empregado",
-            "remuneracao + encargos + beneficios + provisoes + custos do posto",
+            "remuneração + encargos + benefícios + provisões + custos do posto",
             {
                 "salario_base": ficha.salario_base,
                 "encargos_patronais": ficha.encargos_patronais,
@@ -85,7 +85,7 @@ def calcular_custo_empregado(
         )
         memoria.registrar(
             "Custo por hora produtiva",
-            "custo mensal integral / horas produtivas praticas do mes",
+            "custo mensal integral / horas produtivas práticas do mês",
             {
                 "custo_mensal_integral": integral,
                 "horas_produtivas_praticas": ficha.horas_produtivas_praticas_mes,
@@ -158,15 +158,15 @@ def calcular_custo_maquina(
 
     if memoria is not None:
         memoria.registrar(
-            "Custo fixo por hora-maquina",
-            "custos fixos mensais / horas praticas disponiveis",
+            "Custo fixo por hora-máquina",
+            "custos fixos mensais / horas práticas disponíveis",
             {"custos_fixos": fixos, "horas_praticas": ficha.horas_praticas_mes},
             fixo_hora,
             "BRL/hora",
         )
         memoria.registrar(
-            "Custo do uso da maquina",
-            "horas efetivas × (custo fixo por hora + custo variavel por hora)",
+            "Custo do uso da máquina",
+            "horas efetivas × (custo fixo por hora + custo variável por hora)",
             {
                 "horas_efetivas": horas_efetivas,
                 "custo_fixo_hora": fixo_hora,
@@ -285,15 +285,16 @@ def calcular_custo_viagem(
             "km",
             alerta=(
                 f"Retorno vazio de {dec(km_vazio)} km representa "
-                f"{dividir(km_vazio, km_totais, 'proporcao de km vazio'):.1%} da viagem."
+                f"{percentual_br(dividir(km_vazio, km_totais, 'proporção de km vazio'), 1)}"
+                f" da viagem."
                 if dec(km_vazio) > ZERO
                 else None
             ),
         )
         memoria.registrar(
             "Custo da viagem",
-            "custo = variavel/km × km totais + custo/hora × horas "
-            "+ parcela do fixo pela capacidade pratica + pedagios e despesas",
+            "custo = variável/km × km totais + custo/hora × horas "
+            "+ parcela do fixo pela capacidade prática + pedágios e despesas",
             {
                 "custo_variavel": variavel,
                 "custo_horario": horario,
@@ -305,7 +306,7 @@ def calcular_custo_viagem(
         )
         memoria.registrar(
             "Custo por tonelada entregue",
-            "custo da viagem / carga util efetivamente transportada",
+            "custo da viagem / carga útil efetivamente transportada",
             {"custo_viagem": total, "carga_util_t": toneladas, "ocupacao": ocupacao},
             por_tonelada,
             "BRL/t",
@@ -346,13 +347,13 @@ def comparar_frete(
     recomendacao = (
         "Frete terceirizado mais barato nesta viagem."
         if diferenca > ZERO
-        else "Frota propria mais barata nesta viagem."
+        else "Frota própria mais barata nesta viagem."
     )
 
     if memoria is not None:
         memoria.registrar(
-            "Comparacao frota propria x terceiro",
-            "diferenca = custo da frota propria - custo do terceiro",
+            "Comparação frota própria × terceiro",
+            "diferença = custo da frota própria - custo do terceiro",
             {"frota_propria": propria, "terceirizado": terceiro},
             diferenca,
             "BRL",

@@ -152,7 +152,7 @@ def gerar_versao(
     if not deducoes.apuracao.resultados:
         status = STATUS_BLOQUEADA
         alertas.append(
-            "Nenhuma regra tributaria aplicavel encontrada: cotacao bloqueada."
+            "Nenhuma regra tributária aplicável encontrada: cotação bloqueada."
         )
     elif deducoes.permite_cotacao_definitiva:
         status = STATUS_DEFINITIVA
@@ -162,8 +162,8 @@ def gerar_versao(
         # com outra redacao so polui a tela do usuario.
         if not any(a.startswith("Status fiscal") for a in alertas):
             alertas.append(
-                f"Status fiscal {deducoes.apuracao.status_consolidado}: preco valido "
-                f"apenas como estimativa, nao como cotacao definitiva."
+                f"Status fiscal {deducoes.apuracao.status_consolidado}: preço "
+                f"válido apenas como estimativa, não como cotação definitiva."
             )
 
     return VersaoCotacao(

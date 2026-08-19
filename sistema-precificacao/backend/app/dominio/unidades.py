@@ -78,6 +78,17 @@ def percentual(fracao: Any, casas: int = 4) -> Decimal:
     return arredondar(dec(fracao) * CEM, casas)
 
 
+def percentual_br(fracao: Any, casas: int = 2) -> str:
+    """Percentual no formato brasileiro, para mensagens ao usuario.
+
+    0.0925 -> "9,25%". Existe porque f-strings do Python produzem "9.25%",
+    com ponto decimal, que esta errado em portugues.
+    """
+
+    texto = f"{dec(fracao) * CEM:.{casas}f}".replace(".", ",")
+    return f"{texto}%"
+
+
 def taxa_diaria_equivalente(taxa_anual: Any, dias_ano: int = 365) -> Decimal:
     """Converte taxa anual em diaria equivalente por capitalizacao composta.
 

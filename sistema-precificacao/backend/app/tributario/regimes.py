@@ -20,7 +20,7 @@ from typing import Any, Iterable
 
 from app.dominio.excecoes import ParametroInvalidoError
 from app.dominio.memoria import Memoria
-from app.dominio.unidades import ZERO, dec, dividir
+from app.dominio.unidades import ZERO, dec, dividir, percentual_br
 from app.tributario.calculo import aplicar_regra
 from app.tributario.resolucao import ContextoFiscal, resolver
 from app.tributario.resultado import ApuracaoOperacao, ResultadoTributo
@@ -103,9 +103,9 @@ def calcular_deducoes_venda(
 
     if memoria is not None:
         memoria.registrar(
-            "Deducoes proporcionais sobre o preco (r)",
-            "r = Σ efeitos percentuais das regras que compoem deducao de venda "
-            "+ comissao + desconto contratual",
+            "Deduções proporcionais sobre o preço (r)",
+            "r = Σ efeitos percentuais das regras que compõem dedução de venda "
+            "+ comissão + desconto contratual",
             {k: v for k, v in detalhamento.items()},
             total,
             "fracao",
@@ -114,8 +114,8 @@ def calcular_deducoes_venda(
                 None
                 if apuracao.permite_cotacao_definitiva
                 else (
-                    f"Status fiscal {apuracao.status_consolidado}: a cotacao nao pode "
-                    f"ser classificada como definitiva."
+                    f"Status fiscal {apuracao.status_consolidado}: a cotação não "
+                    f"pode ser classificada como definitiva."
                 )
             ),
         )
@@ -181,8 +181,8 @@ def calcular_creditos_compra(
 
     if memoria is not None:
         memoria.registrar(
-            "Creditos fiscais da aquisicao",
-            "somente creditos elegiveis e confirmados reduzem o custo",
+            "Créditos fiscais da aquisição",
+            "somente créditos elegíveis e confirmados reduzem o custo",
             {
                 "confirmados": confirmados,
                 "condicionados": condicionados,
@@ -191,8 +191,8 @@ def calcular_creditos_compra(
             confirmados,
             "BRL",
             alerta=(
-                f"Creditos condicionados de {condicionados} aguardam confirmacao e "
-                f"nao reduziram o custo."
+                f"Créditos condicionados de {condicionados} aguardam confirmação "
+                f"e não reduziram o custo."
                 if condicionados > ZERO
                 else None
             ),
@@ -230,7 +230,7 @@ def localizar_faixa(faixas: Iterable[Any], rbt12: Decimal, anexo: str) -> Any:
         if dec(faixa.rbt12_inicio) <= valor <= dec(faixa.rbt12_fim):
             return faixa
     raise ParametroInvalidoError(
-        f"RBT12 de {valor} nao se enquadra em nenhuma faixa cadastrada do {anexo}. "
+        f"RBT12 de {valor} não se enquadra em nenhuma faixa cadastrada do {anexo}. "
         f"Acima do limite do Simples ou tabela incompleta."
     )
 
@@ -255,8 +255,8 @@ def calcular_aliquota_efetiva_simples(
     rbt = dec(rbt12)
     if rbt <= ZERO:
         raise ParametroInvalidoError(
-            "RBT12 igual a zero: empresa em inicio de atividade exige regra de "
-            "proporcionalizacao especifica, ainda nao parametrizada."
+            "RBT12 igual a zero: empresa em início de atividade exige regra de "
+            "proporcionalização específica, ainda não parametrizada."
         )
 
     faixa = localizar_faixa(faixas, rbt, anexo)
@@ -268,8 +268,8 @@ def calcular_aliquota_efetiva_simples(
 
     if memoria is not None:
         memoria.registrar(
-            "Aliquota efetiva do Simples Nacional",
-            "efetiva = (RBT12 × aliquota nominal - parcela a deduzir) / RBT12",
+            "Alíquota efetiva do Simples Nacional",
+            "efetiva = (RBT12 × alíquota nominal - parcela a deduzir) / RBT12",
             {
                 "RBT12": rbt,
                 "anexo": anexo,
@@ -283,14 +283,14 @@ def calcular_aliquota_efetiva_simples(
         )
         if icms_segregado:
             memoria.registrar(
-                "Aliquota efetiva sem a parcela de ICMS",
+                "Alíquota efetiva sem a parcela de ICMS",
                 "efetiva × (1 - percentual de ICMS da faixa)",
                 {"efetiva": efetiva, "percentual_icms": percentual_icms},
                 efetiva_sem_icms,
                 "fracao",
                 alerta=(
-                    "ICMS segregado do DAS por isencao ou diferimento estadual: "
-                    "confirmar enquadramento com o responsavel fiscal."
+                    "ICMS segregado do DAS por isenção ou diferimento estadual: "
+                    "confirmar enquadramento com o responsável fiscal."
                 ),
             )
 
@@ -370,18 +370,19 @@ def simular_mudanca_faixa(
     if mudou:
         alerta = (
             f"Esta venda muda a faixa do Simples da {antes.ordem_faixa} para a "
-            f"{depois.ordem_faixa}: a aliquota efetiva sobe de "
-            f"{antes.aliquota_efetiva:.4%} para {depois.aliquota_efetiva:.4%} e "
-            f"passa a incidir sobre todo o faturamento do mes. O custo tributario "
-            f"marginal da venda e de {marginal:.4%}, nao "
-            f"{antes.aliquota_efetiva:.4%}."
+            f"{depois.ordem_faixa}: a alíquota efetiva sobe de "
+            f"{percentual_br(antes.aliquota_efetiva, 4)} para "
+            f"{percentual_br(depois.aliquota_efetiva, 4)} e passa a incidir sobre "
+            f"todo o faturamento do mês. O custo tributário marginal desta venda é "
+            f"de {percentual_br(marginal, 4)}, e não "
+            f"{percentual_br(antes.aliquota_efetiva, 4)}."
         )
 
     if memoria is not None:
         memoria.registrar(
             "Impacto da venda na faixa do Simples",
-            "DAS adicional = receita do mes com a venda × aliquota nova "
-            "- receita do mes sem a venda × aliquota anterior",
+            "DAS adicional = receita do mês com a venda × alíquota nova "
+            "- receita do mês sem a venda × alíquota anterior",
             {
                 "RBT12_antes": rbt_antes,
                 "RBT12_depois": rbt_depois,

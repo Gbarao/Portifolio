@@ -46,7 +46,7 @@ from app.dominio.unidades import dividir, taxa_diaria_equivalente
 def test_balanco_fora_da_tolerancia_bloqueia_o_encerramento():
     """Secao 7.1: divergencia acima da tolerancia bloqueia o lote."""
 
-    with pytest.raises(MassaInconsistenteError, match="tolerancia"):
+    with pytest.raises(MassaInconsistenteError, match="tolerância"):
         calcular_balanco(
             peso_bruto=D("10000"),
             tara=D("0"),
@@ -173,7 +173,7 @@ def test_receita_de_subproduto_so_reduz_custo_com_politica_aprovada():
         D("10000"), D("800"), politica_aprovada=False, memoria=memoria
     )
     assert sem_politica == D("10000")
-    assert any("nao aprovada" in a.lower() for a in memoria.alertas)
+    assert any("não aprovada" in a.lower() for a in memoria.alertas)
 
     com_politica = creditar_subproduto(D("10000"), D("800"), politica_aprovada=True)
     assert com_politica == D("9200")
@@ -182,7 +182,7 @@ def test_receita_de_subproduto_so_reduz_custo_com_politica_aprovada():
 def test_rateio_recusa_vrl_total_nao_positivo():
     """Preco estimado abaixo dos gastos posteriores invalida o criterio."""
 
-    with pytest.raises(ParametroInvalidoError, match="realizaveis liquidos"):
+    with pytest.raises(ParametroInvalidoError, match="realizáveis líquidos"):
         ratear_por_vrl(
             D("1000"),
             [
@@ -264,7 +264,7 @@ def test_formula_de_preco_reproduz_a_margem_alvo():
 
 
 def test_deducoes_de_cem_por_cento_sao_recusadas():
-    with pytest.raises(ParametroInvalidoError, match="receita liquida"):
+    with pytest.raises(ParametroInvalidoError, match="receita líquida"):
         calcular_preco(D("1.00"), D("1.00"), D("0.10"))
 
 

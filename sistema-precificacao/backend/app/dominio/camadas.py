@@ -125,14 +125,14 @@ def montar_estrutura(
         for camada in ORDEM_CAMADAS:
             memoria.registrar(
                 f"Custo total da camada {camada}",
-                "soma dos componentes cuja camada minima ja foi alcancada",
+                "soma dos componentes cuja camada mínima já foi alcançada",
                 camadas[camada].componentes,
                 camadas[camada].total,
                 "BRL",
             )
             memoria.registrar(
-                f"Custo unitario da camada {camada}",
-                "custo total da camada / quantidade vendavel",
+                f"Custo unitário da camada {camada}",
+                "custo total da camada / quantidade vendável",
                 {
                     "custo_total": camadas[camada].total,
                     "Q_vendavel": quantidade_vendavel,
@@ -141,8 +141,8 @@ def montar_estrutura(
                 "BRL/kg",
             )
         memoria.registrar(
-            "Custo contabil do estoque",
-            "componentes elegiveis a valorizacao de estoque",
+            "Custo contábil do estoque",
+            "componentes elegíveis à valorização de estoque",
             {"componentes": len([c for c in componentes if VISAO_CONTABIL in c.visoes])},
             visoes[VISAO_CONTABIL],
             "BRL",

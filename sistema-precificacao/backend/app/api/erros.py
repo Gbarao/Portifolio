@@ -48,7 +48,7 @@ class RecursoNaoEncontrado(Exception):
     def __init__(self, entidade: str, identificador: object) -> None:
         self.entidade = entidade
         self.identificador = identificador
-        super().__init__(f"{entidade} {identificador} nao encontrado.")
+        super().__init__(f"{entidade} {identificador} não encontrado.")
 
 
 def registrar_tratadores(app: FastAPI) -> None:

@@ -13,19 +13,24 @@ escada de cinco preços.
 | 2 | Modelo de dados, migrações e seeds | **concluído** |
 | 3 | Motor de domínio + motor tributário + casos de aceite | **concluído** |
 | 4 | API FastAPI | **concluído** |
-| 5 | Frontend Next.js — Cadastros e Operações | pendente |
+| 5 | Frontend Next.js — Cadastros e Operações | **concluído** |
 | 6 | Cotação, simulação e painel gerencial | pendente |
 
 ## Stack
 
 - **Backend:** Python 3.11+, FastAPI, SQLAlchemy 2, Alembic, Pydantic 2
 - **Banco:** PostgreSQL em produção, SQLite em desenvolvimento e testes
-- **Frontend (a partir do Passo 5):** Next.js + TypeScript, Tailwind CSS,
+- **Frontend:** Next.js + TypeScript, Tailwind CSS,
   Radix UI, Recharts
 
 ## Arquitetura
 
 ```
+frontend/           Next.js 15, Tailwind 4, Radix UI
+├── app/            rotas dos módulos
+├── components/     primitivos de UI e componentes de domínio
+└── lib/            cliente da API, tipos e formatação pt-BR
+
 backend/app/
 ├── db/          base declarativa, tipos monetários e mixins de vigência
 ├── models/      39 tabelas: cadastro, operação, fiscal, comercial, governança
@@ -78,6 +83,14 @@ cp .env.example .env          # ajuste DATABASE_URL se for usar PostgreSQL
 .venv/bin/uvicorn app.api.main:app --reload      # API em http://localhost:8000/docs
 ```
 
+E o frontend, em outro terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev                                      # http://localhost:3000
+```
+
 ## Documentação
 
 - [Dicionário de dados](docs/dicionario-de-dados.md) — correspondência com a
@@ -88,6 +101,8 @@ cp .env.example .env          # ajuste DATABASE_URL se for usar PostgreSQL
   regime.
 - [API](docs/api.md) — endpoints, mapeamento de erros de domínio para HTTP e
   exemplos de chamada.
+- [Frontend](docs/frontend.md) — estrutura das telas, decisões de interface e
+  convenções de formatação.
 
 ## Aviso
 

@@ -81,8 +81,8 @@ def calcular_custo_aquisicao(
 
     if creditos_pendentes > ZERO:
         alertas.append(
-            f"Credito condicionado de {creditos_pendentes} nao reduziu o custo: "
-            f"depende de confirmacao documental antes de ser apropriado."
+            f"Crédito condicionado de {creditos_pendentes} não reduziu o custo: "
+            f"depende de confirmação documental antes de ser apropriado."
         )
 
     custo_total = (
@@ -98,10 +98,10 @@ def calcular_custo_aquisicao(
 
     if memoria is not None:
         memoria.registrar(
-            "Custo liquido de aquisicao",
-            "C_aquisicao = preco bruto - descontos - bonificacoes "
-            "+ tributos nao recuperaveis + frete e demais custos atribuiveis "
-            "- creditos fiscais confirmados",
+            "Custo líquido de aquisição",
+            "C_aquisicao = preço bruto - descontos - bonificações "
+            "+ tributos não recuperáveis + frete e demais custos atribuíveis "
+            "- créditos fiscais confirmados",
             {
                 "preco_bruto": entradas.preco_bruto,
                 "descontos": entradas.descontos,
@@ -121,7 +121,7 @@ def calcular_custo_aquisicao(
             "BRL/kg",
         )
         memoria.registrar(
-            "Custo por kg vendavel",
+            "Custo por kg vendável",
             "C_aquisicao / Q_vendavel",
             {"C_aquisicao": custo_total, "Q_vendavel": quantidade_vendavel},
             por_vendavel,
@@ -129,8 +129,8 @@ def calcular_custo_aquisicao(
         )
         if creditos_pendentes > ZERO:
             memoria.registrar(
-                "Credito condicionado (informativo)",
-                "valor mantido fora do custo ate confirmacao",
+                "Crédito condicionado (informativo)",
+                "valor mantido fora do custo até confirmação",
                 {"credito_condicionado": creditos_pendentes},
                 creditos_pendentes,
                 "BRL",

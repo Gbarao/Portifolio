@@ -71,7 +71,7 @@ def calcular_custo_capital(
         )
         memoria.registrar(
             "Custo financeiro do lote",
-            "custo = capital comprometido × [(1 + taxa diaria) ^ dias - 1]",
+            "custo = capital comprometido × [(1 + taxa diária) ^ dias - 1]",
             {
                 "capital_comprometido": capital,
                 "taxa_diaria": taxa_dia,
@@ -80,7 +80,7 @@ def calcular_custo_capital(
             custo,
             "BRL",
             alerta=(
-                "Ciclo financeiro nao positivo: nenhum custo de capital atribuido."
+                "Ciclo financeiro não positivo: nenhum custo de capital atribuído."
                 if dias <= 0
                 else None
             ),
@@ -129,8 +129,8 @@ def calcular_provisoes(
     if memoria is not None and provisoes:
         for provisao in provisoes:
             memoria.registrar(
-                f"Provisao de risco: {provisao.nome}",
-                "valor = percentual historico × base",
+                f"Provisão de risco: {provisao.nome}",
+                "valor = percentual histórico × base",
                 {
                     "percentual": provisao.percentual,
                     "base": provisao.base,

@@ -95,7 +95,7 @@ def test_caso_01_perda_de_10_por_cento_transfere_custo_para_a_quantidade_vendave
     # O custo por kg vendavel absorve a perda: 9000 / 9000 = 1,00.
     assert custo.custo_por_kg_vendavel == D("1")
     # E a memoria registra os dois, para que a diferenca seja auditavel.
-    assert memoria.resultado_de("Custo por kg vendavel") == D("1")
+    assert memoria.resultado_de("Custo por kg vendável") == D("1")
 
 
 # --------------------------------------------------------------------------
@@ -180,7 +180,7 @@ def test_caso_04_regra_fora_de_vigencia_impede_cotacao_definitiva():
 
     assert not deducoes.permite_cotacao_definitiva
     assert deducoes.apuracao.status_consolidado == "VENCIDA"
-    assert any("vigencia" in a.lower() for a in deducoes.alertas)
+    assert any("vigência" in a.lower() for a in deducoes.alertas)
     # A aliquota da regra vencida nao entrou em r.
     assert "ICMS" not in deducoes.detalhamento
 

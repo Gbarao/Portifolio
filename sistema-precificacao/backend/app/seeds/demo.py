@@ -77,7 +77,7 @@ from app.models.enums import (
 
 D = Decimal
 VIGENCIA = date(2026, 1, 1)
-OBS_EXEMPLO = "Valor de exemplo para demonstracao. Requer validacao antes do uso."
+OBS_EXEMPLO = "Valor de exemplo para demonstração. Requer validação antes do uso."
 
 
 # --------------------------------------------------------------------------
@@ -122,21 +122,21 @@ def criar_empresas(sessao: Session) -> dict[str, Unidade]:
     return {
         "lucro_real": _empresa_com_unidade(
             sessao,
-            "Recicla Demonstracao Lucro Real Ltda",
+            "Recicla Demonstração Lucro Real Ltda",
             "11111111000191",
             "MATRIZ-LR",
             RegimeTributario.LUCRO_REAL,
         ),
         "lucro_presumido": _empresa_com_unidade(
             sessao,
-            "Recicla Demonstracao Presumido Ltda",
+            "Recicla Demonstração Presumido Ltda",
             "22222222000172",
             "MATRIZ-LP",
             RegimeTributario.LUCRO_PRESUMIDO,
         ),
         "simples": _empresa_com_unidade(
             sessao,
-            "Recicla Demonstracao Simples ME",
+            "Recicla Demonstração Simples ME",
             "33333333000153",
             "MATRIZ-SN",
             RegimeTributario.SIMPLES_NACIONAL,
@@ -151,7 +151,7 @@ def criar_empresas(sessao: Session) -> dict[str, Unidade]:
 def criar_materiais(sessao: Session) -> dict[str, Material]:
     papelao = Material(
         codigo="MP-PAPELAO-MISTO",
-        descricao="Papelao misto recebido solto",
+        descricao="Papelão misto recebido solto",
         familia="PAPEL",
         tipo=TipoMaterial.ENTRADA,
         ncm="47071000",
@@ -165,7 +165,7 @@ def criar_materiais(sessao: Session) -> dict[str, Material]:
     )
     papelao_fardo = Material(
         codigo="PA-PAPELAO-FARDO",
-        descricao="Papelao enfardado tipo aparas marrom",
+        descricao="Papelão enfardado tipo aparas marrom",
         familia="PAPEL",
         tipo=TipoMaterial.SAIDA,
         ncm="47071000",
@@ -174,7 +174,7 @@ def criar_materiais(sessao: Session) -> dict[str, Material]:
     )
     pet_misto = Material(
         codigo="MP-PET-MISTO",
-        descricao="PET pos-consumo misto",
+        descricao="PET pós-consumo misto",
         familia="PLASTICO",
         tipo=TipoMaterial.ENTRADA,
         ncm="39159000",
@@ -249,7 +249,7 @@ def criar_materiais(sessao: Session) -> dict[str, Material]:
 def criar_parceiros(sessao: Session, materiais: dict[str, Material]) -> dict[str, Parceiro]:
     cooperativa = Parceiro(
         codigo="FOR-COOP-001",
-        nome="Cooperativa de Catadores Demonstracao",
+        nome="Cooperativa de Catadores Demonstração",
         papel=PapelParceiro.FORNECEDOR,
         natureza=NaturezaParceiro.COOPERATIVA,
         cnpj_cpf="44444444000134",
@@ -263,7 +263,7 @@ def criar_parceiros(sessao: Session, materiais: dict[str, Material]) -> dict[str
     )
     sucateiro = Parceiro(
         codigo="FOR-PJ-002",
-        nome="Aparas e Sucatas Demonstracao Ltda",
+        nome="Aparas e Sucatas Demonstração Ltda",
         papel=PapelParceiro.FORNECEDOR,
         natureza=NaturezaParceiro.PESSOA_JURIDICA,
         cnpj_cpf="55555555000115",
@@ -278,7 +278,7 @@ def criar_parceiros(sessao: Session, materiais: dict[str, Material]) -> dict[str
     )
     industria = Parceiro(
         codigo="CLI-IND-001",
-        nome="Industria de Papel Demonstracao S.A.",
+        nome="Indústria de Papel Demonstração S.A.",
         papel=PapelParceiro.CLIENTE,
         natureza=NaturezaParceiro.PESSOA_JURIDICA,
         cnpj_cpf="66666666000196",
@@ -295,7 +295,7 @@ def criar_parceiros(sessao: Session, materiais: dict[str, Material]) -> dict[str
     )
     transportador = Parceiro(
         codigo="TRA-001",
-        nome="Transportes Demonstracao Ltda",
+        nome="Transportes Demonstração Ltda",
         papel=PapelParceiro.TRANSPORTADOR,
         natureza=NaturezaParceiro.PESSOA_JURIDICA,
         cnpj_cpf="77777777000177",
@@ -341,7 +341,7 @@ def criar_estrutura_custos(sessao: Session, unidade: Unidade) -> dict[str, Any]:
             codigo=codigo,
             nome=nome,
             natureza=natureza,
-            responsavel="Responsavel de demonstracao",
+            responsavel="Responsável de demonstração",
         )
         for codigo, nome, natureza in [
             ("CC-REC", "Recebimento e pesagem", NaturezaCentroCusto.PRODUTIVO),
@@ -382,7 +382,7 @@ def criar_estrutura_custos(sessao: Session, unidade: Unidade) -> dict[str, Any]:
         centro_custo=centros["CC-FRO"],
         tipo=TipoRecurso.VEICULO,
         codigo="VEI-001",
-        nome="Caminhao truck carga seca",
+        nome="Caminhão truck carga seca",
         capacidade_teorica_mes=D("9000"),
         capacidade_pratica_mes=D("7000"),
         unidade_capacidade="KM",
@@ -392,7 +392,7 @@ def criar_estrutura_custos(sessao: Session, unidade: Unidade) -> dict[str, Any]:
         centro_custo=centros["CC-ARM"],
         tipo=TipoRecurso.IMOVEL,
         codigo="IMO-001",
-        nome="Galpao industrial",
+        nome="Galpão industrial",
         capacidade_teorica_mes=D("2400"),
         capacidade_pratica_mes=D("1800"),
         unidade_capacidade="M2",
@@ -498,7 +498,7 @@ def criar_estrutura_custos(sessao: Session, unidade: Unidade) -> dict[str, Any]:
          Direcionador.HORA_MAQUINA, "hora-maquina", "CC-PRE", "6300", "280"),
         ("ATV-ARM", "Armazenagem", TipoEventoProcesso.ARMAZENAGEM,
          Direcionador.TONELADA_DIA, "tonelada-dia", "CC-ARM", "12400", "9000"),
-        ("ATV-EXP", "Expedicao e carregamento", TipoEventoProcesso.EXPEDICAO,
+        ("ATV-EXP", "Expedição e carregamento", TipoEventoProcesso.EXPEDICAO,
          Direcionador.NUMERO_CARREGAMENTOS, "carregamento", "CC-REC", "3600", "45"),
     ]
     atividades: dict[str, Atividade] = {}
@@ -967,7 +967,7 @@ def criar_lote_exemplo(
             tara_kg=D("3500"),
             peso_liquido_kg=D("12000"),
             identificacao_balanca="BAL-01",
-            operador="Operador de demonstracao",
+            operador="Operador de demonstração",
             data_hora=datetime(2026, 3, 10, 8, 30),
         )
     )
@@ -981,7 +981,7 @@ def criar_lote_exemplo(
             # 400 kg recusados fisicamente reduzem a quantidade aceita.
             quantidade_recusada_kg=D("400"),
             desconto_aplicado=D("168"),
-            responsavel="Inspetor de demonstracao",
+            responsavel="Inspetor de demonstração",
             data_hora=datetime(2026, 3, 10, 9, 15),
         )
     )
@@ -1035,7 +1035,7 @@ def criar_lote_exemplo(
                 integra_custo_padrao=True,
                 destino="Aterro licenciado",
                 custo_destinacao=D("96"),
-                causa="Material nao reciclavel misturado ao lote",
+                causa="Material não reciclável misturado ao lote",
                 data_evento=date(2026, 3, 11),
             ),
             RejeitoPerda(
@@ -1054,8 +1054,8 @@ def criar_lote_exemplo(
             lote_compra_id=lote.id,
             tipo_frete=TipoFrete.FROTA_PROPRIA,
             recurso_veiculo_id=recursos["caminhao"].id,
-            origem="Cooperativa - Sorocaba/SP",
-            destino="Galpao - Sorocaba/SP",
+            origem="Cooperativa — Sorocaba/SP",
+            destino="Galpão — Sorocaba/SP",
             km_carregado=D("38"),
             # Retorno vazio entra no custo da viagem (caso de teste 6).
             km_vazio=D("38"),
@@ -1074,13 +1074,13 @@ def criar_usuarios(sessao: Session, unidade: Unidade) -> None:
     sessao.add_all(
         [
             Usuario(
-                nome="Operacao Demonstracao",
+                nome="Operação Demonstração",
                 email="operacao@exemplo.local",
                 perfil=PerfilUsuario.OPERACOES,
                 unidade_id=unidade.id,
             ),
             Usuario(
-                nome="Controladoria Demonstracao",
+                nome="Controladoria Demonstração",
                 email="controladoria@exemplo.local",
                 perfil=PerfilUsuario.CONTROLADORIA,
                 unidade_id=unidade.id,
@@ -1088,13 +1088,13 @@ def criar_usuarios(sessao: Session, unidade: Unidade) -> None:
                 pode_ver_dados_salariais=True,
             ),
             Usuario(
-                nome="Fiscal Demonstracao",
+                nome="Fiscal Demonstração",
                 email="fiscal@exemplo.local",
                 perfil=PerfilUsuario.FISCAL_CONTABIL,
                 unidade_id=unidade.id,
             ),
             Usuario(
-                nome="Comercial Demonstracao",
+                nome="Comercial Demonstração",
                 email="comercial@exemplo.local",
                 perfil=PerfilUsuario.COMERCIAL,
                 unidade_id=unidade.id,

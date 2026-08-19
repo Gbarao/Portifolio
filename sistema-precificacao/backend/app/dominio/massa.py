@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from app.dominio.excecoes import MassaInconsistenteError
 from app.dominio.memoria import Memoria
-from app.dominio.unidades import ZERO, dec, dividir
+from app.dominio.unidades import ZERO, dec, dividir, percentual_br
 
 
 @dataclass(frozen=True)
@@ -102,8 +102,8 @@ def calcular_balanco(
             "fracao",
         )
         memoria.registrar(
-            "Divergencia de massa",
-            "diferenca = Q_aceita - (vendavel + rejeito + perdas)",
+            "Divergência de massa",
+            "diferença = Q_aceita - (vendável + rejeito + perdas)",
             {
                 "Q_aceita": aceita,
                 "vendavel": vendavel,
@@ -117,17 +117,19 @@ def calcular_balanco(
                 None
                 if dentro
                 else (
-                    f"Divergencia de {divergencia_relativa:.4%} acima da tolerancia "
-                    f"de {dec(tolerancia):.4%}: encerramento do lote bloqueado."
+                    f"Divergência de {percentual_br(divergencia_relativa, 4)} "
+                    f"acima da tolerância de {percentual_br(tolerancia, 4)}: "
+                    f"encerramento do lote bloqueado."
                 )
             ),
         )
 
     if not dentro and bloquear_fora_da_tolerancia:
         raise MassaInconsistenteError(
-            f"Balanco de massa fora da tolerancia: divergencia de "
-            f"{divergencia_relativa:.4%} contra limite de {dec(tolerancia):.4%}. "
-            f"Encerramento exige aprovacao de excecao com justificativa."
+            f"Balanço de massa fora da tolerância: divergência de "
+            f"{percentual_br(divergencia_relativa, 4)} contra limite de "
+            f"{percentual_br(tolerancia, 4)}. O encerramento exige aprovação de "
+            f"exceção com justificativa."
         )
 
     return BalancoMassa(

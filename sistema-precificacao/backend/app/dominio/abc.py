@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from app.dominio.excecoes import DuplaContagemError
 from app.dominio.memoria import Memoria
-from app.dominio.unidades import ZERO, dec, dividir
+from app.dominio.unidades import ZERO, dec, dividir, percentual_br
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ def calcular_taxa(
     if memoria is not None:
         memoria.registrar(
             f"Taxa da atividade {codigo}",
-            "Taxa = pool de custos / capacidade pratica",
+            "Taxa = pool de custos / capacidade prática",
             {"pool": pool_custo, "capacidade_pratica": capacidade_pratica},
             taxa,
             "BRL/direcionador",
@@ -106,9 +106,9 @@ def calcular_custo_transformacao(
     for lancamento in lancamentos_diretos:
         if lancamento.atividade_de_origem in atividades_consumidas:
             raise DuplaContagemError(
-                f"O lancamento direto '{lancamento.descricao}' pertence ao pool da "
-                f"atividade {lancamento.atividade_de_origem}, ja apropriada por "
-                f"direcionador. Remova o lancamento ou retire o gasto do pool."
+                f"O lançamento direto '{lancamento.descricao}' pertence ao pool "
+                f"da atividade {lancamento.atividade_de_origem}, já apropriada por "
+                f"direcionador. Remova o lançamento ou retire o gasto do pool."
             )
 
     custo_por_atividade: dict[str, Decimal] = {}
@@ -144,7 +144,7 @@ def calcular_custo_transformacao(
     if memoria is not None and total_diretos > ZERO:
         memoria.registrar(
             "Custos diretos exclusivos do lote",
-            "soma dos lancamentos que nao pertencem a nenhum pool",
+            "soma dos lançamentos que não pertencem a nenhum pool",
             {l.descricao: l.valor for l in lancamentos_diretos},
             total_diretos,
             "BRL",
@@ -153,8 +153,8 @@ def calcular_custo_transformacao(
     total = total_atividades + total_diretos
     if memoria is not None:
         memoria.registrar(
-            "Custo de transformacao do lote",
-            "C_transformacao = Σ (direcionador × taxa) + custos diretos",
+            "Custo de transformação do lote",
+            "C_transformação = Σ (direcionador × taxa) + custos diretos",
             {"atividades": total_atividades, "diretos": total_diretos},
             total,
             "BRL",
@@ -208,7 +208,7 @@ def calcular_ociosidade(
     if memoria is not None:
         memoria.registrar(
             f"Ociosidade da atividade {taxa_atividade.codigo}",
-            "custo de ociosidade = (capacidade pratica - utilizacao real) "
+            "custo de ociosidade = (capacidade prática - utilização real) "
             "× taxa fixa da atividade",
             {
                 "capacidade_pratica": capacidade,
@@ -218,8 +218,9 @@ def calcular_ociosidade(
             custo,
             "BRL",
             alerta=(
-                f"Ocupacao de {ocupacao:.2%} na atividade {taxa_atividade.codigo}: "
-                f"custo de ociosidade lancado ao periodo, nao ao produto."
+                f"Ocupação de {percentual_br(ocupacao)} na atividade "
+                f"{taxa_atividade.codigo}: custo de ociosidade lançado ao período, "
+                f"não ao produto."
                 if ociosa > ZERO
                 else None
             ),

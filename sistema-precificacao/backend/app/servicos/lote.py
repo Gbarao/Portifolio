@@ -69,14 +69,14 @@ def calcular_resultado_lote(
     parametro = parametro_vigente(sessao, lote.unidade_id, data_ref)
     if parametro is None:
         raise DadoObrigatorioAusenteError(
-            f"Nenhum parametro vigente para a unidade em {data_ref.isoformat()}: "
+            f"Nenhum parâmetro vigente para a unidade em {data_ref.isoformat()}: "
             f"cadastre empresa_parametro antes de apurar o lote."
         )
 
     if not lote.eventos_balanca:
         raise DadoObrigatorioAusenteError(
-            f"Lote {lote.codigo} sem evento de balanca: peso bruto e tara sao "
-            f"obrigatorios para fechar o balanco de massa."
+            f"Lote {lote.codigo} sem evento de balança: peso bruto e tara são "
+            f"obrigatórios para fechar o balanço de massa."
         )
 
     peso_bruto = sum((dec(e.peso_bruto_kg) for e in lote.eventos_balanca), ZERO)
@@ -154,7 +154,7 @@ def calcular_resultado_lote(
 
     memoria.registrar(
         "Custo total do lote",
-        "C_total = aquisicao + transformacao + custo de capital",
+        "C_total = aquisição + transformação + custo de capital",
         {
             "aquisicao": aquisicao.custo_total,
             "transformacao": custo_transformacao,

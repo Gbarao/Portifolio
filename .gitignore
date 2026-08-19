@@ -17,3 +17,6 @@ out/
 # Ambiente
 .env
 .env.local
+
+# Artefato incremental do TypeScript
+*.tsbuildinfo

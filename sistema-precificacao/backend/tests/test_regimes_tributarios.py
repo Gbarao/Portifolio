@@ -203,7 +203,7 @@ def test_rbt12_fora_das_faixas_bloqueia_o_calculo():
     """Acima do teto do Simples nao existe aliquota: o motor recusa em vez de
     extrapolar a ultima faixa."""
 
-    with pytest.raises(ParametroInvalidoError, match="nao se enquadra"):
+    with pytest.raises(ParametroInvalidoError, match="não se enquadra"):
         calcular_aliquota_efetiva_simples(
             faixas_anexo_ii(), rbt12=D("5000000"), anexo="ANEXO_II"
         )

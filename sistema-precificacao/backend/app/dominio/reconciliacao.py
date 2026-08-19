@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.dominio.memoria import Memoria
-from app.dominio.unidades import ZERO, dec, dividir
+from app.dominio.unidades import ZERO, dec, dividir, percentual_br
 
 
 @dataclass(frozen=True)
@@ -73,16 +73,17 @@ def reconciliar_periodo(
     alertas: list[str] = []
     if not dentro:
         alertas.append(
-            f"Divergencia de {relativa:.4%} entre a soma dos lotes e o resultado do "
-            f"periodo, acima da tolerancia de {dec(tolerancia):.4%}. Revise custos "
-            f"lancados sem lote e lotes sem apontamento antes de fechar o mes."
+            f"Divergência de {percentual_br(relativa, 4)} entre a soma dos lotes "
+            f"e o resultado do período, acima da tolerância de "
+            f"{percentual_br(tolerancia, 4)}. Revise custos lançados sem lote e "
+            f"lotes sem apontamento antes de fechar o mês."
         )
 
     if memoria is not None:
         memoria.registrar(
-            "Reconciliacao do periodo",
-            "divergencia = resultado do periodo - (Σ resultados por lote "
-            "- itens nao atribuiveis a lote)",
+            "Reconciliação do período",
+            "divergência = resultado do período - (Σ resultados por lote "
+            "- itens não atribuíveis a lote)",
             {
                 "soma_dos_lotes": soma_lotes,
                 "itens_nao_atribuidos": total_nao_atribuido,

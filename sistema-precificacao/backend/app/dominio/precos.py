@@ -25,7 +25,7 @@ from app.dominio.camadas import (
 )
 from app.dominio.excecoes import ParametroInvalidoError
 from app.dominio.memoria import Memoria
-from app.dominio.unidades import UM, ZERO, dec, dividir
+from app.dominio.unidades import UM, ZERO, dec, dividir, percentual_br
 
 CAMADA_ALVO = "ALVO"
 CAMADA_MERCADO = "MERCADO_COMPARAVEL"
@@ -33,12 +33,12 @@ CAMADA_MERCADO = "MERCADO_COMPARAVEL"
 # Finalidade de cada degrau, exibida junto ao preco para que nenhum numero
 # circule sem rotulo (secao 8).
 FINALIDADE_CAMADA = {
-    CAMADA_CAIXA: "Decisao excepcional, validade curta e aprovacao superior",
-    CAMADA_CONTRIBUICAO: "Ocupacao de capacidade ociosa no curto prazo",
-    CAMADA_OPERACIONAL: "Avaliacao da eficiencia operacional",
-    CAMADA_SUSTENTAVEL: "Piso normal de negociacao",
-    CAMADA_ALVO: "Proposta comercial padrao",
-    CAMADA_MERCADO: "Teste de competitividade; nao substitui o custo",
+    CAMADA_CAIXA: "Decisão excepcional, validade curta e aprovação superior",
+    CAMADA_CONTRIBUICAO: "Ocupação de capacidade ociosa no curto prazo",
+    CAMADA_OPERACIONAL: "Avaliação da eficiência operacional",
+    CAMADA_SUSTENTAVEL: "Piso normal de negociação",
+    CAMADA_ALVO: "Proposta comercial padrão",
+    CAMADA_MERCADO: "Teste de competitividade; não substitui o custo",
 }
 
 
@@ -102,12 +102,14 @@ def calcular_preco(
 
     if r >= UM:
         raise ParametroInvalidoError(
-            f"Deducoes de {r:.2%} sobre o preco bruto tornam a receita liquida nula "
-            f"ou negativa. Revise a matriz tributaria antes de precificar."
+            f"Deduções de {percentual_br(r)} sobre o preço bruto tornam a receita "
+            f"líquida nula ou negativa. Revise a matriz tributária antes de "
+            f"precificar."
         )
     if m >= UM:
         raise ParametroInvalidoError(
-            f"Margem-alvo de {m:.2%} da receita liquida e inatingivel por construcao."
+            f"Margem-alvo de {percentual_br(m)} da receita líquida é inatingível "
+            f"por construção."
         )
 
     denominador = (UM - r) * (UM - m)
@@ -115,7 +117,7 @@ def calcular_preco(
 
     if memoria is not None:
         memoria.registrar(
-            f"Formacao do {rotulo}",
+            f"Formação do {rotulo}",
             "P = C / [(1 - r) × (1 - m)]",
             {"C": custo_unitario, "r": r, "m": m},
             preco,
@@ -160,7 +162,7 @@ def montar_escada(
     degraus: dict[str, DegrauPreco] = {}
     for camada, custo, margem in configuracao:
         preco = calcular_preco(
-            custo, r, margem, rotulo=f"preco {camada.lower()}", memoria=memoria
+            custo, r, margem, rotulo=f"preço {camada.lower()}", memoria=memoria
         )
         receita_liquida = preco * (UM - r)
         degraus[camada] = DegrauPreco(
@@ -196,8 +198,8 @@ def montar_escada(
     alertas: list[str] = []
     if preco_mercado is not None and preco_mercado < degraus[CAMADA_SUSTENTAVEL].preco_unitario:
         alertas.append(
-            "Preco de mercado abaixo do preco sustentavel: operar neste nivel "
-            "nao cobre a estrutura no longo prazo."
+            "Preço de mercado abaixo do preço sustentável: operar neste nível "
+            "não cobre a estrutura no longo prazo."
         )
 
     return EscadaPrecos(degraus=degraus, quantidade=quantidade, alertas=alertas)
@@ -235,7 +237,7 @@ def avaliar_proposta(escada: EscadaPrecos, preco_proposto: Decimal) -> Avaliacao
             alcada_necessaria="Fluxo comercial normal",
             valor_concessao=ZERO,
             bloqueado=False,
-            mensagem="Preco igual ou superior ao alvo.",
+            mensagem="Preço igual ou superior ao alvo.",
         )
 
     concessao = (alvo - preco) * escada.quantidade
@@ -247,7 +249,7 @@ def avaliar_proposta(escada: EscadaPrecos, preco_proposto: Decimal) -> Avaliacao
             alcada_necessaria="Gestor comercial",
             valor_concessao=concessao,
             bloqueado=False,
-            mensagem="Abaixo do alvo, mas acima do piso sustentavel.",
+            mensagem="Abaixo do alvo, mas acima do piso sustentável.",
         )
 
     if preco >= contribuicao:
@@ -258,8 +260,8 @@ def avaliar_proposta(escada: EscadaPrecos, preco_proposto: Decimal) -> Avaliacao
             valor_concessao=concessao,
             bloqueado=False,
             mensagem=(
-                "Abaixo do preco sustentavel: contribui no curto prazo, mas nao "
-                "sustenta a estrutura. Exige motivo, prazo e responsavel."
+                "Abaixo do preço sustentável: contribui no curto prazo, mas não "
+                "sustenta a estrutura. Exige motivo, prazo e responsável."
             ),
         )
 
@@ -267,12 +269,12 @@ def avaliar_proposta(escada: EscadaPrecos, preco_proposto: Decimal) -> Avaliacao
         return AvaliacaoProposta(
             preco_proposto=preco,
             faixa="ABAIXO_DA_CONTRIBUICAO",
-            alcada_necessaria="Decisao estrategica formal da diretoria",
+            alcada_necessaria="Decisão estratégica formal da diretoria",
             valor_concessao=concessao,
             bloqueado=True,
             mensagem=(
-                "Abaixo da margem de contribuicao minima: bloqueado salvo decisao "
-                "estrategica com valor maximo de perda definido."
+                "Abaixo da margem de contribuição mínima: bloqueado salvo decisão "
+                "estratégica com valor máximo de perda definido."
             ),
         )
 
@@ -283,7 +285,7 @@ def avaliar_proposta(escada: EscadaPrecos, preco_proposto: Decimal) -> Avaliacao
         valor_concessao=concessao,
         bloqueado=True,
         mensagem=(
-            "Preco nao cobre nem o desembolso incremental da operacao: cada "
+            "O preço não cobre nem o desembolso incremental da operação: cada "
             "tonelada vendida consome caixa."
         ),
     )
@@ -329,8 +331,8 @@ def calcular_preco_maximo_compra(
 
     if memoria is not None:
         memoria.registrar(
-            "Receita liquida esperada",
-            "receita liquida = preco de venda × quantidade vendavel × (1 - r)",
+            "Receita líquida esperada",
+            "receita líquida = preço de venda × quantidade vendável × (1 - r)",
             {
                 "preco_venda": preco_venda_unitario,
                 "Q_vendavel": quantidade_vendavel,
@@ -340,8 +342,8 @@ def calcular_preco_maximo_compra(
             "BRL",
         )
         memoria.registrar(
-            "Preco maximo total de compra",
-            "receita liquida - demais custos e despesas - lucro-alvo",
+            "Preço máximo total de compra",
+            "receita líquida - demais custos e despesas - lucro-alvo",
             {
                 "receita_liquida": receita_liquida,
                 "demais_custos": demais_custos,
@@ -351,8 +353,8 @@ def calcular_preco_maximo_compra(
             "BRL",
         )
         memoria.registrar(
-            "Preco maximo unitario de compra",
-            "preco maximo total / quantidade aceita esperada",
+            "Preço máximo unitário de compra",
+            "preço máximo total / quantidade aceita esperada",
             {
                 "preco_maximo_total": maximo_total,
                 "Q_aceita_esperada": quantidade_aceita_esperada,
@@ -383,6 +385,6 @@ def calcular_preco_minimo_venda(
         custo_unitario,
         deducoes_r,
         margem_minima,
-        rotulo="preco minimo de venda",
+        rotulo="preço mínimo de venda",
         memoria=memoria,
     )

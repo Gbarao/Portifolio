@@ -323,7 +323,7 @@ def test_lote_sem_evento_de_balanca_retorna_422(cliente):
     resposta = cliente.get(f"/lotes/{criado.json()['id']}/resultado")
     assert resposta.status_code == 422
     assert resposta.json()["erro"] == "DadoObrigatorioAusenteError"
-    assert "balanca" in resposta.json()["mensagem"]
+    assert "balança" in resposta.json()["mensagem"]
 
 
 # --------------------------------------------------------------------------
