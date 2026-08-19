@@ -158,10 +158,13 @@ def gerar_versao(
         status = STATUS_DEFINITIVA
     else:
         status = STATUS_PROVISORIA
-        alertas.append(
-            f"Status fiscal {deducoes.apuracao.status_consolidado}: preco valido "
-            f"apenas como estimativa, nao como cotacao definitiva."
-        )
+        # O motor fiscal ja alerta sobre o status; repetir a mesma informacao
+        # com outra redacao so polui a tela do usuario.
+        if not any(a.startswith("Status fiscal") for a in alertas):
+            alertas.append(
+                f"Status fiscal {deducoes.apuracao.status_consolidado}: preco valido "
+                f"apenas como estimativa, nao como cotacao definitiva."
+            )
 
     return VersaoCotacao(
         numero=numero,

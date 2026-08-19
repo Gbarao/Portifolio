@@ -12,7 +12,7 @@ escada de cinco preços.
 | 1 | Arquitetura, stack e sequência | concluído |
 | 2 | Modelo de dados, migrações e seeds | **concluído** |
 | 3 | Motor de domínio + motor tributário + casos de aceite | **concluído** |
-| 4 | API FastAPI | pendente |
+| 4 | API FastAPI | **concluído** |
 | 5 | Frontend Next.js — Cadastros e Operações | pendente |
 | 6 | Cotação, simulação e painel gerencial | pendente |
 
@@ -33,7 +33,8 @@ backend/app/
 ├── dominio/     massa, aquisição, ABC, conjuntos, capital, camadas, preços, memória
 ├── tributario/  resolução de regras por vigência, aplicação e regimes
 ├── aplicacao/   cotação versionada e demonstração executável
-└── api/         (Passo 4) routers FastAPI
+├── servicos/    ligação entre persistência e motor (parâmetros, lote, cotação)
+└── api/         FastAPI: routers, schemas e mapeamento de erros
 ```
 
 Princípios que o schema já sustenta:
@@ -72,8 +73,9 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 cp .env.example .env          # ajuste DATABASE_URL se for usar PostgreSQL
 .venv/bin/alembic upgrade head
 .venv/bin/python -m app.seeds.demo   # dados de demonstração
-.venv/bin/python -m pytest -q        # 55 testes
+.venv/bin/python -m pytest -q        # 75 testes
 .venv/bin/python -m app.aplicacao.demonstracao   # lote completo nos 3 regimes
+.venv/bin/uvicorn app.api.main:app --reload      # API em http://localhost:8000/docs
 ```
 
 ## Documentação
@@ -84,6 +86,8 @@ cp .env.example .env          # ajuste DATABASE_URL se for usar PostgreSQL
 - [Motor de cálculo](docs/motor-de-calculo.md) — fórmulas implementadas,
   camadas de custo, resolução de regras fiscais e composição de `r` por
   regime.
+- [API](docs/api.md) — endpoints, mapeamento de erros de domínio para HTTP e
+  exemplos de chamada.
 
 ## Aviso
 
