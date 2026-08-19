@@ -11,7 +11,7 @@ escada de cinco preços.
 |---|---|---|
 | 1 | Arquitetura, stack e sequência | concluído |
 | 2 | Modelo de dados, migrações e seeds | **concluído** |
-| 3 | Motor de domínio + motor tributário + casos de aceite | pendente |
+| 3 | Motor de domínio + motor tributário + casos de aceite | **concluído** |
 | 4 | API FastAPI | pendente |
 | 5 | Frontend Next.js — Cadastros e Operações | pendente |
 | 6 | Cotação, simulação e painel gerencial | pendente |
@@ -30,8 +30,9 @@ backend/app/
 ├── db/          base declarativa, tipos monetários e mixins de vigência
 ├── models/      39 tabelas: cadastro, operação, fiscal, comercial, governança
 ├── seeds/       dados de demonstração dos três regimes tributários
-├── domain/      (Passo 3) balanço de massa, ABC, camadas de custo, escada de preços
-├── tributario/  (Passo 3) matriz de regras e resolvedores por regime
+├── dominio/     massa, aquisição, ABC, conjuntos, capital, camadas, preços, memória
+├── tributario/  resolução de regras por vigência, aplicação e regimes
+├── aplicacao/   cotação versionada e demonstração executável
 └── api/         (Passo 4) routers FastAPI
 ```
 
@@ -51,6 +52,17 @@ Princípios que o schema já sustenta:
 5. **Preço sempre com rótulo.** `cotacao_preco` tem uma linha por camada da
    escada, cada uma com sua visão de custo.
 
+E o que o motor acrescenta:
+
+6. **Toda fórmula é reproduzível.** Cada cálculo registra passo, fórmula,
+   entradas, fonte e vigência; o preço pode ser refeito à mão a partir da
+   exportação da cotação.
+7. **Regra vencida bloqueia.** Uma única regra fora de vigência na data da
+   operação impede a cotação definitiva — não existe cotação parcialmente
+   definitiva.
+8. **A mudança de faixa do Simples é calculada.** O sistema mostra a alíquota
+   marginal real da venda, não a da faixa atual.
+
 ## Rodando localmente
 
 ```bash
@@ -60,7 +72,8 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 cp .env.example .env          # ajuste DATABASE_URL se for usar PostgreSQL
 .venv/bin/alembic upgrade head
 .venv/bin/python -m app.seeds.demo   # dados de demonstração
-.venv/bin/python -m pytest -q
+.venv/bin/python -m pytest -q        # 55 testes
+.venv/bin/python -m app.aplicacao.demonstracao   # lote completo nos 3 regimes
 ```
 
 ## Documentação
@@ -68,6 +81,9 @@ cp .env.example .env          # ajuste DATABASE_URL se for usar PostgreSQL
 - [Dicionário de dados](docs/dicionario-de-dados.md) — correspondência com a
   seção 10 da especificação, convenções de unidade e semântica das flags
   fiscais.
+- [Motor de cálculo](docs/motor-de-calculo.md) — fórmulas implementadas,
+  camadas de custo, resolução de regras fiscais e composição de `r` por
+  regime.
 
 ## Aviso
 

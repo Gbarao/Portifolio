@@ -542,7 +542,9 @@ def criar_estrutura_custos(sessao: Session, unidade: Unidade) -> dict[str, Any]:
 # percentual unico. Todas nascem PROVISORIA: so o responsavel fiscal promove
 # para VALIDADA, e antes disso a cotacao definitiva fica bloqueada.
 # --------------------------------------------------------------------------
-def criar_regras_tributarias(sessao: Session) -> list[RegraTributaria]:
+def construir_regras_tributarias() -> list[RegraTributaria]:
+    """Monta as regras sem persistir -- reutilizavel fora do banco."""
+
     def regra(**campos: Any) -> RegraTributaria:
         campos.setdefault("vigencia_inicio", VIGENCIA)
         campos.setdefault("status", StatusRegraFiscal.PROVISORIA)
@@ -831,11 +833,16 @@ def criar_regras_tributarias(sessao: Session) -> list[RegraTributaria]:
             fundamento_legal="Lei Complementar n. 214/2025 e orientacoes para 2026.",
         ),
     ]
+    return regras
+
+
+def criar_regras_tributarias(sessao: Session) -> list[RegraTributaria]:
+    regras = construir_regras_tributarias()
     sessao.add_all(regras)
     return regras
 
 
-def criar_faixas_simples(sessao: Session) -> list[FaixaSimplesNacional]:
+def construir_faixas_simples() -> list[FaixaSimplesNacional]:
     """Faixas dos Anexos I e II.
 
     A aliquota efetiva nunca e a nominal:
@@ -896,6 +903,11 @@ def criar_faixas_simples(sessao: Session) -> list[FaixaSimplesNacional]:
         )
         for anexo, ordem, inicio, fim, nominal, deduzir, reparticao in linhas
     ]
+    return faixas
+
+
+def criar_faixas_simples(sessao: Session) -> list[FaixaSimplesNacional]:
+    faixas = construir_faixas_simples()
     sessao.add_all(faixas)
     return faixas
 
