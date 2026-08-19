@@ -16,6 +16,31 @@ escada de cinco preços.
 | 5 | Frontend Next.js — Cadastros e Operações | **concluído** |
 | 6 | Cotação, simulação e painel gerencial | pendente |
 
+### Onde paramos e o que vem a seguir
+
+Os passos 1 a 5 estão concluídos e publicados. O **Passo 6** é o último e
+compreende duas telas, ambas consumindo endpoints que já existem na API:
+
+**Cotação e simulação** (`/cotacoes`) — consome `POST /cotacoes/simular`,
+`POST /cotacoes`, `POST /cotacoes/{id}/versoes` e
+`POST /simulacoes/preco-maximo-compra`:
+
+- escada de cinco preços em gráfico, com a finalidade de cada degrau (§8);
+- avaliação da proposta por alçada, mostrando valor da concessão e quem
+  precisa aprovar (§13.2);
+- cenários base, otimista, estressado e ponto de equilíbrio (§14);
+- preço máximo de compra dado um preço de venda de mercado (§14);
+- versionamento visível: alterar premissa gera nova versão sem apagar a
+  anterior (regra 9 da §11).
+
+**Painel gerencial** (`/painel`) — indicadores mínimos da §12.3: margem de
+contribuição por dimensão, resultado operacional e completo, rendimento e
+perdas, custo de ociosidade, ciclo financeiro, créditos tributários e a ponte
+de margem explicando preço, volume, mix, rendimento, frete e tributo.
+
+A especificação completa que originou o sistema está em
+[docs/especificacao.md](docs/especificacao.md).
+
 ## Stack
 
 - **Backend:** Python 3.11+, FastAPI, SQLAlchemy 2, Alembic, Pydantic 2
@@ -103,6 +128,8 @@ npm run dev                                      # http://localhost:3000
   exemplos de chamada.
 - [Frontend](docs/frontend.md) — estrutura das telas, decisões de interface e
   convenções de formatação.
+- [Especificação](docs/especificacao.md) — o documento de requisitos original
+  (v1.1), fonte de todas as regras implementadas.
 
 ## Aviso
 
