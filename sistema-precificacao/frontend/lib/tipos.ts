@@ -212,3 +212,74 @@ export interface CotacaoCalculada {
   alertas: string[];
   memoria: Memoria;
 }
+
+/* ------------------------------------------------------ Painel gerencial */
+
+export interface MargemMaterial {
+  material_codigo: string;
+  material_descricao: string;
+  quantidade_kg: Decimal;
+  custo_variavel_por_kg: Decimal;
+  preco_estimado_por_kg: Decimal;
+  margem_contribuicao_por_kg: Decimal;
+  margem_percentual: Decimal;
+}
+
+export interface Ociosidade {
+  atividade_codigo: string;
+  atividade_nome: string;
+  capacidade_pratica: Decimal;
+  utilizacao_real: Decimal;
+  percentual_ocupacao: Decimal;
+  custo_ociosidade: Decimal;
+  unidade_direcionador: string;
+}
+
+export interface IndicadorIndisponivel {
+  nome: string;
+  motivo: string;
+}
+
+export interface Painel {
+  periodo_inicio: string | null;
+  periodo_fim: string | null;
+  lotes_apurados: number;
+  lotes_com_erro: number;
+
+  quantidade_aceita_kg: Decimal;
+  quantidade_vendavel_kg: Decimal;
+  rejeito_kg: Decimal;
+  perda_normal_kg: Decimal;
+  perda_anormal_kg: Decimal;
+  rendimento_medio: Decimal;
+
+  custo_aquisicao_total: Decimal;
+  custo_transformacao_total: Decimal;
+  custo_capital_total: Decimal;
+  custo_total: Decimal;
+  custo_por_tonelada_vendavel: Decimal;
+  preco_medio_compra_kg: Decimal;
+
+  custo_ociosidade_total: Decimal;
+  ociosidade_por_atividade: Ociosidade[];
+
+  creditos_confirmados: Decimal;
+  creditos_condicionados: Decimal;
+
+  dias_ciclo_financeiro: Decimal;
+  capital_empregado: Decimal;
+
+  margem_por_material: MargemMaterial[];
+  indisponiveis: IndicadorIndisponivel[];
+  alertas: string[];
+}
+
+export interface PrecoMaximoCompra {
+  receita_liquida_total: Decimal;
+  demais_custos: Decimal;
+  lucro_alvo: Decimal;
+  preco_maximo_total: Decimal;
+  preco_maximo_unitario: Decimal;
+  deducoes_r: Decimal;
+  memoria: Memoria;
+}

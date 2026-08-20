@@ -489,3 +489,91 @@ def test_openapi_documenta_todos_os_modulos(cliente):
 
     assert {"cadastros", "operacoes", "motor tributario", "cotacoes e simulacoes"} <= tags
     assert len(esquema["paths"]) >= 25
+
+
+# --------------------------------------------------------------------------
+# Painel gerencial
+# --------------------------------------------------------------------------
+def test_painel_agrega_indicadores_do_periodo(cliente):
+    resposta = cliente.get("/painel/indicadores")
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+
+    assert corpo["lotes_apurados"] == 1
+    assert corpo["lotes_com_erro"] == 0
+    assert Decimal(corpo["rendimento_medio"]) == Decimal("0.9")
+    assert Decimal(corpo["quantidade_vendavel_kg"]) == Decimal("10440")
+    assert Decimal(corpo["custo_total"]) > Decimal("0")
+
+
+def test_painel_evidencia_ociosidade_por_atividade(cliente):
+    """Secao 7.3: a capacidade paga e nao usada aparece separada, no periodo."""
+
+    corpo = cliente.get("/painel/indicadores").json()
+    ociosidade = corpo["ociosidade_por_atividade"]
+
+    assert ociosidade, "as atividades apontadas no lote geram ociosidade"
+    assert Decimal(corpo["custo_ociosidade_total"]) > Decimal("0")
+    # A lista vem da menor ocupacao para a maior: e onde a gestao age primeiro.
+    ocupacoes = [Decimal(o["percentual_ocupacao"]) for o in ociosidade]
+    assert ocupacoes == sorted(ocupacoes)
+
+
+def test_painel_declara_o_que_nao_pode_calcular(cliente):
+    """Secao 15: dado ausente vira declaracao, nunca zero disfarcado."""
+
+    corpo = cliente.get("/painel/indicadores").json()
+    indisponiveis = {i["nome"] for i in corpo["indisponiveis"]}
+
+    assert "Ponte de margem cotada × realizada" in indisponiveis
+    assert all(i["motivo"] for i in corpo["indisponiveis"])
+
+
+def test_painel_separa_credito_condicionado_do_confirmado(cliente):
+    corpo = cliente.get("/painel/indicadores").json()
+
+    assert "creditos_confirmados" in corpo
+    assert "creditos_condicionados" in corpo
+
+
+def test_painel_de_periodo_vazio_nao_quebra(cliente):
+    """Filtro sem lotes devolve zeros com alerta, nao erro."""
+
+    resposta = cliente.get(
+        "/painel/indicadores", params={"de": "2030-01-01", "ate": "2030-12-31"}
+    )
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+
+    assert corpo["lotes_apurados"] == 0
+    assert any("Nenhum lote" in a for a in corpo["alertas"])
+
+
+def test_painel_ignora_lote_que_nao_apura_sem_derrubar_o_resto(cliente):
+    """Um lote sem balanca nao pode zerar o painel inteiro."""
+
+    from app.models import Material as ModeloMaterial
+
+    unidade_id = _id_de(cliente, Unidade, codigo="MATRIZ-LR")
+    fornecedor_id = _id_de(cliente, Parceiro, codigo="FOR-COOP-001")
+    material_id = _id_de(cliente, ModeloMaterial, codigo="MP-PAPELAO-MISTO")
+
+    cliente.post(
+        "/lotes",
+        json={
+            "codigo": "LC-QUEBRADO",
+            "unidade_id": unidade_id,
+            "fornecedor_id": fornecedor_id,
+            "material_id": material_id,
+            "data_entrada": "2026-03-12",
+            "preco_unitario_bruto": "0.40",
+            "quantidade_negociada": "5000",
+            "quantidade_negociada_kg": "5000",
+        },
+    )
+
+    corpo = cliente.get("/painel/indicadores").json()
+
+    assert corpo["lotes_apurados"] == 1, "o lote bom continua somando"
+    assert corpo["lotes_com_erro"] == 1
+    assert any("LC-QUEBRADO" in a for a in corpo["alertas"])

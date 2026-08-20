@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.erros import registrar_tratadores
-from app.api.routers import cadastros, cotacoes, operacoes, saude, tributario
+from app.api.routers import cadastros, cotacoes, operacoes, painel, saude, tributario
 
 DESCRICAO = """
 API do modelo de precificacao para operacoes de reciclagem.
@@ -34,6 +34,7 @@ def criar_app() -> FastAPI:
             {"name": "operacoes", "description": "Lotes, eventos e resultado economico."},
             {"name": "motor tributario", "description": "Matriz de regras, deducoes e Simples."},
             {"name": "cotacoes e simulacoes", "description": "Escada de precos e cenarios."},
+            {"name": "painel gerencial", "description": "Indicadores agregados do periodo."},
         ],
     )
 
@@ -53,6 +54,7 @@ def criar_app() -> FastAPI:
     app.include_router(operacoes.router)
     app.include_router(tributario.router)
     app.include_router(cotacoes.router)
+    app.include_router(painel.router)
     return app
 
 

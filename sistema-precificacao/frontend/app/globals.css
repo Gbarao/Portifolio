@@ -24,13 +24,35 @@
   --color-marca-800: oklch(0.35 0.07 165);
   --color-marca-900: oklch(0.28 0.05 165);
 
-  /* Camadas de preco, do mais arriscado ao mais confortavel (secao 8). */
-  --color-camada-caixa: oklch(0.58 0.20 25);
-  --color-camada-contribuicao: oklch(0.65 0.17 45);
-  --color-camada-operacional: oklch(0.72 0.15 85);
-  --color-camada-sustentavel: oklch(0.60 0.13 240);
-  --color-camada-alvo: oklch(0.58 0.14 160);
-  --color-camada-mercado: oklch(0.55 0.02 260);
+  /*
+   * Cores de dado -- separadas da cor de marca de proposito: verde e a
+   * identidade visual (navegacao, botoes), azul e o dado. Misturar as duas
+   * faz a interface competir com o grafico.
+   *
+   * As camadas de preco formam uma escala ORDENADA (caixa < contribuicao <
+   * operacional < sustentavel < alvo), entao recebem uma rampa ordinal de um
+   * unico tom, com a ordem legivel na propria cor. Cinco tons diferentes
+   * seriam um arco-iris: esconderiam a ordem que e justamente o significado.
+   *
+   * Rampa aprovada pelo validador (rampa ordinal, superficie #ffffff):
+   * L monotona, ΔL >= 0.06 entre passos, ponta clara a 2,11:1.
+   */
+  --color-camada-caixa: #86b6ef;
+  --color-camada-contribuicao: #5598e7;
+  --color-camada-operacional: #2a78d6;
+  --color-camada-sustentavel: #1c5cab;
+  --color-camada-alvo: #104281;
+  /* Mercado nao pertence a escada: e referencia externa, entao fica neutro. */
+  --color-camada-mercado: #898781;
+
+  /* Serie unica em barras nominais (materiais, atividades). */
+  --color-dado: #2a78d6;
+  /* Par divergente da cascata: azul (aumento) x vermelho (reducao).
+     Verde x vermelho reprovaria -- ΔE 4,1 sob deuteranopia. */
+  --color-dado-aumento: #2a78d6;
+  --color-dado-reducao: #d03b3b;
+  --color-dado-neutro: #898781;
+  --color-grade: #e1e0d9;
 }
 
 :root {
@@ -51,6 +73,18 @@
   --atencao-fundo: oklch(0.96 0.06 85);
   --critico: oklch(0.58 0.20 25);
   --critico-fundo: oklch(0.95 0.04 25);
+
+  --camada-caixa: #86b6ef;
+  --camada-contribuicao: #5598e7;
+  --camada-operacional: #2a78d6;
+  --camada-sustentavel: #1c5cab;
+  --camada-alvo: #104281;
+  --camada-mercado: #898781;
+  --dado: #2a78d6;
+  --dado-aumento: #2a78d6;
+  --dado-reducao: #d03b3b;
+  --dado-neutro: #898781;
+  --grade: #e1e0d9;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -68,6 +102,18 @@
     --info-fundo: oklch(0.28 0.05 240);
     --atencao-fundo: oklch(0.30 0.06 85);
     --critico-fundo: oklch(0.29 0.06 25);
+
+    --camada-caixa: #256abf;
+    --camada-contribuicao: #3987e5;
+    --camada-operacional: #6da7ec;
+    --camada-sustentavel: #9ec5f4;
+    --camada-alvo: #cde2fb;
+    --camada-mercado: #898781;
+    --dado: #3987e5;
+    --dado-aumento: #3987e5;
+    --dado-reducao: #e66767;
+    --dado-neutro: #898781;
+    --grade: #2c2c2a;
   }
 }
 
@@ -85,9 +131,32 @@
   --info-fundo: oklch(0.28 0.05 240);
   --atencao-fundo: oklch(0.30 0.06 85);
   --critico-fundo: oklch(0.29 0.06 25);
+
+  --camada-caixa: #256abf;
+  --camada-contribuicao: #3987e5;
+  --camada-operacional: #6da7ec;
+  --camada-sustentavel: #9ec5f4;
+  --camada-alvo: #cde2fb;
+  --camada-mercado: #898781;
+  --dado: #3987e5;
+  --dado-aumento: #3987e5;
+  --dado-reducao: #e66767;
+  --dado-neutro: #898781;
+  --grade: #2c2c2a;
 }
 
 @theme inline {
+  --color-camada-caixa: var(--camada-caixa);
+  --color-camada-contribuicao: var(--camada-contribuicao);
+  --color-camada-operacional: var(--camada-operacional);
+  --color-camada-sustentavel: var(--camada-sustentavel);
+  --color-camada-alvo: var(--camada-alvo);
+  --color-camada-mercado: var(--camada-mercado);
+  --color-dado: var(--dado);
+  --color-dado-aumento: var(--dado-aumento);
+  --color-dado-reducao: var(--dado-reducao);
+  --color-dado-neutro: var(--dado-neutro);
+  --color-grade: var(--grade);
   --color-fundo: var(--fundo);
   --color-fundo-elevado: var(--fundo-elevado);
   --color-fundo-sutil: var(--fundo-sutil);

@@ -52,13 +52,8 @@ const MODULOS: ItemNavegacao[] = [
       { titulo: "Simples Nacional", href: "/tributario/simples" },
     ],
   },
-  { titulo: "Cotações", href: "/cotacoes", Icone: Calculator, emBreve: true },
-  {
-    titulo: "Painel gerencial",
-    href: "/painel",
-    Icone: ChartNoAxesCombined,
-    emBreve: true,
-  },
+  { titulo: "Cotações", href: "/cotacoes", Icone: Calculator },
+  { titulo: "Painel gerencial", href: "/painel", Icone: ChartNoAxesCombined },
 ];
 
 export function Navegacao() {

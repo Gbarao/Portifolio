@@ -209,12 +209,10 @@ export function Indicador({
       <p className="text-xs font-medium tracking-wide text-texto-tenue uppercase">
         {rotulo}
       </p>
-      <p
-        className={cx(
-          "numerico font-semibold tracking-tight",
-          destaque ? "text-2xl" : "text-lg",
-        )}
-      >
+      {/* Algarismos proporcionais: tabulares dao a todo digito a largura do
+          zero, e um numero grande fica solto. Tabular fica para colunas de
+          tabela e marcas de eixo, onde o alinhamento vertical importa. */}
+      <p className={cx("font-semibold tracking-tight", destaque ? "text-2xl" : "text-lg")}>
         {valor}
       </p>
       {detalhe ? <p className="text-xs text-texto-suave">{detalhe}</p> : null}

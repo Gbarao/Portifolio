@@ -41,7 +41,7 @@ const MODULOS = [
       "Escada de cinco preços, avaliação de proposta por alçada, cenários e preço máximo de compra.",
     href: "/cotacoes",
     Icone: Calculator,
-    disponivel: false,
+    disponivel: true,
   },
   {
     titulo: "Painel gerencial",
@@ -49,7 +49,7 @@ const MODULOS = [
       "Margem por dimensão, ponte de margem, ociosidade, ciclo financeiro e créditos tributários.",
     href: "/painel",
     Icone: ChartNoAxesCombined,
-    disponivel: false,
+    disponivel: true,
   },
 ];
 
