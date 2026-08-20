@@ -112,6 +112,9 @@ npm run dev                                      # http://localhost:3000
   gráfico escolhidas e o que o validador de cor mudou no projeto.
 - [Especificação](docs/especificacao.md) — o documento de requisitos original
   (v1.1), fonte de todas as regras implementadas.
+- **[Manual de instalação e primeiros passos](docs/manual-instalacao-e-primeiros-passos.pdf)**
+  (PDF) — como colocar o sistema no ar, ajustar a matriz tributária e começar
+  a usar. Gerado por `docs/manual/gerar_manual.py`.
 
 ## Aviso
 
