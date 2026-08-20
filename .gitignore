@@ -12,7 +12,10 @@ __pycache__/
 # Node / Next.js
 node_modules/
 .next/
-out/
+
+# A interface compilada (sistema-precificacao/frontend/out) NAO e ignorada:
+# ela e artefato de distribuicao. E o que permite instalar o sistema sem
+# Node.js na maquina de quem vai usar.
 
 # Ambiente
 .env

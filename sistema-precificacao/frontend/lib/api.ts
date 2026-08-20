@@ -8,7 +8,10 @@
 
 import type { Pagina } from "./tipos";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Caminho relativo por padrao: quando o servidor Python serve as telas, a API
+// esta no mesmo endereco. Em desenvolvimento com `npm run dev`, o .env.local
+// aponta para o servidor em outra porta.
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 export class ErroApi extends Error {
   constructor(
@@ -46,7 +49,7 @@ async function requisitar<T>(caminho: string, opcoes: Opcoes = {}): Promise<T> {
     throw new ErroApi(
       0,
       "API_INDISPONIVEL",
-      `Nao foi possivel falar com a API em ${BASE}. Verifique se o backend esta no ar.`,
+      "Não foi possível falar com o servidor. Verifique se o programa está em execução.",
     );
   }
 

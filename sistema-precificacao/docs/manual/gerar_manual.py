@@ -273,122 +273,125 @@ def parte_instalacao() -> list:
             "emergência ao preço-alvo. Para cada número que produz, guarda a memória "
             "de cálculo: fórmula, entradas, fonte e vigência da regra usada."
         ),
-        p(
-            "O sistema tem duas partes que rodam juntas: o <b>servidor</b> (que faz "
-            "as contas e guarda os dados) e a <b>interface</b> (as telas que você usa "
-            "no navegador). As duas precisam estar no ar ao mesmo tempo."
-        ),
 
-        passo("1", "Instale os programas necessários"),
-        p("Antes de tudo, três programas precisam existir na máquina:"),
+        passo("1", "Instale o Python (uma vez só)"),
+        p(
+            "O sistema precisa de um único programa auxiliar: o <b>Python</b>, versão "
+            "3.11 ou mais nova. Se o computador já tiver, pule para o passo 2."
+        ),
         tabela(
-            ["Programa", "Versão mínima", "Para que serve", "Onde baixar"],
+            ["Sistema", "Como instalar"],
             [
-                ["Python", "3.11", "Roda o servidor e o motor de cálculo", "python.org/downloads"],
-                ["Node.js", "20", "Roda a interface no navegador", "nodejs.org"],
-                ["Git", "qualquer", "Baixa o projeto do repositório", "git-scm.com"],
+                ["<b>Windows</b>",
+                 "Baixe em <font face='Courier'>python.org/downloads</font> e execute o "
+                 "instalador. Na primeira tela, marque a caixa "
+                 "<b>“Add Python to PATH”</b> antes de clicar em Install — sem ela o "
+                 "sistema não encontra o Python depois."],
+                ["<b>macOS</b>",
+                 "Baixe em <font face='Courier'>python.org/downloads</font> e execute o "
+                 "instalador. Nada mais precisa ser marcado."],
+                ["<b>Linux</b>",
+                 "Normalmente já vem instalado. Se não, use o gerenciador da sua "
+                 "distribuição, por exemplo "
+                 "<font face='Courier'>sudo apt install python3 python3-venv</font>."],
             ],
-            [2.6 * cm, 2.2 * cm, 6.2 * cm, LARGURA_UTIL - 11 * cm],
-        ),
-        Spacer(1, 0.4 * cm),
-        p("Para conferir se já estão instalados, abra o terminal e rode:"),
-        codigo("python3 --version", "node --version", "git --version"),
-        p(
-            "Cada comando deve responder com um número de versão. Se algum disser "
-            '"comando não encontrado", instale aquele programa antes de continuar.',
-            "p_pequeno",
+            [2.6 * cm, LARGURA_UTIL - 2.6 * cm],
         ),
 
-        passo("2", "Baixe o projeto"),
+        passo("2", "Abra a pasta do sistema"),
         p(
-            "Escolha uma pasta onde o projeto vai morar e rode, no terminal:"
+            "Descompacte a pasta do sistema em um lugar de sua preferência — a Área "
+            "de Trabalho serve. Dentro dela você verá três arquivos com nome "
+            "começando em <b>INICIAR</b>, um para cada sistema operacional."
         ),
-        codigo(
-            "git clone https://github.com/Gbarao/Portifolio.git",
-            "cd Portifolio",
-            "git checkout claude/recycling-costing-pricing-system-hxvl8t",
-        ),
-        p(
-            "O sistema fica dentro da pasta <font face='Courier'>sistema-precificacao/</font>, "
-            "que tem duas subpastas: <font face='Courier'>backend/</font> (o servidor) e "
-            "<font face='Courier'>frontend/</font> (as telas)."
-        ),
-
-        passo("3", "Prepare e ligue o servidor"),
-        p(
-            "Abra um terminal, entre na pasta do servidor e crie um ambiente isolado "
-            "para as bibliotecas do Python:"
-        ),
-        codigo(
-            "cd sistema-precificacao/backend",
-            "python3 -m venv .venv",
-            "",
-            "# Linux ou macOS:",
-            ".venv/bin/pip install -e \".[dev]\"",
-            "",
-            "# Windows:",
-            ".venv\\Scripts\\pip install -e \".[dev]\"",
-        ),
-        p("Agora copie o arquivo de configuração e crie o banco de dados:"),
-        codigo(
-            "cp .env.example .env",
-            ".venv/bin/alembic upgrade head",
-        ),
-        p(
-            "O <font face='Courier'>.env</font> já vem apontando para um banco SQLite "
-            "em arquivo, que não exige instalar nada. É suficiente para conhecer o "
-            "sistema. Para uso real, veja a seção 10."
-        ),
-        p("Opcional, mas recomendado na primeira vez — carregue os dados de exemplo:"),
-        codigo(".venv/bin/python -m app.seeds.demo"),
-        p(
-            "Isso cria três empresas (uma em cada regime tributário), materiais, "
-            "parceiros, fichas de custo, 17 regras tributárias de exemplo e um lote "
-            "completo — o suficiente para navegar por todas as telas e entender o que "
-            "cada uma faz."
-        ),
-        p("Por fim, ligue o servidor:"),
-        codigo(".venv/bin/uvicorn app.api.main:app --reload"),
         aviso(
-            "Deixe esse terminal aberto",
-            "Enquanto o servidor estiver rodando, esse terminal fica ocupado mostrando "
-            "as requisições. Fechá-lo derruba o sistema. Para o próximo passo, abra um "
-            "<b>segundo</b> terminal.",
+            "Mantenha a pasta inteira junta",
+            "O arquivo INICIAR precisa das outras pastas ao lado dele. Não mova só "
+            "esse arquivo para outro lugar — mova a pasta inteira, se precisar.",
         ),
 
-        passo("4", "Prepare e ligue a interface"),
-        p("Em um terminal novo, a partir da pasta do projeto:"),
-        codigo(
-            "cd sistema-precificacao/frontend",
-            "npm install",
-            "cp .env.example .env.local",
-            "npm run dev",
-        ),
-        p(
-            "O <font face='Courier'>npm install</font> demora alguns minutos na "
-            "primeira vez — ele baixa as bibliotecas da interface."
-        ),
-
-        passo("5", "Confirme que está tudo no ar"),
-        p("Abra o navegador e confira estes três endereços:"),
+        passo("3", "Clique duas vezes no arquivo INICIAR"),
+        p("Escolha o arquivo correspondente ao seu computador:"),
         tabela(
-            ["Endereço", "O que você deve ver"],
+            ["Sistema", "Arquivo"],
             [
-                ["<font face='Courier'>localhost:3000</font>",
-                 "A tela inicial do sistema, com os cinco módulos"],
-                ["<font face='Courier'>localhost:8000/saude</font>",
-                 '<font face="Courier">{\'status\': \'ok\', \'banco\': true}</font>'],
-                ["<font face='Courier'>localhost:8000/docs</font>",
-                 "A documentação da API, com todos os endpoints testáveis pelo navegador"],
+                ["<b>Windows</b>", "<font face='Courier'>INICIAR-Windows.bat</font>"],
+                ["<b>macOS</b>", "<font face='Courier'>INICIAR-Mac.command</font>"],
+                ["<b>Linux</b>", "<font face='Courier'>INICIAR-Linux.sh</font>"],
             ],
-            [5.5 * cm, LARGURA_UTIL - 5.5 * cm],
+            [3.4 * cm, LARGURA_UTIL - 3.4 * cm],
         ),
         Spacer(1, 0.4 * cm),
         p(
-            "Se a tela inicial abrir mas os dados não carregarem, o servidor não está "
-            "no ar — o próprio sistema mostra um aviso na tela com o comando para "
-            "ligá-lo. Veja também a seção 9.",
+            "Uma janela preta de texto vai abrir. É normal — é ela que mostra o "
+            "andamento. Na <b>primeira vez</b>, o sistema instala o que precisa; isso "
+            "leva alguns minutos e acontece apenas uma vez. Você verá algo assim:"
+        ),
+        codigo(
+            "Verificando o computador",
+            "  OK  Python 3.12 encontrado",
+            "  OK  Telas encontradas",
+            "",
+            "Instalando (isso acontece so na primeira vez)",
+            "  OK  Ambiente pronto",
+            "  OK  Bibliotecas instaladas",
+            "  OK  Banco de dados pronto",
+        ),
+
+        passo("4", "Responda a única pergunta"),
+        p(
+            "O instalador pergunta se você quer começar com <b>dados de exemplo</b>: "
+            "materiais, parceiros, um lote completo e uma matriz tributária de "
+            "demonstração."
+        ),
+        lista([
+            "Se está conhecendo o sistema, responda <b>S</b> (ou apenas tecle Enter). "
+            "Com dados dentro, todas as telas ficam compreensíveis.",
+            "Se já vai usar para valer, responda <b>n</b> e comece com a base vazia.",
+        ]),
+        Spacer(1, 0.3 * cm),
+        p(
+            "Essa pergunta aparece uma vez só. Nas próximas vezes o sistema abre "
+            "direto.",
             "p_pequeno",
+        ),
+
+        passo("5", "Use o sistema"),
+        p(
+            "O navegador abre sozinho no endereço "
+            "<font face='Courier'><b>http://localhost:8000</b></font>. Se não abrir, "
+            "digite esse endereço no navegador."
+        ),
+        p(
+            "<b>Enquanto estiver usando o sistema, deixe a janela preta aberta.</b> "
+            "É ela que mantém o programa funcionando. Para desligar, feche essa "
+            "janela — e para usar de novo depois, clique duas vezes no mesmo arquivo "
+            "INICIAR."
+        ),
+        aviso(
+            "Não há segundo passo de instalação",
+            "A partir daqui, o arquivo INICIAR é a única coisa que você precisa "
+            "conhecer. Ele instala na primeira vez e apenas abre o sistema nas "
+            "seguintes — é o mesmo clique nos dois casos.",
+        ),
+        p("Perguntas comuns nesse ponto", "h2"),
+        tabela(
+            ["Pergunta", "Resposta"],
+            [
+                ["Preciso estar conectado à internet?",
+                 "Só na primeira vez, para baixar as bibliotecas. Depois o sistema "
+                 "funciona sem internet."],
+                ["Meus dados vão para algum servidor?",
+                 "Não. Tudo fica em um arquivo dentro da própria pasta do sistema, no "
+                 "seu computador."],
+                ["Outra pessoa na rede consegue acessar?",
+                 "Não. O sistema atende apenas o próprio computador."],
+                ["Como faço cópia de segurança?",
+                 "Copie o arquivo <font face='Courier'>precificacao.db</font>, dentro "
+                 "da pasta <font face='Courier'>backend</font>. Ele contém todos os "
+                 "seus dados."],
+            ],
+            [5.6 * cm, LARGURA_UTIL - 5.6 * cm],
         ),
     ]
 
@@ -645,61 +648,53 @@ def parte_referencia() -> list:
 
         p("Se algo der errado", "h1"),
         tabela(
-            ["Sintoma", "O que fazer"],
+            ["O que aconteceu", "O que fazer"],
             [
-                ["A tela abre, mas não carrega dados",
-                 "O servidor não está no ar. Volte ao terminal do backend e rode "
-                 "<font face='Courier'>.venv/bin/uvicorn app.api.main:app --reload</font>"],
-                ["<font face='Courier'>Address already in use</font> ao ligar",
-                 "Já existe algo na porta. Use outra: "
-                 "<font face='Courier'>--port 8001</font> no servidor ou "
-                 "<font face='Courier'>npm run dev -- -p 3001</font> na interface. "
-                 "Se mudar a porta do servidor, ajuste "
-                 "<font face='Courier'>NEXT_PUBLIC_API_URL</font> no "
-                 "<font face='Courier'>.env.local</font>"],
-                ["<font face='Courier'>no such table</font>",
-                 "As migrações não rodaram. Execute "
-                 "<font face='Courier'>.venv/bin/alembic upgrade head</font>"],
-                ["Uma alteração no código não aparece",
-                 "A interface pode estar servindo uma versão antiga. Pare o "
-                 "<font face='Courier'>npm run dev</font>, apague a pasta "
-                 "<font face='Courier'>.next</font> e ligue de novo"],
+                ["A janela abriu e fechou na hora",
+                 "O Python não está instalado, ou foi instalado no Windows sem marcar "
+                 "“Add Python to PATH”. Reinstale marcando essa caixa e tente de novo."],
+                ["O navegador não abriu sozinho",
+                 "Digite <font face='Courier'>localhost:8000</font> na barra de "
+                 "endereços do navegador."],
+                ["As telas abrem, mas dizem que não conseguem falar com o servidor",
+                 "A janela preta foi fechada. Clique duas vezes no arquivo INICIAR "
+                 "de novo."],
+                ["Apareceu uma mensagem de erro em vermelho",
+                 "As últimas linhas da janela explicam o que falhou. Guarde essas "
+                 "linhas: elas dizem exatamente onde o processo parou."],
                 ["Quero recomeçar do zero",
-                 "Apague o arquivo <font face='Courier'>.db</font> da pasta backend, "
-                 "rode <font face='Courier'>alembic upgrade head</font> e, se quiser, "
-                 "<font face='Courier'>python -m app.seeds.demo</font> outra vez"],
+                 "Feche o sistema, apague o arquivo "
+                 "<font face='Courier'>precificacao.db</font> da pasta "
+                 "<font face='Courier'>backend</font> e clique em INICIAR de novo. "
+                 "<b>Isso apaga todos os dados.</b>"],
             ],
-            [5.4 * cm, LARGURA_UTIL - 5.4 * cm],
+            [6 * cm, LARGURA_UTIL - 6 * cm],
         ),
 
-        p("Quando for para uso real", "h1"),
+        p("Para quem cuida da instalação", "h1"),
         p(
-            "O SQLite em arquivo é ótimo para conhecer o sistema, mas não para "
-            "produção. Para uso real, três mudanças:"
+            "Esta seção não é necessária para usar o sistema. Ela existe para quem "
+            "for prepará-lo para uso profissional."
         ),
         lista([
-            "<b>Troque para PostgreSQL.</b> Edite a linha "
-            "<font face='Courier'>DATABASE_URL</font> no arquivo "
-            "<font face='Courier'>.env</font> apontando para o seu banco, e rode "
-            "<font face='Courier'>alembic upgrade head</font> de novo. Nenhuma outra "
-            "alteração é necessária — as migrações rodam nos dois bancos.",
-            "<b>Não use os dados de demonstração.</b> Eles existem para aprender. "
-            "Comece com a base vazia e cadastre os seus parâmetros, materiais e "
-            "parceiros.",
-            "<b>Valide a matriz tributária com o seu contador.</b> As 17 regras de "
-            "exemplo trazem valores plausíveis, mas nenhuma foi conferida contra a "
-            "sua realidade fiscal: regime, UF, NCM, CFOP e perfil dos parceiros mudam "
-            "o resultado.",
+            "<b>Banco de dados.</b> O sistema usa um arquivo SQLite dentro da pasta "
+            "<font face='Courier'>backend</font>, o que dispensa instalar qualquer "
+            "servidor de banco. Para uso com várias pessoas, aponte a variável "
+            "<font face='Courier'>DATABASE_URL</font> para um PostgreSQL e rode "
+            "<font face='Courier'>alembic upgrade head</font>; nenhuma outra "
+            "alteração é necessária.",
+            "<b>Cópia de segurança.</b> Copiar o arquivo "
+            "<font face='Courier'>backend/precificacao.db</font> preserva todos os "
+            "dados. Restaurar é colocar o arquivo de volta no mesmo lugar.",
+            "<b>Documentação técnica da API.</b> Com o sistema aberto, o endereço "
+            "<font face='Courier'>localhost:8000/api/docs</font> lista todos os "
+            "endpoints e permite testá-los pelo navegador.",
+            "<b>Alterar as telas.</b> Exige Node.js e recompilar a interface com "
+            "<font face='Courier'>npm run build</font> dentro da pasta "
+            "<font face='Courier'>frontend</font>. Quem apenas usa o sistema nunca "
+            "precisa disso.",
         ]),
-        Spacer(1, 0.3 * cm),
-        aviso(
-            "Uma limitação que vale conhecer desde já",
-            "O painel gerencial ainda não mostra a ponte de margem entre o preço "
-            "cotado e o realizado. Ela depende de vendas faturadas e recebidas, e o "
-            "sistema ainda não registra o ciclo completo de pedido de venda. Em vez "
-            "de estimar, o painel declara essa ausência — você encontra a explicação "
-            "na própria tela.",
-        ),
+        Spacer(1, 0.4 * cm),
 
         p("Onde está o resto da documentação", "h1"),
         p(

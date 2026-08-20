@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import * as React from "react";
 
 import { MemoriaCalculo } from "@/components/dominio/memoria-calculo";
 import {
@@ -19,26 +23,27 @@ import {
   Td,
   Th,
 } from "@/components/ui/primitivos";
-import { api } from "@/lib/api";
+import { useApi } from "@/lib/dados";
 import { moeda, peso, percentual, precoUnitario } from "@/lib/formato";
 import type { ResultadoLote } from "@/lib/tipos";
 
-export const dynamic = "force-dynamic";
+/**
+ * O lote vem por parametro de consulta (?id=), nao por rota dinamica: a
+ * interface e exportada como arquivos estaticos, e nao ha como gerar de
+ * antemao uma pagina para cada lote que ainda sera criado.
+ */
+function ResultadoDoLote({ id }: { id: string }) {
+  const { dados: resultado, erro, carregando } = useApi<ResultadoLote>(
+    id ? `/lotes/${id}/resultado` : null,
+  );
 
-export default async function PaginaResultadoLote({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-
-  let resultado: ResultadoLote | null = null;
-  let erro: unknown = null;
-
-  try {
-    resultado = await api.get<ResultadoLote>(`/lotes/${id}/resultado`);
-  } catch (e) {
-    erro = e;
+  if (carregando) {
+    return (
+      <>
+        <CabecalhoPagina titulo="Resultado do lote" />
+        <p className="text-sm text-texto-suave">Carregando…</p>
+      </>
+    );
   }
 
   if (erro || !resultado) {
@@ -217,4 +222,40 @@ export default async function PaginaResultadoLote({
       </div>
     </>
   );
+}
+
+
+export default function PaginaResultadoLote() {
+  return (
+    <React.Suspense
+      fallback={
+        <>
+          <CabecalhoPagina titulo="Resultado do lote" />
+          <p className="text-sm text-texto-suave">Carregando…</p>
+        </>
+      }
+    >
+      <LotePorConsulta />
+    </React.Suspense>
+  );
+}
+
+function LotePorConsulta() {
+  const parametros = useSearchParams();
+  const id = parametros.get("id") ?? "";
+
+  if (!id) {
+    return (
+      <>
+        <CabecalhoPagina titulo="Resultado do lote" />
+        <p className="text-sm">
+          <Link href="/operacoes/lotes" className="text-marca-700 hover:underline">
+            Escolha um lote na lista
+          </Link>
+        </p>
+      </>
+    );
+  }
+
+  return <ResultadoDoLote id={id} />;
 }

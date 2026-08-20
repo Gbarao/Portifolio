@@ -81,13 +81,13 @@ def _id_de(cliente, modelo, **filtros):
 # Saude e cadastros
 # --------------------------------------------------------------------------
 def test_saude_responde_com_banco_acessivel(cliente):
-    resposta = cliente.get("/saude")
+    resposta = cliente.get("/api/saude")
     assert resposta.status_code == 200
     assert resposta.json() == {"status": "ok", "banco": True}
 
 
 def test_listagem_de_materiais_pagina_e_filtra(cliente):
-    resposta = cliente.get("/materiais", params={"familia": "PLASTICO", "limite": 2})
+    resposta = cliente.get("/api/materiais", params={"familia": "PLASTICO", "limite": 2})
     assert resposta.status_code == 200
     corpo = resposta.json()
 
@@ -98,7 +98,7 @@ def test_listagem_de_materiais_pagina_e_filtra(cliente):
 
 def test_criar_material_devolve_201_e_persiste(cliente):
     resposta = cliente.post(
-        "/materiais",
+        "/api/materiais",
         json={
             "codigo": "MP-VIDRO",
             "descricao": "Vidro incolor",
@@ -110,11 +110,11 @@ def test_criar_material_devolve_201_e_persiste(cliente):
     assert resposta.status_code == 201
     assert resposta.json()["codigo"] == "MP-VIDRO"
 
-    assert cliente.get("/materiais/" + resposta.json()["id"]).status_code == 200
+    assert cliente.get("/api/materiais/" + resposta.json()["id"]).status_code == 200
 
 
 def test_material_inexistente_retorna_404_com_corpo_explicativo(cliente):
-    resposta = cliente.get("/materiais/00000000-0000-0000-0000-000000000000")
+    resposta = cliente.get("/api/materiais/00000000-0000-0000-0000-000000000000")
     assert resposta.status_code == 404
     assert resposta.json()["erro"] == "RECURSO_NAO_ENCONTRADO"
 
@@ -123,14 +123,14 @@ def test_parametros_vigentes_dependem_da_data_consultada(cliente):
     unidade_id = _id_de(cliente, Unidade, codigo="MATRIZ-LR")
 
     vigente = cliente.get(
-        f"/unidades/{unidade_id}/parametros", params={"em": "2026-03-10"}
+        f"/api/unidades/{unidade_id}/parametros", params={"em": "2026-03-10"}
     )
     assert vigente.status_code == 200
     assert vigente.json()["regime_tributario"] == "LUCRO_REAL"
 
     # Antes do inicio da vigencia nao existe parametro aplicavel.
     anterior = cliente.get(
-        f"/unidades/{unidade_id}/parametros", params={"em": "2025-06-01"}
+        f"/api/unidades/{unidade_id}/parametros", params={"em": "2025-06-01"}
     )
     assert anterior.status_code == 404
 
@@ -142,7 +142,7 @@ def test_regra_criada_pela_api_nasce_provisoria(cliente):
     """Nao ha caminho pela API para criar regra ja validada."""
 
     resposta = cliente.post(
-        "/tributario/regras",
+        "/api/tributario/regras",
         json={
             "codigo": "TESTE-ICMS",
             "descricao": "ICMS de teste",
@@ -164,7 +164,7 @@ def test_validacao_de_regra_registra_autor_e_data(cliente):
     regra_id = _id_de(cliente, RegraTributaria, codigo="LR-VENDA-PIS")
 
     resposta = cliente.post(
-        f"/tributario/regras/{regra_id}/validar",
+        f"/api/tributario/regras/{regra_id}/validar",
         json={"validado_por": "Contador responsavel"},
     )
     assert resposta.status_code == 200
@@ -176,7 +176,7 @@ def test_validacao_de_regra_registra_autor_e_data(cliente):
 
 def test_deducoes_do_lucro_real_somam_pis_e_cofins(cliente):
     resposta = cliente.post(
-        "/tributario/deducoes",
+        "/api/tributario/deducoes",
         json={
             "contexto": {
                 "data_operacao": "2026-03-10",
@@ -199,7 +199,7 @@ def test_deducoes_do_lucro_real_somam_pis_e_cofins(cliente):
 
 def test_deducoes_do_presumido_incluem_presuncao_de_irpj_e_csll(cliente):
     resposta = cliente.post(
-        "/tributario/deducoes",
+        "/api/tributario/deducoes",
         json={
             "contexto": {
                 "data_operacao": "2026-03-10",
@@ -217,7 +217,7 @@ def test_deducoes_do_presumido_incluem_presuncao_de_irpj_e_csll(cliente):
 
 def test_endpoint_de_mudanca_de_faixa_do_simples_alerta_o_custo_real(cliente):
     resposta = cliente.post(
-        "/tributario/simples/mudanca-faixa",
+        "/api/tributario/simples/mudanca-faixa",
         json={
             "rbt12_atual": "700000",
             "receita_mes_sem_a_venda": "60000",
@@ -238,7 +238,7 @@ def test_rbt12_acima_do_teto_retorna_422_e_nao_500(cliente):
     """Erro de premissa e resposta de negocio, nao falha de servidor."""
 
     resposta = cliente.post(
-        "/tributario/simples/aliquota-efetiva",
+        "/api/tributario/simples/aliquota-efetiva",
         json={"rbt12": "9000000", "anexo": "ANEXO_II"},
     )
     assert resposta.status_code == 422
@@ -252,7 +252,7 @@ def test_rbt12_acima_do_teto_retorna_422_e_nao_500(cliente):
 def test_resultado_do_lote_traz_custos_e_memoria(cliente):
     lote_id = _id_de(cliente, LoteCompra, codigo="LC-2026-000001")
 
-    resposta = cliente.get(f"/lotes/{lote_id}/resultado")
+    resposta = cliente.get(f"/api/lotes/{lote_id}/resultado")
     assert resposta.status_code == 200
     corpo = resposta.json()
 
@@ -275,7 +275,7 @@ def test_encerramento_com_massa_aberta_retorna_409(cliente):
 
     # Uma perda extra abre o balanco alem da tolerancia de 2%.
     cliente.post(
-        f"/lotes/{lote_id}/perdas",
+        f"/api/lotes/{lote_id}/perdas",
         json={
             "tipo": "PERDA_ANORMAL",
             "quantidade_kg": "900",
@@ -284,13 +284,13 @@ def test_encerramento_com_massa_aberta_retorna_409(cliente):
         },
     )
 
-    bloqueado = cliente.post(f"/lotes/{lote_id}/encerrar")
+    bloqueado = cliente.post(f"/api/lotes/{lote_id}/encerrar")
     assert bloqueado.status_code == 409
     assert bloqueado.json()["erro"] == "MassaInconsistenteError"
 
     # Com justificativa e aprovador, a excecao e aceita e registrada.
     liberado = cliente.post(
-        f"/lotes/{lote_id}/encerrar",
+        f"/api/lotes/{lote_id}/encerrar",
         params={
             "justificativa": "Divergencia apurada e aceita pela controladoria",
             "aprovado_por": "Controladoria",
@@ -306,7 +306,7 @@ def test_lote_sem_evento_de_balanca_retorna_422(cliente):
     material_id = _id_de(cliente, Material, codigo="MP-PAPELAO-MISTO")
 
     criado = cliente.post(
-        "/lotes",
+        "/api/lotes",
         json={
             "codigo": "LC-SEM-BALANCA",
             "unidade_id": unidade_id,
@@ -320,7 +320,7 @@ def test_lote_sem_evento_de_balanca_retorna_422(cliente):
     )
     assert criado.status_code == 201
 
-    resposta = cliente.get(f"/lotes/{criado.json()['id']}/resultado")
+    resposta = cliente.get(f"/api/lotes/{criado.json()['id']}/resultado")
     assert resposta.status_code == 422
     assert resposta.json()["erro"] == "DadoObrigatorioAusenteError"
     assert "balança" in resposta.json()["mensagem"]
@@ -363,7 +363,7 @@ def corpo_simulacao(**ajustes):
 
 
 def test_simulacao_devolve_a_escada_completa_com_finalidades(cliente):
-    resposta = cliente.post("/cotacoes/simular", json=corpo_simulacao())
+    resposta = cliente.post("/api/cotacoes/simular", json=corpo_simulacao())
     assert resposta.status_code == 200
     corpo = resposta.json()
 
@@ -380,7 +380,7 @@ def test_simulacao_devolve_a_escada_completa_com_finalidades(cliente):
 
 def test_simulacao_avalia_proposta_e_indica_a_alcada(cliente):
     resposta = cliente.post(
-        "/cotacoes/simular", json=corpo_simulacao(preco_proposto="0.80")
+        "/api/cotacoes/simular", json=corpo_simulacao(preco_proposto="0.80")
     )
     avaliacao = resposta.json()["avaliacao_proposta"]
 
@@ -400,7 +400,7 @@ def test_cotacao_persistida_grava_versao_precos_e_memoria(cliente):
         criado_por="comercial@exemplo.local",
     )
 
-    criada = cliente.post("/cotacoes", json=corpo)
+    criada = cliente.post("/api/cotacoes", json=corpo)
     assert criada.status_code == 201
     cotacao = criada.json()
     assert cotacao["versao_atual"] == 1
@@ -429,13 +429,13 @@ def test_nova_versao_preserva_a_anterior(cliente):
         cliente_id=_id_de(cliente, Parceiro, codigo="CLI-IND-001"),
         material_id=_id_de(cliente, Material, codigo="PA-PAPELAO-FARDO"),
     )
-    criada = cliente.post("/cotacoes", json=corpo).json()
+    criada = cliente.post("/api/cotacoes", json=corpo).json()
     preco_v1 = next(
         p["preco_unitario"] for p in criada["calculo"]["precos"] if p["camada"] == "ALVO"
     )
 
     revisada = cliente.post(
-        f"/cotacoes/{criada['id']}/versoes", json={"margem_alvo": "0.20"}
+        f"/api/cotacoes/{criada['id']}/versoes", json={"margem_alvo": "0.20"}
     )
     assert revisada.status_code == 201
     corpo_revisado = revisada.json()
@@ -461,7 +461,7 @@ def test_nova_versao_preserva_a_anterior(cliente):
 
 def test_preco_maximo_de_compra_usa_o_r_do_motor_fiscal(cliente):
     resposta = cliente.post(
-        "/simulacoes/preco-maximo-compra",
+        "/api/simulacoes/preco-maximo-compra",
         json={
             "preco_venda_unitario": "0.95",
             "quantidade_vendavel": "9000",
@@ -484,7 +484,7 @@ def test_preco_maximo_de_compra_usa_o_r_do_motor_fiscal(cliente):
 
 
 def test_openapi_documenta_todos_os_modulos(cliente):
-    esquema = cliente.get("/openapi.json").json()
+    esquema = cliente.get("/api/openapi.json").json()
     tags = {t["name"] for t in esquema["tags"]}
 
     assert {"cadastros", "operacoes", "motor tributario", "cotacoes e simulacoes"} <= tags
@@ -495,7 +495,7 @@ def test_openapi_documenta_todos_os_modulos(cliente):
 # Painel gerencial
 # --------------------------------------------------------------------------
 def test_painel_agrega_indicadores_do_periodo(cliente):
-    resposta = cliente.get("/painel/indicadores")
+    resposta = cliente.get("/api/painel/indicadores")
     assert resposta.status_code == 200
     corpo = resposta.json()
 
@@ -509,7 +509,7 @@ def test_painel_agrega_indicadores_do_periodo(cliente):
 def test_painel_evidencia_ociosidade_por_atividade(cliente):
     """Secao 7.3: a capacidade paga e nao usada aparece separada, no periodo."""
 
-    corpo = cliente.get("/painel/indicadores").json()
+    corpo = cliente.get("/api/painel/indicadores").json()
     ociosidade = corpo["ociosidade_por_atividade"]
 
     assert ociosidade, "as atividades apontadas no lote geram ociosidade"
@@ -522,7 +522,7 @@ def test_painel_evidencia_ociosidade_por_atividade(cliente):
 def test_painel_declara_o_que_nao_pode_calcular(cliente):
     """Secao 15: dado ausente vira declaracao, nunca zero disfarcado."""
 
-    corpo = cliente.get("/painel/indicadores").json()
+    corpo = cliente.get("/api/painel/indicadores").json()
     indisponiveis = {i["nome"] for i in corpo["indisponiveis"]}
 
     assert "Ponte de margem cotada × realizada" in indisponiveis
@@ -530,7 +530,7 @@ def test_painel_declara_o_que_nao_pode_calcular(cliente):
 
 
 def test_painel_separa_credito_condicionado_do_confirmado(cliente):
-    corpo = cliente.get("/painel/indicadores").json()
+    corpo = cliente.get("/api/painel/indicadores").json()
 
     assert "creditos_confirmados" in corpo
     assert "creditos_condicionados" in corpo
@@ -540,7 +540,7 @@ def test_painel_de_periodo_vazio_nao_quebra(cliente):
     """Filtro sem lotes devolve zeros com alerta, nao erro."""
 
     resposta = cliente.get(
-        "/painel/indicadores", params={"de": "2030-01-01", "ate": "2030-12-31"}
+        "/api/painel/indicadores", params={"de": "2030-01-01", "ate": "2030-12-31"}
     )
     assert resposta.status_code == 200
     corpo = resposta.json()
@@ -559,7 +559,7 @@ def test_painel_ignora_lote_que_nao_apura_sem_derrubar_o_resto(cliente):
     material_id = _id_de(cliente, ModeloMaterial, codigo="MP-PAPELAO-MISTO")
 
     cliente.post(
-        "/lotes",
+        "/api/lotes",
         json={
             "codigo": "LC-QUEBRADO",
             "unidade_id": unidade_id,
@@ -572,7 +572,7 @@ def test_painel_ignora_lote_que_nao_apura_sem_derrubar_o_resto(cliente):
         },
     )
 
-    corpo = cliente.get("/painel/indicadores").json()
+    corpo = cliente.get("/api/painel/indicadores").json()
 
     assert corpo["lotes_apurados"] == 1, "o lote bom continua somando"
     assert corpo["lotes_com_erro"] == 1
@@ -596,14 +596,14 @@ def _criar_regra(cliente, codigo="TESTE-EDICAO", **ajustes):
         "compoe_deducao_venda": True,
     }
     corpo.update(ajustes)
-    return cliente.post("/tributario/regras", json=corpo).json()
+    return cliente.post("/api/tributario/regras", json=corpo).json()
 
 
 def test_regra_provisoria_pode_ser_editada(cliente):
     regra = _criar_regra(cliente, "TESTE-PATCH")
 
     resposta = cliente.patch(
-        f"/tributario/regras/{regra['id']}",
+        f"/api/tributario/regras/{regra['id']}",
         json={"aliquota": "0.12", "descricao": "Alíquota revisada"},
     )
     assert resposta.status_code == 200
@@ -619,12 +619,12 @@ def test_regra_validada_recusa_edicao_no_lugar(cliente):
 
     regra = _criar_regra(cliente, "TESTE-VALIDADA")
     cliente.post(
-        f"/tributario/regras/{regra['id']}/validar",
+        f"/api/tributario/regras/{regra['id']}/validar",
         json={"validado_por": "Contador"},
     )
 
     resposta = cliente.patch(
-        f"/tributario/regras/{regra['id']}", json={"aliquota": "0.07"}
+        f"/api/tributario/regras/{regra['id']}", json={"aliquota": "0.07"}
     )
     assert resposta.status_code == 409
     assert resposta.json()["erro"] == "RegraValidadaNaoEditavel"
@@ -634,12 +634,12 @@ def test_regra_validada_recusa_edicao_no_lugar(cliente):
 def test_nova_vigencia_encerra_a_anterior_e_nasce_provisoria(cliente):
     regra = _criar_regra(cliente, "TESTE-VIGENCIA")
     cliente.post(
-        f"/tributario/regras/{regra['id']}/validar",
+        f"/api/tributario/regras/{regra['id']}/validar",
         json={"validado_por": "Contador"},
     )
 
     resposta = cliente.post(
-        f"/tributario/regras/{regra['id']}/vigencias",
+        f"/api/tributario/regras/{regra['id']}/vigencias",
         json={
             "vigencia_inicio": "2026-07-01",
             "aliquota": "0.20",
@@ -656,7 +656,7 @@ def test_nova_vigencia_encerra_a_anterior_e_nasce_provisoria(cliente):
     assert sucessora["status"] == "PROVISORIA"
     assert sucessora["validado_por"] is None
 
-    anterior = cliente.get(f"/tributario/regras/{regra['id']}").json()
+    anterior = cliente.get(f"/api/tributario/regras/{regra['id']}").json()
     assert anterior["vigencia_fim"] == "2026-06-30", "as duas nunca coexistem"
     assert anterior["status"] == "VALIDADA", "o histórico permanece validado"
 
@@ -665,7 +665,7 @@ def test_nova_vigencia_antes_do_inicio_atual_e_recusada(cliente):
     regra = _criar_regra(cliente, "TESTE-VIGENCIA-INVALIDA")
 
     resposta = cliente.post(
-        f"/tributario/regras/{regra['id']}/vigencias",
+        f"/api/tributario/regras/{regra['id']}/vigencias",
         json={
             "vigencia_inicio": "2025-06-01",
             "aliquota": "0.20",
@@ -680,14 +680,14 @@ def test_encerrar_regra_preserva_o_historico(cliente):
     regra = _criar_regra(cliente, "TESTE-ENCERRAR")
 
     resposta = cliente.post(
-        f"/tributario/regras/{regra['id']}/encerrar",
+        f"/api/tributario/regras/{regra['id']}/encerrar",
         json={"vigencia_fim": "2026-05-31", "motivo": "Benefício revogado"},
     )
     assert resposta.status_code == 200
     assert resposta.json()["vigencia_fim"] == "2026-05-31"
 
     # Continua consultável: operações anteriores seguem reproduzíveis.
-    assert cliente.get(f"/tributario/regras/{regra['id']}").status_code == 200
+    assert cliente.get(f"/api/tributario/regras/{regra['id']}").status_code == 200
 
 
 def test_regra_encerrada_deixa_de_valer_na_data_seguinte(cliente):
@@ -697,12 +697,12 @@ def test_regra_encerrada_deixa_de_valer_na_data_seguinte(cliente):
         cliente, "TESTE-EFEITO", tributo="ISS", aliquota="0.05"
     )
     cliente.post(
-        f"/tributario/regras/{regra['id']}/validar", json={"validado_por": "Contador"}
+        f"/api/tributario/regras/{regra['id']}/validar", json={"validado_por": "Contador"}
     )
 
     def r_em(data: str) -> Decimal:
         corpo = cliente.post(
-            "/tributario/deducoes",
+            "/api/tributario/deducoes",
             json={
                 "contexto": {
                     "data_operacao": data,
@@ -716,7 +716,7 @@ def test_regra_encerrada_deixa_de_valer_na_data_seguinte(cliente):
     assert r_em("2026-03-10") == Decimal("0.05")
 
     cliente.post(
-        f"/tributario/regras/{regra['id']}/encerrar",
+        f"/api/tributario/regras/{regra['id']}/encerrar",
         json={"vigencia_fim": "2026-03-31", "motivo": "Revogada"},
     )
 

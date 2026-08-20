@@ -1,3 +1,7 @@
+"use client";
+
+import * as React from "react";
+
 import { CabecalhoPagina } from "@/components/layout/pagina";
 import { ErroDeCarregamento } from "@/components/ui/estado-api";
 import { Indicador } from "@/components/dominio/indicadores";
@@ -12,8 +16,6 @@ import { ErroApi, api } from "@/lib/api";
 import { percentual, rotulo, vigencia } from "@/lib/formato";
 import type { Parametro, Unidade } from "@/lib/tipos";
 
-export const dynamic = "force-dynamic";
-
 async function parametroDa(unidade: Unidade): Promise<Parametro | null> {
   try {
     return await api.get<Parametro>(`/unidades/${unidade.id}/parametros`);
@@ -25,18 +27,33 @@ async function parametroDa(unidade: Unidade): Promise<Parametro | null> {
   }
 }
 
-export default async function PaginaUnidades() {
-  let unidades: Unidade[] = [];
-  let parametros: (Parametro | null)[] = [];
-  let erro: unknown = null;
+export default function PaginaUnidades() {
+  const [unidades, setUnidades] = React.useState<Unidade[]>([]);
+  const [parametros, setParametros] = React.useState<(Parametro | null)[]>([]);
+  const [erro, setErro] = React.useState<unknown>(null);
+  const [carregando, setCarregando] = React.useState(true);
 
-  try {
-    const pagina = await api.lista<Unidade>("/unidades?limite=50");
-    unidades = pagina.itens;
-    parametros = await Promise.all(unidades.map(parametroDa));
-  } catch (e) {
-    erro = e;
-  }
+  React.useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const pagina = await api.lista<Unidade>("/unidades?limite=50");
+        const encontradas = pagina.itens;
+        const params = await Promise.all(encontradas.map(parametroDa));
+        if (!cancelado) {
+          setUnidades(encontradas);
+          setParametros(params);
+        }
+      } catch (e) {
+        if (!cancelado) setErro(e);
+      } finally {
+        if (!cancelado) setCarregando(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   if (erro) {
     return (
@@ -54,7 +71,7 @@ export default async function PaginaUnidades() {
         descricao="Parâmetros são versionados por vigência: alterar uma meta encerra a vigência atual e abre nova, para que cotações antigas continuem reproduzíveis."
       />
 
-      {unidades.length === 0 ? (
+      {unidades.length === 0 && !carregando ? (
         <Cartao>
           <Vazio titulo="Nenhuma unidade cadastrada" />
         </Cartao>

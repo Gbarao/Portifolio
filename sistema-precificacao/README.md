@@ -31,10 +31,14 @@ Os seis passos estão concluídos. A especificação que originou o sistema est�
 ## Arquitetura
 
 ```
+INICIAR-*           instalador e inicializador: um clique, os dois papéis
+instalador/         script único, só com biblioteca padrão do Python
+
 frontend/           Next.js 15, Tailwind 4, Radix UI
 ├── app/            rotas dos módulos
 ├── components/     primitivos de UI e componentes de domínio
-└── lib/            cliente da API, tipos e formatação pt-BR
+├── lib/            cliente da API, tipos e formatação pt-BR
+└── out/            interface compilada e versionada, servida pelo backend
 
 backend/app/
 ├── db/          base declarativa, tipos monetários e mixins de vigência
@@ -74,26 +78,51 @@ E o que o motor acrescenta:
 8. **A mudança de faixa do Simples é calculada.** O sistema mostra a alíquota
    marginal real da venda, não a da faixa atual.
 
-## Rodando localmente
+## Como usar
+
+O sistema é **um programa só**. O servidor Python entrega a API e as telas no
+mesmo endereço — não há dois processos para gerenciar nem Node.js no uso
+diário.
+
+### Para quem vai usar
+
+1. Instale o **Python 3.11+** (no Windows, marque *Add Python to PATH*).
+2. Clique duas vezes no arquivo do seu sistema:
+
+   | Sistema | Arquivo |
+   |---|---|
+   | Windows | `INICIAR-Windows.bat` |
+   | macOS | `INICIAR-Mac.command` |
+   | Linux | `INICIAR-Linux.sh` |
+
+Na primeira vez o instalador cria o ambiente, instala as bibliotecas, prepara o
+banco e pergunta se deve carregar dados de exemplo. Nas seguintes, ele apenas
+abre o sistema. O navegador abre sozinho em `http://localhost:8000`.
+
+O passo a passo completo, escrito para quem não programa, está no
+[manual em PDF](docs/manual-instalacao-e-primeiros-passos.pdf).
+
+### Para desenvolver
 
 ```bash
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-
-cp .env.example .env          # ajuste DATABASE_URL se for usar PostgreSQL
+cp .env.example .env
 .venv/bin/alembic upgrade head
-.venv/bin/python -m app.seeds.demo   # dados de demonstração
-.venv/bin/python -m pytest -q        # 75 testes
-.venv/bin/python -m app.aplicacao.demonstracao   # lote completo nos 3 regimes
-.venv/bin/uvicorn app.api.main:app --reload      # API em http://localhost:8000/docs
+.venv/bin/python -m app.seeds.demo
+.venv/bin/python -m pytest -q              # 87 testes
+.venv/bin/uvicorn app.api.main:app --reload
 ```
 
-E o frontend, em outro terminal:
+As telas compiladas ficam versionadas em `frontend/out/` — é isso que permite
+instalar sem Node.js. Para alterá-las:
 
 ```bash
 cd frontend
 npm install
-npm run dev                                      # http://localhost:3000
+cp .env.example .env.local     # aponta para localhost:8000/api
+npm run dev                    # desenvolvimento em http://localhost:3000
+npm run build                  # regenera frontend/out/, que vai versionado
 ```
 
 ## Documentação

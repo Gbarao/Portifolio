@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.erros import registrar_tratadores
 from app.api.routers import cadastros, cotacoes, operacoes, painel, saude, tributario
+
+# A interface compilada vive fora do pacote Python, na pasta do frontend.
+INTERFACE = Path(__file__).resolve().parents[3] / "frontend" / "out"
+
+# Todos os endpoints ficam sob /api. As telas ocupam a raiz, e nunca ha duvida
+# sobre qual das duas responde a um caminho.
+PREFIXO_API = "/api"
 
 DESCRICAO = """
 API do modelo de precificacao para operacoes de reciclagem.
@@ -28,6 +38,10 @@ def criar_app() -> FastAPI:
         title="Precificacao para reciclagem",
         version=__version__,
         description=DESCRICAO,
+        # Documentacao tambem sob /api: a raiz pertence inteira as telas.
+        docs_url=f"{PREFIXO_API}/docs",
+        redoc_url=f"{PREFIXO_API}/redoc",
+        openapi_url=f"{PREFIXO_API}/openapi.json",
         openapi_tags=[
             {"name": "saude", "description": "Disponibilidade da API e do banco."},
             {"name": "cadastros", "description": "Unidades, parametros, materiais e parceiros."},
@@ -49,13 +63,37 @@ def criar_app() -> FastAPI:
 
     registrar_tratadores(app)
 
-    app.include_router(saude.router)
-    app.include_router(cadastros.router)
-    app.include_router(operacoes.router)
-    app.include_router(tributario.router)
-    app.include_router(cotacoes.router)
-    app.include_router(painel.router)
+    for roteador in (
+        saude.router,
+        cadastros.router,
+        operacoes.router,
+        tributario.router,
+        cotacoes.router,
+        painel.router,
+    ):
+        app.include_router(roteador, prefix=PREFIXO_API)
+
+    _servir_interface(app)
     return app
+
+
+def _servir_interface(app: FastAPI) -> None:
+    """Serve as telas compiladas na raiz, se existirem.
+
+    E o que torna o sistema um programa so: um unico processo entrega a API e
+    a interface, no mesmo endereco. Sem a pasta compilada o servidor continua
+    funcionando como API pura -- util em desenvolvimento, quando as telas
+    rodam pelo `npm run dev`.
+    """
+
+    if not INTERFACE.is_dir():
+        return
+
+    app.mount(
+        "/",
+        StaticFiles(directory=INTERFACE, html=True),
+        name="interface",
+    )
 
 
 app = criar_app()

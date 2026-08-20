@@ -1,3 +1,5 @@
+"use client";
+
 import { CabecalhoPagina } from "@/components/layout/pagina";
 import { StatusDadoBadge } from "@/components/dominio/indicadores";
 import { ErroDeCarregamento } from "@/components/ui/estado-api";
@@ -10,22 +12,13 @@ import {
   Th,
   Vazio,
 } from "@/components/ui/primitivos";
-import { api } from "@/lib/api";
+import { useLista } from "@/lib/dados";
 import { percentual } from "@/lib/formato";
 import type { Material } from "@/lib/tipos";
 
-export const dynamic = "force-dynamic";
-
-export default async function PaginaMateriais() {
-  let materiais: Material[] = [];
-  let erro: unknown = null;
-
-  try {
-    const pagina = await api.lista<Material>("/materiais?limite=100");
-    materiais = pagina.itens;
-  } catch (e) {
-    erro = e;
-  }
+export default function PaginaMateriais() {
+  const { dados, erro, carregando } = useLista<Material>("/materiais?limite=100");
+  const materiais = dados ?? [];
 
   if (erro) {
     return (
@@ -43,8 +36,8 @@ export default async function PaginaMateriais() {
         descricao="Rendimento-padrão, perdas normais e faixas de qualidade alimentam o custo-padrão e o balanço de massa do lote."
       />
 
-      <Cartao>
-        {materiais.length === 0 ? (
+      <Cartao className={carregando ? "opacity-60" : undefined}>
+        {materiais.length === 0 && !carregando ? (
           <Vazio
             titulo="Nenhum material cadastrado"
             descricao="Cadastre os materiais de entrada e os produtos de saída para começar a apurar lotes."

@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 
 import { CabecalhoPagina } from "@/components/layout/pagina";
@@ -12,11 +14,9 @@ import {
   Th,
   Vazio,
 } from "@/components/ui/primitivos";
-import { api } from "@/lib/api";
+import { useLista } from "@/lib/dados";
 import { data, peso, precoUnitario, rotulo } from "@/lib/formato";
 import type { Lote } from "@/lib/tipos";
-
-export const dynamic = "force-dynamic";
 
 const TOM_STATUS: Record<string, "ok" | "info" | "atencao" | "critico" | "neutro"> = {
   ABERTO: "info",
@@ -26,16 +26,9 @@ const TOM_STATUS: Record<string, "ok" | "info" | "atencao" | "critico" | "neutro
   BLOQUEADO: "critico",
 };
 
-export default async function PaginaLotes() {
-  let lotes: Lote[] = [];
-  let erro: unknown = null;
-
-  try {
-    const pagina = await api.lista<Lote>("/lotes?limite=100");
-    lotes = pagina.itens;
-  } catch (e) {
-    erro = e;
-  }
+export default function PaginaLotes() {
+  const { dados, erro, carregando } = useLista<Lote>("/lotes?limite=100");
+  const lotes = dados ?? [];
 
   if (erro) {
     return (
@@ -53,8 +46,8 @@ export default async function PaginaLotes() {
         descricao="O lote é a unidade básica de rastreamento. Cada um carrega origem, pesagem, qualidade, processamento, saídas e perdas."
       />
 
-      <Cartao>
-        {lotes.length === 0 ? (
+      <Cartao className={carregando ? "opacity-60" : undefined}>
+        {lotes.length === 0 && !carregando ? (
           <Vazio
             titulo="Nenhum lote registrado"
             descricao="Registre a entrada de material para acompanhar o balanço de massa e o resultado econômico."
@@ -89,7 +82,7 @@ export default async function PaginaLotes() {
                   </Td>
                   <Td className="text-right">
                     <Link
-                      href={`/operacoes/lotes/${lote.id}`}
+                      href={`/operacoes/lote?id=${lote.id}`}
                       className="text-sm font-medium text-marca-700 hover:underline"
                     >
                       Resultado

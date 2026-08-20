@@ -1,3 +1,5 @@
+"use client";
+
 import { CabecalhoPagina } from "@/components/layout/pagina";
 import { ErroDeCarregamento } from "@/components/ui/estado-api";
 import {
@@ -9,11 +11,9 @@ import {
   Th,
   Vazio,
 } from "@/components/ui/primitivos";
-import { api } from "@/lib/api";
+import { useLista } from "@/lib/dados";
 import { percentual, rotulo } from "@/lib/formato";
 import type { Parceiro } from "@/lib/tipos";
-
-export const dynamic = "force-dynamic";
 
 const TOM_REGIME: Record<string, "ok" | "info" | "atencao" | "neutro"> = {
   LUCRO_REAL: "ok",
@@ -21,16 +21,9 @@ const TOM_REGIME: Record<string, "ok" | "info" | "atencao" | "neutro"> = {
   SIMPLES_NACIONAL: "atencao",
 };
 
-export default async function PaginaParceiros() {
-  let parceiros: Parceiro[] = [];
-  let erro: unknown = null;
-
-  try {
-    const pagina = await api.lista<Parceiro>("/parceiros?limite=100");
-    parceiros = pagina.itens;
-  } catch (e) {
-    erro = e;
-  }
+export default function PaginaParceiros() {
+  const { dados, erro, carregando } = useLista<Parceiro>("/parceiros?limite=100");
+  const parceiros = dados ?? [];
 
   if (erro) {
     return (
@@ -48,8 +41,8 @@ export default async function PaginaParceiros() {
         descricao="Fornecedores, clientes e transportadores. O regime tributário e a condição de contribuinte são chave da regra fiscal, não dado cadastral."
       />
 
-      <Cartao>
-        {parceiros.length === 0 ? (
+      <Cartao className={carregando ? "opacity-60" : undefined}>
+        {parceiros.length === 0 && !carregando ? (
           <Vazio titulo="Nenhum parceiro cadastrado" />
         ) : (
           <Tabela>
