@@ -1,0 +1,70 @@
+====================================================================
+  SISTEMA DE CUSTEIO E PRECIFICACAO PARA RECICLAGEM
+  Como comecar
+====================================================================
+
+PASSO 1 - Instale o Python (uma vez so)
+
+  Se o computador ja tem Python 3.11 ou mais novo, pule para o passo 2.
+
+  Windows e Mac:
+    Baixe em  https://www.python.org/downloads/
+    No Windows, MARQUE a caixa "Add Python to PATH" na primeira tela
+    do instalador. Sem ela o sistema nao encontra o Python depois.
+
+  Linux:
+    Normalmente ja vem instalado. Se nao:
+    sudo apt install python3 python3-venv
+
+
+PASSO 2 - Clique duas vezes no arquivo do seu computador
+
+    Windows ....... INICIAR-Windows.bat
+    Mac ........... INICIAR-Mac.command
+    Linux ......... INICIAR-Linux.sh
+
+  Uma janela preta vai abrir mostrando o andamento. E normal.
+
+  Na PRIMEIRA vez o sistema se instala sozinho (alguns minutos) e
+  pergunta se voce quer comecar com dados de exemplo. Responda "s"
+  para conhecer o sistema com dados dentro.
+
+  Nas vezes seguintes, o mesmo arquivo apenas abre o sistema.
+
+
+PASSO 3 - Use
+
+  O navegador abre sozinho em  http://localhost:8000
+
+  DEIXE A JANELA PRETA ABERTA enquanto estiver usando.
+  Para desligar, feche essa janela.
+
+
+--------------------------------------------------------------------
+IMPORTANTE ANTES DE USAR PARA VALER
+
+  O sistema vem com uma matriz tributaria de EXEMPLO. Todas as regras
+  estao marcadas como PROVISORIAS, e enquanto o seu contador nao
+  validar cada uma, o sistema se recusa a chamar qualquer cotacao de
+  definitiva. Isso e proposital.
+
+  A tela "Motor tributario > Matriz de regras" e onde voce ajusta
+  essas regras e as valida.
+
+--------------------------------------------------------------------
+MANUAL COMPLETO
+
+  docs/manual-instalacao-e-primeiros-passos.pdf
+
+  9 paginas explicando a instalacao, como ajustar a tributacao e o
+  passo a passo de uso, escrito para quem nao programa.
+
+--------------------------------------------------------------------
+ONDE FICAM OS SEUS DADOS
+
+  backend/precificacao.db
+
+  Esse arquivo guarda tudo. Para fazer copia de seguranca, copie ele.
+  Nada e enviado para a internet: o sistema roda so no seu computador.
+
+====================================================================

@@ -31,8 +31,9 @@ Os seis passos estão concluídos. A especificação que originou o sistema est�
 ## Arquitetura
 
 ```
+LEIA-ME.txt         instruções em texto puro, dentro do pacote
 INICIAR-*           instalador e inicializador: um clique, os dois papéis
-instalador/         script único, só com biblioteca padrão do Python
+instalador/         instalar.py (só biblioteca padrão) e montar-pacote.sh
 
 frontend/           Next.js 15, Tailwind 4, Radix UI
 ├── app/            rotas dos módulos
@@ -85,6 +86,9 @@ mesmo endereço — não há dois processos para gerenciar nem Node.js no uso
 diário.
 
 ### Para quem vai usar
+
+Peça o arquivo `sistema-precificacao-reciclagem.zip` (ou gere-o com
+`./instalador/montar-pacote.sh`), descompacte em qualquer pasta e:
 
 1. Instale o **Python 3.11+** (no Windows, marque *Add Python to PATH*).
 2. Clique duas vezes no arquivo do seu sistema:
