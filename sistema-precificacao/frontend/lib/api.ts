@@ -70,6 +70,9 @@ export const api = {
   post: <T>(caminho: string, corpo: unknown, opcoes?: Opcoes) =>
     requisitar<T>(caminho, { ...opcoes, method: "POST", body: JSON.stringify(corpo) }),
 
+  patch: <T>(caminho: string, corpo: unknown, opcoes?: Opcoes) =>
+    requisitar<T>(caminho, { ...opcoes, method: "PATCH", body: JSON.stringify(corpo) }),
+
   /** Atalho para endpoints paginados. */
   lista: <T>(caminho: string, opcoes?: Opcoes) => requisitar<Pagina<T>>(caminho, opcoes),
 };

@@ -577,3 +577,148 @@ def test_painel_ignora_lote_que_nao_apura_sem_derrubar_o_resto(cliente):
     assert corpo["lotes_apurados"] == 1, "o lote bom continua somando"
     assert corpo["lotes_com_erro"] == 1
     assert any("LC-QUEBRADO" in a for a in corpo["alertas"])
+
+
+# --------------------------------------------------------------------------
+# Edicao da matriz tributaria
+# --------------------------------------------------------------------------
+def _criar_regra(cliente, codigo="TESTE-EDICAO", **ajustes):
+    corpo = {
+        "codigo": codigo,
+        "descricao": "Regra de teste",
+        "tipo_operacao": "VENDA",
+        "tributo": "ICMS",
+        "regime_tributario": "LUCRO_REAL",
+        "vigencia_inicio": "2026-01-01",
+        "fundamento_legal": "Norma de teste",
+        "tratamento": "DEBITO",
+        "aliquota": "0.18",
+        "compoe_deducao_venda": True,
+    }
+    corpo.update(ajustes)
+    return cliente.post("/tributario/regras", json=corpo).json()
+
+
+def test_regra_provisoria_pode_ser_editada(cliente):
+    regra = _criar_regra(cliente, "TESTE-PATCH")
+
+    resposta = cliente.patch(
+        f"/tributario/regras/{regra['id']}",
+        json={"aliquota": "0.12", "descricao": "Alíquota revisada"},
+    )
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+
+    assert Decimal(corpo["aliquota"]) == Decimal("0.12")
+    assert corpo["descricao"] == "Alíquota revisada"
+    assert corpo["status"] == "PROVISORIA", "editar não valida sozinho"
+
+
+def test_regra_validada_recusa_edicao_no_lugar(cliente):
+    """Regra 9 da seção 11: o que já sustentou preço não é reescrito."""
+
+    regra = _criar_regra(cliente, "TESTE-VALIDADA")
+    cliente.post(
+        f"/tributario/regras/{regra['id']}/validar",
+        json={"validado_por": "Contador"},
+    )
+
+    resposta = cliente.patch(
+        f"/tributario/regras/{regra['id']}", json={"aliquota": "0.07"}
+    )
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"] == "RegraValidadaNaoEditavel"
+    assert "nova vigência" in resposta.json()["mensagem"]
+
+
+def test_nova_vigencia_encerra_a_anterior_e_nasce_provisoria(cliente):
+    regra = _criar_regra(cliente, "TESTE-VIGENCIA")
+    cliente.post(
+        f"/tributario/regras/{regra['id']}/validar",
+        json={"validado_por": "Contador"},
+    )
+
+    resposta = cliente.post(
+        f"/tributario/regras/{regra['id']}/vigencias",
+        json={
+            "vigencia_inicio": "2026-07-01",
+            "aliquota": "0.20",
+            "motivo": "Alteração de alíquota estadual",
+        },
+    )
+    assert resposta.status_code == 201
+    sucessora = resposta.json()
+
+    assert Decimal(sucessora["aliquota"]) == Decimal("0.20")
+    assert sucessora["versao"] == 2
+    assert sucessora["vigencia_inicio"] == "2026-07-01"
+    # Mudou o número: a validação anterior não vale para o número novo.
+    assert sucessora["status"] == "PROVISORIA"
+    assert sucessora["validado_por"] is None
+
+    anterior = cliente.get(f"/tributario/regras/{regra['id']}").json()
+    assert anterior["vigencia_fim"] == "2026-06-30", "as duas nunca coexistem"
+    assert anterior["status"] == "VALIDADA", "o histórico permanece validado"
+
+
+def test_nova_vigencia_antes_do_inicio_atual_e_recusada(cliente):
+    regra = _criar_regra(cliente, "TESTE-VIGENCIA-INVALIDA")
+
+    resposta = cliente.post(
+        f"/tributario/regras/{regra['id']}/vigencias",
+        json={
+            "vigencia_inicio": "2025-06-01",
+            "aliquota": "0.20",
+            "motivo": "Data inconsistente",
+        },
+    )
+    assert resposta.status_code == 409
+    assert "vigência" in resposta.json()["mensagem"]
+
+
+def test_encerrar_regra_preserva_o_historico(cliente):
+    regra = _criar_regra(cliente, "TESTE-ENCERRAR")
+
+    resposta = cliente.post(
+        f"/tributario/regras/{regra['id']}/encerrar",
+        json={"vigencia_fim": "2026-05-31", "motivo": "Benefício revogado"},
+    )
+    assert resposta.status_code == 200
+    assert resposta.json()["vigencia_fim"] == "2026-05-31"
+
+    # Continua consultável: operações anteriores seguem reproduzíveis.
+    assert cliente.get(f"/tributario/regras/{regra['id']}").status_code == 200
+
+
+def test_regra_encerrada_deixa_de_valer_na_data_seguinte(cliente):
+    """O encerramento tem efeito no motor, não apenas no cadastro."""
+
+    regra = _criar_regra(
+        cliente, "TESTE-EFEITO", tributo="ISS", aliquota="0.05"
+    )
+    cliente.post(
+        f"/tributario/regras/{regra['id']}/validar", json={"validado_por": "Contador"}
+    )
+
+    def r_em(data: str) -> Decimal:
+        corpo = cliente.post(
+            "/tributario/deducoes",
+            json={
+                "contexto": {
+                    "data_operacao": data,
+                    "tipo_operacao": "VENDA",
+                    "regime_tributario": "LUCRO_REAL",
+                }
+            },
+        ).json()
+        return Decimal(corpo["detalhamento"].get("ISS", "0"))
+
+    assert r_em("2026-03-10") == Decimal("0.05")
+
+    cliente.post(
+        f"/tributario/regras/{regra['id']}/encerrar",
+        json={"vigencia_fim": "2026-03-31", "motivo": "Revogada"},
+    )
+
+    assert r_em("2026-03-10") == Decimal("0.05"), "antes do fim continua valendo"
+    assert r_em("2026-04-10") == Decimal("0"), "depois do fim não entra mais em r"

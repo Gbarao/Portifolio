@@ -68,7 +68,11 @@ Corpo padrão de erro:
 | Método | Rota | Observação |
 |---|---|---|
 | GET | `/tributario/regras` | Filtros por regime, tributo, operação e vigência |
+| GET | `/tributario/regras/{id}` | Uma regra |
 | POST | `/tributario/regras` | **Sempre nasce `PROVISORIA`** — não há caminho para criar validada |
+| PATCH | `/tributario/regras/{id}` | Edita regra provisória; **409 se já validada** |
+| POST | `/tributario/regras/{id}/vigencias` | Encerra a atual e cria sucessora provisória |
+| POST | `/tributario/regras/{id}/encerrar` | Define fim da vigência, sem sucessora |
 | POST | `/tributario/regras/{id}/validar` | Registra quem validou e quando |
 | POST | `/tributario/deducoes` | Calcula `r` com detalhamento por tributo |
 | POST | `/tributario/simples/aliquota-efetiva` | Com opção de segregar o ICMS |
@@ -82,6 +86,27 @@ Corpo padrão de erro:
 | GET | `/cotacoes/{id}` | Recalcula a partir das **premissas congeladas** |
 | POST | `/cotacoes/{id}/versoes` | Nova versão; a anterior permanece intacta |
 | POST | `/simulacoes/preco-maximo-compra` | `r` vem do motor fiscal se o contexto for informado |
+
+### Painel gerencial
+| Método | Rota | Observação |
+|---|---|---|
+| GET | `/painel/indicadores` | Agrega os indicadores da §12.3; lote que não apura entra em `lotes_com_erro`, e o que a base não sustenta vai para `indisponiveis` com o motivo |
+
+## Ciclo de vida de uma regra tributária
+
+```
+   criar  ──▶  PROVISORIA  ──── validar ────▶  VALIDADA
+                  │  ▲                            │
+              editar  │                    nova vigência
+              (PATCH) │                            │
+                      └──── sucessora ◀────────────┘
+                            (PROVISORIA, versão + 1)
+```
+
+Regra validada **não é editada no lugar**: ela pode ter sustentado um preço
+praticado. Alterá-la significa encerrar sua vigência no dia anterior e abrir
+uma sucessora — que nasce provisória, porque a validação anterior se referia
+aos números anteriores.
 
 ## Exemplo: simulação de cotação
 

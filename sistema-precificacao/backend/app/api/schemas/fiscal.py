@@ -64,6 +64,71 @@ class ValidacaoRegraIn(Base):
     observacao: str | None = None
 
 
+class RegraTributariaAtualizacao(Base):
+    """Edicao de regra ainda PROVISORIA.
+
+    Todos os campos sao opcionais: envia-se apenas o que muda. Regra ja
+    VALIDADA nao aceita edicao -- ela ja pode ter sustentado cotacao, e
+    reescreve-la apagaria a base de um preco que alguem praticou. O caminho
+    correto e abrir nova vigencia.
+    """
+
+    descricao: str | None = None
+    fundamento_legal: str | None = None
+    vigencia_inicio: date | None = None
+    vigencia_fim: date | None = None
+
+    regime_tributario: str | None = None
+    tipo_operacao: str | None = None
+    tributo: str | None = None
+    ncm: str | None = None
+    cfop: str | None = None
+    cst_csosn: str | None = None
+    uf_origem: str | None = None
+    uf_destino: str | None = None
+    familia_material: str | None = None
+    natureza_parceiro: str | None = None
+    regime_parceiro: str | None = None
+    parceiro_contribuinte: bool | None = None
+
+    forma_calculo_base: str | None = None
+    aliquota: Decimal | None = None
+    percentual_reducao_base: Decimal | None = None
+    percentual_presuncao_base: Decimal | None = None
+    valor_fixo: Decimal | None = None
+    tratamento: str | None = None
+    recuperabilidade: str | None = None
+    percentual_recuperavel: Decimal | None = None
+    prazo_realizacao_credito_dias: int | None = None
+
+    compoe_deducao_venda: bool | None = None
+    gera_credito_compra: bool | None = None
+    compoe_custo_nao_recuperavel: bool | None = None
+    incide_sobre_lucro: bool | None = None
+    requer_confirmacao_condicao: bool | None = None
+    condicao_descricao: str | None = None
+    observacao: str | None = None
+
+
+class NovaVigenciaIn(RegraTributariaAtualizacao):
+    """Sucessora de uma regra vigente.
+
+    A anterior tem a vigencia encerrada no dia anterior ao inicio desta, e a
+    nova nasce PROVISORIA: mudar numero de regra invalida a validacao que o
+    responsavel fiscal deu para o numero antigo.
+    """
+
+    vigencia_inicio: date
+    motivo: str
+
+
+class EncerramentoRegraIn(Base):
+    """Encerra a vigencia sem criar sucessora."""
+
+    vigencia_fim: date
+    motivo: str
+
+
 class ResultadoTributoOut(Base):
     """Saida obrigatoria do motor fiscal (secao 9.6)."""
 

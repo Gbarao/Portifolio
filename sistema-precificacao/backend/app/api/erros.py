@@ -33,6 +33,9 @@ from app.dominio.excecoes import (
 # pode atende-lo enquanto a condicao existir (regra vencida, massa aberta).
 # 422 = a premissa enviada e invalida em si (denominador zero, r >= 100%).
 MAPA_HTTP: dict[type[ErroDominio], int] = {
+    # O erro base cai em 409: quase todo bloqueio nao mapeado e conflito com o
+    # estado atual, nao premissa invalida.
+    ErroDominio: status.HTTP_409_CONFLICT,
     MassaInconsistenteError: status.HTTP_409_CONFLICT,
     RegraFiscalIndisponivelError: status.HTTP_409_CONFLICT,
     DuplaContagemError: status.HTTP_409_CONFLICT,
@@ -51,6 +54,20 @@ class RecursoNaoEncontrado(Exception):
         super().__init__(f"{entidade} {identificador} não encontrado.")
 
 
+def _codigo_de(tipo: type[ErroDominio]) -> int:
+    """Resolve o status percorrendo a hierarquia da excecao.
+
+    Uma excecao especifica -- criada por um router para um bloqueio proprio --
+    herda o status da sua base em vez de cair no padrao. Consultar so o tipo
+    exato faria toda subclasse nova voltar para 422 sem ninguem perceber.
+    """
+
+    for classe in tipo.__mro__:
+        if classe in MAPA_HTTP:
+            return MAPA_HTTP[classe]
+    return HTTP_422
+
+
 def registrar_tratadores(app: FastAPI) -> None:
     @app.exception_handler(RecursoNaoEncontrado)
     async def _nao_encontrado(_: Request, exc: RecursoNaoEncontrado) -> JSONResponse:
@@ -66,7 +83,7 @@ def registrar_tratadores(app: FastAPI) -> None:
 
     @app.exception_handler(ErroDominio)
     async def _erro_dominio(_: Request, exc: ErroDominio) -> JSONResponse:
-        codigo = MAPA_HTTP.get(type(exc), HTTP_422)
+        codigo = _codigo_de(type(exc))
         return JSONResponse(
             status_code=codigo,
             content={

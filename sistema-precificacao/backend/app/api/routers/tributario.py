@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy import select
@@ -15,12 +15,16 @@ from app.api.schemas.fiscal import (
     AliquotaSimplesOut,
     DeducoesIn,
     DeducoesOut,
+    EncerramentoRegraIn,
     MudancaFaixaIn,
     MudancaFaixaOut,
+    NovaVigenciaIn,
+    RegraTributariaAtualizacao,
     RegraTributariaIn,
     RegraTributariaOut,
     ValidacaoRegraIn,
 )
+from app.dominio.excecoes import ErroDominio
 from app.dominio.memoria import Memoria
 from app.models import RegraTributaria
 from app.models.enums import StatusRegraFiscal
@@ -84,6 +88,116 @@ def criar_regra(dados: RegraTributariaIn, sessao: SessaoDep):
 
     regra = RegraTributaria(**dados.model_dump(), status=StatusRegraFiscal.PROVISORIA)
     sessao.add(regra)
+    sessao.flush()
+    return regra
+
+
+class RegraValidadaNaoEditavel(ErroDominio):
+    """Regra ja validada nao aceita edicao no lugar (regra 9 da secao 11)."""
+
+
+@router.get("/regras/{regra_id}", response_model=RegraTributariaOut)
+def obter_regra(regra_id: uuid.UUID, sessao: SessaoDep):
+    return buscar_ou_404(sessao, RegraTributaria, regra_id)
+
+
+@router.patch("/regras/{regra_id}", response_model=RegraTributariaOut)
+def editar_regra(
+    regra_id: uuid.UUID, dados: RegraTributariaAtualizacao, sessao: SessaoDep
+):
+    """Edita uma regra ainda PROVISORIA.
+
+    Regra VALIDADA e recusada com 409: ela pode ter sustentado uma cotacao,
+    e reescrever seus numeros apagaria a base de um preco ja praticado. Para
+    mudar uma regra validada, abra nova vigencia.
+    """
+
+    regra = buscar_ou_404(sessao, RegraTributaria, regra_id)
+
+    if regra.status == StatusRegraFiscal.VALIDADA:
+        raise RegraValidadaNaoEditavel(
+            f"A regra {regra.codigo} está validada e não pode ser editada no "
+            f"lugar. Abra uma nova vigência para alterá-la, preservando o "
+            f"histórico das cotações que usaram a versão atual."
+        )
+
+    for campo, valor in dados.model_dump(exclude_unset=True).items():
+        setattr(regra, campo, valor)
+
+    sessao.flush()
+    return regra
+
+
+@router.post(
+    "/regras/{regra_id}/vigencias",
+    response_model=RegraTributariaOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def abrir_nova_vigencia(regra_id: uuid.UUID, dados: NovaVigenciaIn, sessao: SessaoDep):
+    """Encerra a regra atual e cria a sucessora com os novos valores.
+
+    A sucessora nasce PROVISORIA de proposito: a validacao anterior se referia
+    aos numeros anteriores. Mudou o numero, precisa de nova validacao.
+    """
+
+    atual = buscar_ou_404(sessao, RegraTributaria, regra_id)
+    alteracoes = dados.model_dump(exclude_unset=True)
+    motivo = alteracoes.pop("motivo")
+    inicio = alteracoes.pop("vigencia_inicio")
+
+    if atual.vigencia_inicio >= inicio:
+        raise ErroDominio(
+            f"A nova vigência ({inicio.isoformat()}) precisa começar depois do "
+            f"início da vigência atual ({atual.vigencia_inicio.isoformat()})."
+        )
+
+    # A anterior fecha no dia anterior: as duas nunca valem ao mesmo tempo.
+    atual.vigencia_fim = inicio - timedelta(days=1)
+
+    campos = {
+        coluna.name: getattr(atual, coluna.name)
+        for coluna in RegraTributaria.__table__.columns
+        if coluna.name not in {"id", "criado_em", "atualizado_em"}
+    }
+    campos.update(alteracoes)
+    campos.update(
+        {
+            "vigencia_inicio": inicio,
+            "vigencia_fim": None,
+            "versao": (atual.versao or 1) + 1,
+            "status": StatusRegraFiscal.PROVISORIA,
+            "validado_por": None,
+            "validado_em": None,
+            "observacao": motivo,
+        }
+    )
+
+    sucessora = RegraTributaria(**campos)
+    sessao.add(sucessora)
+    sessao.flush()
+    return sucessora
+
+
+@router.post("/regras/{regra_id}/encerrar", response_model=RegraTributariaOut)
+def encerrar_regra(
+    regra_id: uuid.UUID, dados: EncerramentoRegraIn, sessao: SessaoDep
+):
+    """Encerra a vigência sem sucessora.
+
+    A regra continua no histórico: operações anteriores ao encerramento
+    permanecem reproduzíveis com ela.
+    """
+
+    regra = buscar_ou_404(sessao, RegraTributaria, regra_id)
+
+    if dados.vigencia_fim < regra.vigencia_inicio:
+        raise ErroDominio(
+            f"O fim da vigência ({dados.vigencia_fim.isoformat()}) não pode ser "
+            f"anterior ao início ({regra.vigencia_inicio.isoformat()})."
+        )
+
+    regra.vigencia_fim = dados.vigencia_fim
+    regra.observacao = dados.motivo
     sessao.flush()
     return regra
 
