@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+cache/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+resultado*.csv
+resultado*.xlsx
+.pytest_cache/
