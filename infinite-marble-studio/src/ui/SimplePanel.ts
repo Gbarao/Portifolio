@@ -39,7 +39,13 @@ export const SIMPLE_STYLES: readonly SimpleStyle[] = [
   },
 ];
 
-export const SIMPLE_DURATIONS: readonly number[] = [5, 8, 15];
+export const SIMPLE_DURATIONS: readonly { seconds: number; label: string }[] = [
+  { seconds: 5, label: '5 s' },
+  { seconds: 8, label: '8 s' },
+  { seconds: 15, label: '15 s' },
+  { seconds: 30, label: '30 s' },
+  { seconds: 60, label: '1 min' },
+];
 
 const FORMATS: readonly { id: SimpleFormat; label: string; hint: string }[] = [
   { id: 'vertical', label: '▯ Vertical', hint: '9:16 · TikTok, Reels, Shorts' },
@@ -121,10 +127,10 @@ export class SimplePanel {
     }
 
     const durationRow = el('div', { className: 'choice-row' });
-    for (const seconds of SIMPLE_DURATIONS) {
+    for (const { seconds, label } of SIMPLE_DURATIONS) {
       const b = choiceButton(
-        `${seconds} s`,
-        `Vídeo de ${seconds} segundos em loop perfeito`,
+        label,
+        `Vídeo de ${label} em loop perfeito`,
         () => actions.setDuration(seconds),
         'btn choice',
       );

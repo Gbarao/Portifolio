@@ -14,7 +14,11 @@ TikTok, Instagram Reels, YouTube Shorts e X.
 1. Baixe o arquivo [`release/InfiniteMarbleStudio.html`](release/InfiniteMarbleStudio.html)
    (no GitHub: abra o arquivo e clique em **Download raw file**).
 2. Dê dois cliques nele. Ele abre no navegador; use **Chrome ou Edge**.
-3. Escolha um **estilo**, o **formato** e a **duração** e clique em **⬇ Baixar vídeo**.
+3. Escolha um **estilo**, o **formato** e a **duração** (5 s, 8 s, 15 s, 30 s ou 1 min) e clique
+   em **⬇ Baixar vídeo**.
+
+Ao trocar a duração, a velocidade das bolinhas é mantida: um vídeo de 1 minuto tem mais voltas, e
+o fim continua emendando perfeitamente no começo. No modo avançado a duração vai até 5 minutos.
 
 O vídeo vai para a pasta de downloads. Não é preciso Node.js, terminal nem internet.
 

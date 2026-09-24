@@ -8,6 +8,7 @@ import {
   createPresetPoints,
   randomizePath,
 } from '../path/PathFactory';
+import { computeBounds } from '../path/PathValidator';
 import { LIGHTING_PRESET_LABELS, createLightingPreset } from './DefaultPresets';
 import type {
   CameraMode,
@@ -15,6 +16,7 @@ import type {
   PaletteId,
   PathPresetId,
   ScenePreset,
+  Vec3Like,
 } from './PresetSchema';
 
 export type VariationCategory =
@@ -46,7 +48,20 @@ export interface VariationOptions {
   categories?: readonly VariationCategory[];
   /** Força trajeto aleatório (Randomizar trajeto). */
   forceRandomPath?: boolean;
+  /** Modos de câmera permitidos no sorteio (padrão: todos). */
+  cameraModes?: readonly CameraMode[];
 }
+
+export const ALL_CAMERA_MODES: readonly CameraMode[] = [
+  'fixed',
+  'orbit',
+  'follow',
+  'rail',
+  'topView',
+];
+
+/** Enquadramentos que mostram a cena inteira (usados no modo simples). */
+export const OVERVIEW_CAMERA_MODES: readonly CameraMode[] = ['fixed', 'orbit', 'topView'];
 
 export interface VariationResult {
   project: ScenePreset;
@@ -78,6 +93,35 @@ type Mutator = (
   options: VariationOptions,
 ) => string;
 
+const CAMERA_DISTANCE = 14;
+
+/**
+ * Elevação (graus) que mostra bem o trajeto: trajetos achatados pedem câmera mais alta,
+ * trajetos verticais pedem câmera mais baixa.
+ */
+export function suggestCameraElevation(points: readonly Vec3Like[]): number {
+  const { min, max } = computeBounds(points);
+  const horizontal = Math.max(max.x - min.x, max.z - min.z, 1e-6);
+  const ratio = (max.y - min.y) / horizontal;
+  if (ratio < 0.5) return 42;
+  if (ratio > 1.2) return 14;
+  return 28;
+}
+
+/** Posiciona câmeras fixa/órbita no azimute dado com elevação adequada ao trajeto. */
+function placeCamera(project: ScenePreset, azimuth: number, jitterDeg = 0): void {
+  const elevation = ((suggestCameraElevation(project.path.points) + jitterDeg) * Math.PI) / 180;
+  const round = (v: number): number => Number(v.toFixed(2));
+  const horizontal = CAMERA_DISTANCE * Math.cos(elevation);
+  const height = CAMERA_DISTANCE * Math.sin(elevation);
+  project.camera.position = {
+    x: round(horizontal * Math.sin(azimuth)),
+    y: round(height),
+    z: round(horizontal * Math.cos(azimuth)),
+  };
+  project.camera.height = round(Math.min(10, height));
+}
+
 const MUTATORS: Record<VariationCategory, Mutator> = {
   path(project, rng, seed, options) {
     const before = project.path.preset;
@@ -87,6 +131,9 @@ const MUTATORS: Record<VariationCategory, Mutator> = {
     project.path.preset = next;
     project.path.closed = true;
     project.track.bankAngle = PATH_PRESET_BANK[next] ?? 0;
+    // Mantém o azimute atual e ajusta a elevação ao formato do novo trajeto.
+    const { position } = project.camera;
+    placeCamera(project, Math.atan2(position.x, position.z));
     return `Trajeto: ${PATH_PRESET_LABELS[before]} → ${PATH_PRESET_LABELS[next]}${
       next === 'custom' ? ` (seed ${seed})` : ''
     }`;
@@ -113,21 +160,15 @@ const MUTATORS: Record<VariationCategory, Mutator> = {
     }
     return `Paleta: ${PALETTE_LABELS[before]} → ${PALETTE_LABELS[next]}`;
   },
-  camera(project, rng) {
+  camera(project, rng, _seed, options) {
     const before = project.camera.mode;
-    const options: CameraMode[] = ['fixed', 'orbit', 'follow', 'rail', 'topView'];
-    const next = pickDifferent(rng, options, before);
+    const allowed = options.cameraModes?.length ? options.cameraModes : ALL_CAMERA_MODES;
+    const next = pickDifferent(rng, allowed, before);
     Object.assign(project.camera, CAMERA_MODE_DEFAULTS[next]);
     project.camera.mode = next;
     project.camera.cycleCount = 1;
     project.camera.autoFrame = true;
-    const azimuth = rng.nextFloat(-0.6, 0.6);
-    const elevation = rng.nextFloat(2, 8);
-    project.camera.position = {
-      x: Number((14 * Math.sin(azimuth)).toFixed(2)),
-      y: Number(elevation.toFixed(2)),
-      z: Number((14 * Math.cos(azimuth)).toFixed(2)),
-    };
+    placeCamera(project, rng.nextFloat(-0.6, 0.6), rng.nextFloat(-5, 5));
     const cycles =
       next === 'orbit' || next === 'rail' ? ` (${project.camera.cycleCount} ciclo)` : '';
     return `Câmera: ${CAMERA_MODE_LABELS[before]} → ${CAMERA_MODE_LABELS[next]}${cycles}`;
@@ -187,9 +228,11 @@ export function createVariation(
   const rng = SeededRandom.derived(seed, 'variation');
   const project = structuredClone(base);
   project.seed = seed;
-  const categories = options.categories
+  const picked = options.categories
     ? [...options.categories]
     : rng.shuffle([...ALL_VARIATION_CATEGORIES]).slice(0, rng.nextInt(3, 6));
+  // Ordem canônica: o trajeto é definido antes da câmera, que depende do formato dele.
+  const categories = ALL_VARIATION_CATEGORIES.filter((c) => picked.includes(c));
   const changes = categories.map((category) =>
     MUTATORS[category](project, SeededRandom.derived(seed, `variation:${category}`), seed, options),
   );

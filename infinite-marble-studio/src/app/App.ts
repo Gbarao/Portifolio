@@ -52,6 +52,7 @@ import { deserializePreset, serializePreset } from '../presets/PresetValidator';
 import {
   ALL_VARIATION_CATEGORIES,
   APPEARANCE_CATEGORIES,
+  OVERVIEW_CAMERA_MODES,
   PATH_PRESET_BANK,
   createVariation,
   formatVariationReport,
@@ -71,6 +72,7 @@ import { StatusPanel } from '../ui/StatusPanel';
 import { TopBar } from '../ui/TopBar';
 import { AppState, assignDeep, type UiMode } from './AppState';
 import { ErrorHandler, type NotifyAction, type NotifyLevel } from './ErrorHandler';
+import { applySimpleDuration, capturePace, type SimplePace } from './SimplePace';
 import { EventBus } from './EventBus';
 
 export interface AppEvents {
@@ -118,6 +120,8 @@ export class App implements CaptureHost {
   private readonly simplePanel: SimplePanel;
   /** Estilo escolhido no modo simples (null após "Surpreenda-me" ou edições). */
   private simpleStyle: string | null = null;
+  /** Ritmo das bolinhas preservado ao trocar a duração no modo simples. */
+  private simplePace: SimplePace = { marbleCycles: 1, cameraCycles: 1 };
   private readonly fileInput: HTMLInputElement;
   private readonly sessionBlobs = new Map<string, Blob>();
   private readonly pendingImmediate = new Set<DirtySection>();
@@ -207,7 +211,10 @@ export class App implements CaptureHost {
     this.simplePanel = new SimplePanel(requireElement('simple-panel'), {
       applyStyle: (name) => this.applySimpleStyle(name),
       surprise: () =>
-        this.randomize({ categories: ALL_VARIATION_CATEGORIES }, 'Nova animação criada'),
+        this.randomize(
+          { categories: ALL_VARIATION_CATEGORIES, cameraModes: OVERVIEW_CAMERA_MODES },
+          'Nova animação criada',
+        ),
       setFormat: (format) => this.applyResolutionPreset(format),
       setDuration: (seconds) => this.setSimpleDuration(seconds),
       downloadVideo: () => void this.exportVideo({ preferExactEncoder: true }),
@@ -641,6 +648,18 @@ export class App implements CaptureHost {
     if (this.state.runtime.exporting) return;
     const seed = createRandomSeed();
     const result = createVariation(this.state.project, seed, options);
+    if (this.state.runtime.uiMode === 'simple') {
+      // As variações sorteiam voltas pensando em loops de 8 s: reescala para a duração atual.
+      this.simplePace = {
+        marbleCycles: result.categories.includes('speed')
+          ? result.project.marbles.cycleCount
+          : this.simplePace.marbleCycles,
+        cameraCycles: result.categories.includes('camera')
+          ? result.project.camera.cycleCount
+          : this.simplePace.cameraCycles,
+      };
+      applySimpleDuration(result.project, this.simplePace, this.state.project.loop.durationSeconds);
+    }
     const report = formatVariationReport(result.changes);
     this.state.runtime.lastVariationReport = report;
     this.loadProject(result.project, '');
@@ -660,6 +679,7 @@ export class App implements CaptureHost {
     const runtime = this.state.runtime;
     runtime.uiMode = mode;
     const simple = mode === 'simple';
+    if (simple) this.simplePace = capturePace(this.state.project);
     document.body.classList.toggle('mode-simple', simple);
     if (simple && runtime.editorView) {
       runtime.editorView = false;
@@ -681,17 +701,17 @@ export class App implements CaptureHost {
     if (!preset || this.state.runtime.exporting) return;
     const current = this.state.project;
     preset.output = { ...preset.output, ...current.output };
-    preset.loop.durationSeconds = current.loop.durationSeconds;
+    this.simplePace = capturePace(preset);
+    applySimpleDuration(preset, this.simplePace, current.loop.durationSeconds);
     this.loadProject(preset, '');
     this.simpleStyle = presetName;
     this.updateSimplePanel();
   }
 
+  /** Duração do vídeo no modo simples, mantendo a velocidade das bolinhas. */
   private setSimpleDuration(seconds: number): void {
-    const project = this.state.project;
-    project.loop.durationSeconds = seconds;
-    project.output.durationSeconds = seconds;
-    this.onSettingsChanged(['loop', 'output'], true);
+    applySimpleDuration(this.state.project, this.simplePace, seconds);
+    this.onSettingsChanged(['loop', 'output', 'marbles', 'camera'], true);
     this.panel.refresh();
   }
 

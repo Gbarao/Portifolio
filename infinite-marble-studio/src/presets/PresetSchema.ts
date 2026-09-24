@@ -354,7 +354,7 @@ export const CAMERA_SPECS: SpecsFor<CameraSettings> = {
   offsetLateral: { kind: 'number', min: -5, max: 5, step: 0.05, required: true },
   target: { kind: 'vec3', min: -50, max: 50, required: true },
   position: { kind: 'vec3', min: -100, max: 100 },
-  cycleCount: { kind: 'number', min: 1, max: 16, step: 1, integer: true, required: true },
+  cycleCount: { kind: 'number', min: 1, max: 32, step: 1, integer: true, required: true },
   smoothing: { kind: 'number', min: 0, max: 1, step: 0.01, required: true },
   tilt: { kind: 'number', min: -90, max: 90, step: 1 },
   autoFrame: { kind: 'boolean' },

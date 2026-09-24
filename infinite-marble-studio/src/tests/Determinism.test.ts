@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { LoopClock } from '../core/LoopClock';
-import { randomizePath } from '../path/PathFactory';
+import { createPresetPoints, randomizePath } from '../path/PathFactory';
 import { BUILT_IN_PRESETS, createDefaultProject } from '../presets/DefaultPresets';
 import {
   ALL_VARIATION_CATEGORIES,
   APPEARANCE_CATEGORIES,
+  OVERVIEW_CAMERA_MODES,
   createVariation,
+  suggestCameraElevation,
   formatVariationReport,
 } from '../presets/VariationGenerator';
 import { SceneEvaluator, captureSceneState } from '../scene/SceneStateCapture';
@@ -107,6 +109,31 @@ describe('Variações criativas', () => {
     expect(p.marbles.cycleCount).not.toBe(base.marbles.cycleCount);
     expect(p.background.colorMain).not.toBe(base.background.colorMain);
     expect(result.changes).toHaveLength(8);
+  });
+
+  it('restringe o sorteio de câmera aos modos permitidos', () => {
+    const base = createDefaultProject();
+    for (let seed = 1; seed <= 40; seed++) {
+      const { project } = createVariation(base, seed, {
+        categories: ['camera'],
+        cameraModes: OVERVIEW_CAMERA_MODES,
+      });
+      expect(OVERVIEW_CAMERA_MODES).toContain(project.camera.mode);
+    }
+  });
+
+  it('elevação da câmera sorteada acompanha o formato do trajeto', () => {
+    expect(suggestCameraElevation(createPresetPoints('wave3d'))).toBe(42);
+    expect(suggestCameraElevation(createPresetPoints('circle'))).toBe(28);
+    expect(suggestCameraElevation(createPresetPoints('sTrack'))).toBe(14);
+    const base = createDefaultProject();
+    for (let seed = 1; seed <= 20; seed++) {
+      const { project } = createVariation(base, seed, { categories: ['path', 'camera'] });
+      const { x, y, z } = project.camera.position;
+      const elevation = (Math.atan2(y, Math.hypot(x, z)) * 180) / Math.PI;
+      const expected = suggestCameraElevation(project.path.points);
+      expect(Math.abs(elevation - expected)).toBeLessThanOrEqual(5.1);
+    }
   });
 
   it('randomizar aparência não altera o trajeto', () => {
