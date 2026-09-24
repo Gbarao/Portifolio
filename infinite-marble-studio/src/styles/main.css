@@ -1,0 +1,113 @@
+:root {
+  --bg: #0d0f17;
+  --bg-elevated: #161a26;
+  --bg-panel: #1b2030;
+  --border: #2a3147;
+  --text: #e8ebf5;
+  --text-muted: #9aa3bd;
+  --accent: #7c5cff;
+  --accent-strong: #9a82ff;
+  --success: #3ddc97;
+  --warning: #ffc83d;
+  --danger: #ff5d6c;
+  --topbar-height: 60px;
+  --sidebar-width: 360px;
+  --radius: 8px;
+  --touch: 44px;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.viewport {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #1a1f30 0%, #0b0d14 70%), var(--bg);
+  overflow: hidden;
+}
+
+#scene-canvas {
+  display: block;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 55%);
+  border-radius: 4px;
+  touch-action: none;
+  outline: none;
+}
+
+#scene-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+
+.sidebar[hidden] {
+  display: none;
+}
+
+/* Captura: somente o canvas (e o progresso) permanecem visíveis. */
+body.is-capturing .sidebar,
+body.is-capturing .status-panel,
+body.is-capturing .safe-area,
+body.is-capturing .topbar button {
+  display: none !important;
+}
+
+.fatal-error {
+  max-width: 640px;
+  margin: 10vh auto;
+  padding: 24px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  line-height: 1.5;
+}
+
+.fatal-error h1 {
+  font-size: 1.25rem;
+  margin-top: 0;
+}

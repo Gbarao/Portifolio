@@ -1,0 +1,77 @@
+/* Telas médias: painel mais estreito e rótulos compactos. */
+@media (max-width: 1200px) {
+  :root {
+    --sidebar-width: 320px;
+  }
+
+  .brand-name {
+    display: none;
+  }
+}
+
+/* Desktop mínimo (≥ 768 px): painel sobreposto à cena, recolhível com G. */
+@media (max-width: 1024px) {
+  .sidebar {
+    position: absolute;
+    top: var(--topbar-height);
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    box-shadow: -12px 0 32px rgb(0 0 0 / 45%);
+  }
+
+  .status-panel {
+    max-width: 240px;
+  }
+}
+
+/* Telas estreitas / toque: painel vira folha inferior. */
+@media (max-width: 767px) {
+  :root {
+    --sidebar-width: 100%;
+    --topbar-height: 56px;
+  }
+
+  .sidebar {
+    top: auto;
+    left: 0;
+    height: 55vh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .status-panel {
+    display: none;
+  }
+
+  .btn-group {
+    padding-left: 6px;
+  }
+
+  .sidebar .lil-gui.lil-root {
+    --widget-height: 32px;
+    --font-size: 13px;
+    --input-font-size: 14px;
+  }
+}
+
+@media (pointer: coarse) {
+  .sidebar .lil-gui.lil-root {
+    --widget-height: 36px;
+  }
+
+  .coord-input {
+    min-height: 40px;
+  }
+
+  .btn-small {
+    min-height: var(--touch);
+    min-width: var(--touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+}
