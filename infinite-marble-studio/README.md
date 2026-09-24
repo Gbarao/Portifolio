@@ -4,10 +4,29 @@ Aplicação web local para criar **animações 3D hipnóticas em loop perfeito**
 continuamente um trilho tridimensional editável, com exportação de vídeo vertical (9:16) pronta para
 TikTok, Instagram Reels, YouTube Shorts e X.
 
-- Sem backend, login, APIs pagas ou IA generativa. Depois do `npm install`, funciona offline.
+- Sem backend, login, APIs pagas ou IA generativa. Funciona offline.
 - Tudo é gerado por código: trajetos, trilhos, cores, fundo, iluminação e ambiente de reflexos.
 - Movimento **determinístico e matemático**: mesma seed + mesmas configurações = mesmo resultado.
 - Loop sem emenda: toda animação é função direta do tempo normalizado, com ciclos inteiros.
+
+## Jeito mais fácil (sem instalar nada)
+
+1. Baixe o arquivo [`release/InfiniteMarbleStudio.html`](release/InfiniteMarbleStudio.html)
+   (no GitHub: abra o arquivo e clique em **Download raw file**).
+2. Dê dois cliques nele. Ele abre no navegador; use **Chrome ou Edge**.
+3. Escolha um **estilo**, o **formato** e a **duração** e clique em **⬇ Baixar vídeo**.
+
+O vídeo vai para a pasta de downloads. Não é preciso Node.js, terminal nem internet.
+
+![Modo simples](docs/screenshot-simple.png)
+
+O app abre no **modo simples**. O botão **⚙ Modo avançado** no topo mostra todos os controles
+(editar o trajeto, câmera, luzes, presets, atalhos etc.), e a escolha fica salva no navegador.
+
+Formato do vídeo: **WebM**. O YouTube aceita WebM. Para Instagram e X, que pedem MP4, converta o
+arquivo antes de publicar (veja [Conversão opcional para MP4](#conversão-opcional-para-mp4-ffmpeg)).
+
+## Modo avançado
 
 ![Interface](docs/screenshot-ui.png)
 
@@ -18,7 +37,7 @@ _Capturas feitas em renderização por software (SwiftShader); em GPU real o FPS
 ## Sumário
 
 - [Requisitos](#requisitos)
-- [Instalação e comandos](#instalação-e-comandos)
+- [Instalação e comandos (desenvolvimento)](#instalação-e-comandos)
 - [Como usar](#como-usar)
 - [Atalhos de teclado](#atalhos-de-teclado)
 - [Exportação](#exportação)
@@ -33,7 +52,8 @@ Documentação complementar: [GETTING_STARTED.md](GETTING_STARTED.md) (passo a p
 
 ## Requisitos
 
-- Node.js **22.12 ou superior** (exigência do Vite 8 e do Vitest 5).
+- Para **usar**: apenas o navegador (arquivo único, veja acima).
+- Para **desenvolver**: Node.js **22.12 ou superior** (exigência do Vite 8 e do Vitest 5).
 - Navegador desktop com **WebGL 2**: Chrome, Edge ou Firefox atualizados.
 - Exportação WebM: `MediaRecorder` com WebM/VP8 (Chrome, Edge, Firefox). O encoder opcional
   **WebCodecs** requer `VideoEncoder` (disponível em Chrome e Edge). Sem nenhum dos dois, a
@@ -46,6 +66,7 @@ cd infinite-marble-studio
 npm install          # instala as dependências (versões exatas + package-lock.json)
 npm run dev          # servidor de desenvolvimento em http://localhost:5173
 npm run build        # checagem de tipos (tsc strict) + build otimizado em dist/
+npm run build:single # gera release/InfiniteMarbleStudio.html (arquivo único, abre com dois cliques)
 npm run preview      # serve a versão de dist/ em http://localhost:4173
 npm test             # suíte Vitest
 npm run test:coverage  # testes + cobertura (core/, path/, marbles/, camera/)

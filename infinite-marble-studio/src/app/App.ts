@@ -66,9 +66,10 @@ import { installKeyboardShortcuts } from '../ui/KeyboardShortcuts';
 import { Notifier } from '../ui/Notifier';
 import { SafeAreaOverlay } from '../ui/SafeAreaOverlay';
 import { ShortcutsDialog } from '../ui/ShortcutsDialog';
+import { SIMPLE_STYLES, SimplePanel } from '../ui/SimplePanel';
 import { StatusPanel } from '../ui/StatusPanel';
 import { TopBar } from '../ui/TopBar';
-import { AppState, assignDeep } from './AppState';
+import { AppState, assignDeep, type UiMode } from './AppState';
 import { ErrorHandler, type NotifyAction, type NotifyLevel } from './ErrorHandler';
 import { EventBus } from './EventBus';
 
@@ -114,6 +115,9 @@ export class App implements CaptureHost {
   private readonly videoExporter: VideoExporter;
   private readonly imageExporter: ImageExporter;
   private readonly sidebar: HTMLElement;
+  private readonly simplePanel: SimplePanel;
+  /** Estilo escolhido no modo simples (null após "Surpreenda-me" ou edições). */
+  private simpleStyle: string | null = null;
   private readonly fileInput: HTMLInputElement;
   private readonly sessionBlobs = new Map<string, Blob>();
   private readonly pendingImmediate = new Set<DirtySection>();
@@ -124,6 +128,7 @@ export class App implements CaptureHost {
   private lastStatusUpdate = 0;
   private recordingStartedAt: number | null = null;
   private exportAbort: AbortController | null = null;
+  private lastExportOptions: { preferExactEncoder?: boolean } = {};
   private capturing = false;
   private running = false;
 
@@ -136,10 +141,20 @@ export class App implements CaptureHost {
     this.presetStore = new PresetStore(storage);
     this.exportHistory = new ExportHistory(storage);
 
+    const uiMode = readUiMode();
     const draft = this.presetStore.loadDraft();
     let initial = createDefaultProject();
+    if (!draft && uiMode === 'simple') {
+      // Primeira visita no modo simples: começa pelo estilo mais vistoso.
+      const first = SIMPLE_STYLES[0];
+      initial = (first && findBuiltInPreset(first.presetName)) ?? initial;
+      this.simpleStyle = first?.presetName ?? null;
+    }
     if (draft?.ok) {
       initial = draft.preset;
+      this.simpleStyle = SIMPLE_STYLES.some((st) => st.presetName === initial.name)
+        ? initial.name
+        : null;
     } else if (draft && !draft.ok) {
       this.notify(
         `O rascunho salvo é inválido e foi ignorado: ${draft.errors[0] ?? ''}`,
@@ -151,6 +166,7 @@ export class App implements CaptureHost {
       );
     }
     this.state = AppState.initialize(initial);
+    this.state.runtime.uiMode = uiMode;
     const project = this.state.project;
 
     this.sidebar = requireElement('sidebar');
@@ -184,8 +200,19 @@ export class App implements CaptureHost {
       toggleGui: () => this.setGuiVisible(!this.state.runtime.guiVisible),
       toggleEditorView: () => this.setEditorView(!this.state.runtime.editorView),
       showShortcuts: () => this.shortcutsDialog.toggle(),
+      toggleUiMode: () =>
+        this.setUiMode(this.state.runtime.uiMode === 'simple' ? 'advanced' : 'simple'),
     });
     this.statusPanel = new StatusPanel(requireElement('status-panel'));
+    this.simplePanel = new SimplePanel(requireElement('simple-panel'), {
+      applyStyle: (name) => this.applySimpleStyle(name),
+      surprise: () =>
+        this.randomize({ categories: ALL_VARIATION_CATEGORIES }, 'Nova animação criada'),
+      setFormat: (format) => this.applyResolutionPreset(format),
+      setDuration: (seconds) => this.setSimpleDuration(seconds),
+      downloadVideo: () => void this.exportVideo({ preferExactEncoder: true }),
+      downloadImage: () => void this.capturePng(),
+    });
     this.shortcutsDialog = new ShortcutsDialog(
       requireElement<HTMLDialogElement>('shortcuts-dialog'),
     );
@@ -193,7 +220,7 @@ export class App implements CaptureHost {
       cancel: () => this.exportAbort?.abort(),
       rerecord: () => {
         this.exportProgress.hide();
-        void this.exportVideo();
+        void this.exportVideo(this.lastExportOptions);
       },
     });
     this.safeArea = new SafeAreaOverlay(requireElement('safe-area'), this.canvas);
@@ -287,6 +314,7 @@ export class App implements CaptureHost {
     this.updateTopBar();
     this.panel.historyPanel.render(this.exportHistory.list());
     this.panel.setVariationReport('');
+    this.setUiMode(uiMode, false);
   }
 
   // ------------------------------------------------------------------ setup
@@ -436,6 +464,8 @@ export class App implements CaptureHost {
     this.state.runtime.dirtySinceSave = true;
     this.autosave();
     if (commit) this.commitHistory();
+    if (this.state.runtime.uiMode === 'advanced') this.simpleStyle = null;
+    this.updateSimplePanel();
     this.bus.emit('projectChanged', { sections, commit });
   }
 
@@ -474,6 +504,7 @@ export class App implements CaptureHost {
     this.panel.refresh();
     this.updatePathUi();
     this.updateExportInfo();
+    this.updateSimplePanel();
     this.state.runtime.dirtySinceSave = true;
     this.autosave();
   }
@@ -497,6 +528,7 @@ export class App implements CaptureHost {
       return;
     }
     this.state.replaceProject(JSON.parse(snapshot) as ScenePreset);
+    this.simpleStyle = null;
     this.applyAll();
     this.updateTopBar();
   }
@@ -508,6 +540,7 @@ export class App implements CaptureHost {
       return;
     }
     this.state.replaceProject(JSON.parse(snapshot) as ScenePreset);
+    this.simpleStyle = null;
     this.applyAll();
     this.updateTopBar();
   }
@@ -611,8 +644,67 @@ export class App implements CaptureHost {
     const report = formatVariationReport(result.changes);
     this.state.runtime.lastVariationReport = report;
     this.loadProject(result.project, '');
+    this.simpleStyle = null;
+    this.updateSimplePanel();
     this.panel.setVariationReport(`${title} (seed ${seed})\n${report}`);
-    this.notify(`${title} · seed ${seed}\n${report}`, 'info');
+    if (this.state.runtime.uiMode === 'simple') {
+      this.notify(`${title}! Não gostou? Clique de novo.`, 'success');
+    } else {
+      this.notify(`${title} · seed ${seed}\n${report}`, 'info');
+    }
+  }
+
+  // ------------------------------------------------------------------ modo simples
+
+  private setUiMode(mode: UiMode, persist = true): void {
+    const runtime = this.state.runtime;
+    runtime.uiMode = mode;
+    const simple = mode === 'simple';
+    document.body.classList.toggle('mode-simple', simple);
+    if (simple && runtime.editorView) {
+      runtime.editorView = false;
+      this.sceneManager.setEditorView(false);
+    }
+    this.sceneManager.setHelpersVisible(simple ? false : runtime.helpersVisible);
+    this.statusPanel.setVisible(!simple && runtime.helpersVisible);
+    this.safeArea.setVisible(!simple && runtime.showSafeArea);
+    if (!simple) this.panel.refresh();
+    this.updateSimplePanel();
+    this.rendererManager.layout();
+    this.updateTopBar();
+    if (persist) writeUiMode(mode);
+  }
+
+  /** Carrega um estilo pronto mantendo o formato e a duração escolhidos. */
+  private applySimpleStyle(presetName: string): void {
+    const preset = findBuiltInPreset(presetName);
+    if (!preset || this.state.runtime.exporting) return;
+    const current = this.state.project;
+    preset.output = { ...preset.output, ...current.output };
+    preset.loop.durationSeconds = current.loop.durationSeconds;
+    this.loadProject(preset, '');
+    this.simpleStyle = presetName;
+    this.updateSimplePanel();
+  }
+
+  private setSimpleDuration(seconds: number): void {
+    const project = this.state.project;
+    project.loop.durationSeconds = seconds;
+    project.output.durationSeconds = seconds;
+    this.onSettingsChanged(['loop', 'output'], true);
+    this.panel.refresh();
+  }
+
+  private updateSimplePanel(): void {
+    const { output, loop } = this.state.project;
+    const plan = resolveExportPlan(output, loop);
+    const size = formatBytes(estimateFileSizeBytes(output.bitrateMbps, plan.durationSeconds));
+    this.simplePanel.update({
+      styleName: this.simpleStyle,
+      format: output.resolutionPreset,
+      durationSeconds: output.durationSeconds === loop.durationSeconds ? loop.durationSeconds : -1,
+      info: `Vídeo WebM ${output.width}×${output.height} · ${plan.durationSeconds} s em loop · ~${size}`,
+    });
   }
 
   // ------------------------------------------------------------------ câmera/iluminação
@@ -761,6 +853,7 @@ export class App implements CaptureHost {
       helpersVisible: runtime.helpersVisible,
       guiVisible: runtime.guiVisible,
       editorView: runtime.editorView,
+      simpleMode: runtime.uiMode === 'simple',
     });
   }
 
@@ -993,21 +1086,28 @@ export class App implements CaptureHost {
     }
   }
 
-  async exportVideo(): Promise<void> {
+  /**
+   * Exporta o vídeo. `preferExactEncoder` (modo simples) usa WebCodecs quando disponível,
+   * que independe da velocidade da GPU; senão usa o encoder configurado.
+   */
+  async exportVideo(options: { preferExactEncoder?: boolean } = {}): Promise<void> {
     if (this.state.runtime.exporting) return;
+    this.lastExportOptions = options;
     const validation = this.preExportValidation('video');
     if (!validation) return;
     const project = this.state.project;
     const { plan } = validation;
     const output = project.output;
+    const encoder = options.preferExactEncoder ? 'webCodecs' : output.encoder;
     const webCodecsOk =
-      output.encoder === 'webCodecs' &&
+      encoder === 'webCodecs' &&
       (await isWebCodecsSupported(
         webCodecsConfig(output.codec, output.width, output.height, output.fps, output.bitrateMbps),
       ));
     const recorderOk = isVideoRecordingSupported(this.canvas, output.codec);
     for (const warning of validation.warnings) this.notify(warning, 'warning');
     if (output.encoder === 'webCodecs' && !webCodecsOk) {
+      // Aviso só quando o usuário escolheu WebCodecs explicitamente.
       this.notify('WebCodecs indisponível neste navegador: usando MediaRecorder.', 'warning');
     }
     if (!webCodecsOk && !recorderOk) {
@@ -1037,7 +1137,7 @@ export class App implements CaptureHost {
           totalFrames: plan.totalFrames,
           bitrateMbps: output.bitrateMbps,
           codec: output.codec,
-          encoder: output.encoder,
+          encoder: webCodecsOk ? 'webCodecs' : 'mediaRecorder',
           presetJson: serializePreset(project),
         },
         (progress) => this.exportProgress.update(progress),
@@ -1193,6 +1293,25 @@ export class App implements CaptureHost {
 
 function round3(v: Vec3Like): Vec3Like {
   return { x: Number(v.x.toFixed(3)), y: Number(v.y.toFixed(3)), z: Number(v.z.toFixed(3)) };
+}
+
+const UI_MODE_KEY = 'ims.uiMode';
+
+/** Preferência de interface (conveniência por navegador; padrão: simples). */
+function readUiMode(): UiMode {
+  try {
+    return globalThis.localStorage.getItem(UI_MODE_KEY) === 'advanced' ? 'advanced' : 'simple';
+  } catch {
+    return 'simple';
+  }
+}
+
+function writeUiMode(mode: UiMode): void {
+  try {
+    globalThis.localStorage.setItem(UI_MODE_KEY, mode);
+  } catch {
+    // Armazenamento indisponível: a preferência vale só nesta sessão.
+  }
 }
 
 /** Cede o controle ao navegador (permite repintar após a captura). */

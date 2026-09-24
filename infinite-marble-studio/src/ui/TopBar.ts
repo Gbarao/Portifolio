@@ -13,6 +13,7 @@ export interface TopBarActions {
   toggleGui(): void;
   toggleEditorView(): void;
   showShortcuts(): void;
+  toggleUiMode(): void;
 }
 
 /** Barra superior com as ações principais (alvos de toque ≥ 44 px). */
@@ -23,6 +24,7 @@ export class TopBar {
   private readonly helpersButton: HTMLButtonElement;
   private readonly guiButton: HTMLButtonElement;
   private readonly editorButton: HTMLButtonElement;
+  private readonly modeButton: HTMLButtonElement;
 
   constructor(container: HTMLElement, actions: TopBarActions) {
     const brand = el('div', { className: 'brand' }, [
@@ -69,7 +71,17 @@ export class TopBar {
         button('?', 'Atalhos de teclado (?)', actions.showShortcuts, 'btn btn-icon'),
       ],
     ];
-    container.append(brand, ...groups.map((items) => el('div', { className: 'btn-group' }, items)));
+    this.modeButton = button(
+      '⚙ Modo avançado',
+      'Alterna entre o modo simples e o painel completo',
+      actions.toggleUiMode,
+      'btn',
+    );
+    container.append(
+      brand,
+      ...groups.map((items) => el('div', { className: 'btn-group' }, items)),
+      el('div', { className: 'btn-group mode-group' }, [this.modeButton]),
+    );
   }
 
   update(state: {
@@ -79,7 +91,9 @@ export class TopBar {
     helpersVisible: boolean;
     guiVisible: boolean;
     editorView: boolean;
+    simpleMode: boolean;
   }): void {
+    this.modeButton.textContent = state.simpleMode ? '⚙ Modo avançado' : '✨ Modo simples';
     this.playButton.textContent = state.playing ? '⏸ Pausar' : '▶ Play';
     this.undoButton.disabled = !state.canUndo;
     this.redoButton.disabled = !state.canRedo;

@@ -1,7 +1,11 @@
 import { createDefaultProject } from '../presets/DefaultPresets';
 import type { ScenePreset } from '../presets/PresetSchema';
 
+export type UiMode = 'simple' | 'advanced';
+
 export interface RuntimeState {
+  /** Interface simplificada (padrão) ou painel completo. */
+  uiMode: UiMode;
   helpersVisible: boolean;
   guiVisible: boolean;
   editorView: boolean;
@@ -43,6 +47,7 @@ export class AppState {
   private static instance: AppState | null = null;
   readonly project: ScenePreset;
   readonly runtime: RuntimeState = {
+    uiMode: 'simple',
     helpersVisible: true,
     guiVisible: true,
     editorView: false,

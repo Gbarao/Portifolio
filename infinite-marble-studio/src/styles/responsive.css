@@ -75,3 +75,17 @@
     transition: none;
   }
 }
+
+/* Modo simples em telas estreitas: cena em cima, escolhas embaixo. */
+@media (max-width: 767px) {
+  body.mode-simple .workspace {
+    flex-direction: column;
+  }
+
+  .simple-panel {
+    width: 100%;
+    max-height: 50vh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}

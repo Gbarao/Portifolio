@@ -536,3 +536,101 @@ body.is-dragging .drop-hint {
   display: flex;
   align-items: center;
 }
+
+/* ---------- Modo simples ---------- */
+.simple-panel {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 18px 16px;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+
+body:not(.mode-simple) .simple-panel,
+body.is-capturing .simple-panel,
+body.mode-simple .sidebar,
+body.mode-simple .status-panel,
+body.mode-simple .topbar .btn-group:not(.mode-group) {
+  display: none !important;
+}
+
+.mode-group {
+  margin-left: auto;
+}
+
+.simple-step h2 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.style-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.style-card {
+  min-height: 64px;
+  padding: 8px;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 75%);
+  background: var(--swatch, #242a3d);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.style-card:hover {
+  border-color: rgb(255 255 255 / 35%);
+}
+
+.style-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.style-card[aria-pressed='true'] {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.style-card-surprise {
+  background: linear-gradient(135deg, #7c5cff, #ff3fd8);
+}
+
+.choice-row {
+  display: flex;
+  gap: 8px;
+}
+
+.choice {
+  flex: 1;
+  padding: 0 6px;
+}
+
+.btn-download {
+  width: 100%;
+  min-height: 56px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.btn-download-secondary {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.simple-info {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--text-muted);
+}
