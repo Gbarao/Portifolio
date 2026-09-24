@@ -25,6 +25,8 @@ import {
   ExportCancelledError,
   VideoExporter,
   isVideoRecordingSupported,
+  isWebCodecsSupported,
+  webCodecsConfig,
 } from '../export/VideoExporter';
 import { PathEditor, type Axis } from '../path/PathEditor';
 import { autoFitPath, createPresetPoints } from '../path/PathFactory';
@@ -679,16 +681,20 @@ export class App implements CaptureHost {
   private resetSection(section: SectionKey): void {
     const defaults = createDefaultProject();
     const project = this.state.project;
+    // assignDeep preserva a identidade dos objetos ligados aos controles da GUI.
+    assignDeep(
+      project[section] as unknown as Record<string, unknown>,
+      defaults[section] as unknown as Record<string, unknown>,
+    );
+    const sections: DirtySection[] = [section];
     if (section === 'path') {
-      project.path = defaults.path;
-    } else {
-      assignDeep(
-        project[section] as unknown as Record<string, unknown>,
-        defaults[section] as unknown as Record<string, unknown>,
-      );
+      project.track.bankAngle = PATH_PRESET_BANK[project.path.preset] ?? 0;
+      this.sceneManager.handles.select(null, false);
+      this.state.runtime.selectedPoint = null;
+      sections.push('track');
     }
     this.panel.refresh();
-    this.onSettingsChanged([section], true);
+    this.onSettingsChanged(sections, true);
     this.notify('Grupo restaurado para os valores padrão.', 'info');
   }
 
@@ -993,9 +999,18 @@ export class App implements CaptureHost {
     if (!validation) return;
     const project = this.state.project;
     const { plan } = validation;
-    const recorderOk = isVideoRecordingSupported(this.canvas, project.output.codec);
+    const output = project.output;
+    const webCodecsOk =
+      output.encoder === 'webCodecs' &&
+      (await isWebCodecsSupported(
+        webCodecsConfig(output.codec, output.width, output.height, output.fps, output.bitrateMbps),
+      ));
+    const recorderOk = isVideoRecordingSupported(this.canvas, output.codec);
     for (const warning of validation.warnings) this.notify(warning, 'warning');
-    if (!recorderOk) {
+    if (output.encoder === 'webCodecs' && !webCodecsOk) {
+      this.notify('WebCodecs indisponível neste navegador: usando MediaRecorder.', 'warning');
+    }
+    if (!webCodecsOk && !recorderOk) {
       this.notify('MediaRecorder/WebM indisponível: exportando sequência PNG em ZIP.', 'warning');
     }
 
@@ -1003,18 +1018,26 @@ export class App implements CaptureHost {
     this.bus.emit('exportStateChanged', { exporting: true });
     this.exportAbort = new AbortController();
     this.recordingStartedAt = performance.now();
-    const format = recorderOk ? `WebM ${project.output.codec.toUpperCase()}` : 'ZIP de PNGs';
+    const format = webCodecsOk
+      ? `WebM ${output.codec.toUpperCase()} (WebCodecs)`
+      : recorderOk
+        ? `WebM ${output.codec.toUpperCase()} (MediaRecorder)`
+        : 'ZIP de PNGs';
     this.exportProgress.start(
       'Exportando vídeo',
-      `${project.output.width}×${project.output.height} · ${plan.durationSeconds}s · ${project.output.fps} fps · ${format}`,
+      `${output.width}×${output.height} · ${plan.durationSeconds}s · ${output.fps} fps · ${format}`,
+      webCodecsOk ? 'offline' : 'realtime',
     );
     try {
       const result = await this.videoExporter.export(
         {
-          fps: project.output.fps,
+          width: output.width,
+          height: output.height,
+          fps: output.fps,
           totalFrames: plan.totalFrames,
-          bitrateMbps: project.output.bitrateMbps,
-          codec: project.output.codec,
+          bitrateMbps: output.bitrateMbps,
+          codec: output.codec,
+          encoder: output.encoder,
           presetJson: serializePreset(project),
         },
         (progress) => this.exportProgress.update(progress),
@@ -1031,8 +1054,8 @@ export class App implements CaptureHost {
         0,
       );
       const lagNote =
-        result.lagMs > 250
-          ? ` Atenção: a renderização atrasou até ${Math.round(result.lagMs)} ms em relação ao tempo real.`
+        result.lagMs > 100
+          ? ` Atenção: a renderização atrasou até ${Math.round(result.lagMs)} ms em relação ao tempo real; o timing do vídeo pode variar. Use o encoder WebCodecs (frame-exato) ou reduza sombras/resolução.`
           : '';
       this.exportProgress.finish(
         `${result.kind === 'zip' ? 'Sequência PNG salva!' : 'Vídeo salvo!'} ${fileName} (${formatBytes(result.blob.size)}).${lagNote}`,

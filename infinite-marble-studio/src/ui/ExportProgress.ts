@@ -67,13 +67,16 @@ export class ExportProgress {
     this.inline.append(this.inlineBar, this.inlineText);
   }
 
-  start(title: string, detail: string): void {
+  start(title: string, detail: string, mode: 'realtime' | 'offline' = 'realtime'): void {
     this.overlay.hidden = false;
     this.title.textContent = title;
     this.bar.value = 0;
     this.percent.textContent = '0%';
     this.detail.textContent = detail;
-    this.message.textContent = 'Mantenha esta aba visível durante a gravação.';
+    this.message.textContent =
+      mode === 'realtime'
+        ? 'Gravação em tempo real: mantenha esta aba visível (a gravação pausa se a aba ficar oculta).'
+        : 'Codificação frame a frame (WebCodecs): timestamps exatos, independente da velocidade da GPU.';
     this.message.dataset.level = 'info';
     this.cancelButton.hidden = false;
     this.rerecordButton.hidden = true;
@@ -89,8 +92,8 @@ export class ExportProgress {
     this.detail.textContent = `Frame ${progress.frame}/${progress.totalFrames} · decorrido ${formatDuration(
       progress.elapsedMs,
     )} / estimado ${formatDuration(progress.estimatedTotalMs)}`;
-    if (progress.lagMs > 250) {
-      this.message.textContent = `Renderização mais lenta que o tempo real (atraso ${Math.round(progress.lagMs)} ms): o timing do vídeo pode variar. Reduza sombras/resolução.`;
+    if (progress.lagMs > 100) {
+      this.message.textContent = `Renderização mais lenta que o tempo real (atraso ${Math.round(progress.lagMs)} ms): o timing do vídeo pode variar. O encoder WebCodecs evita isso.`;
       this.message.dataset.level = 'warning';
     }
     this.inlineBar.value = pct;

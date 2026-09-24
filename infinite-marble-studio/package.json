@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "description": "Gerador local de animações 3D em loop perfeito com bolinhas percorrendo trilhos procedurais.",
   "type": "module",
-  "license": "MIT",
   "engines": {
     "node": ">=22.12.0"
   },

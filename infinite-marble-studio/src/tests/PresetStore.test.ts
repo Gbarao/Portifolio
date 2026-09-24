@@ -6,7 +6,7 @@ import {
   createDefaultProject,
   findBuiltInPreset,
 } from '../presets/DefaultPresets';
-import { PRESET_VERSION } from '../presets/PresetSchema';
+import { PRESET_VERSION, SECTION_SPECS } from '../presets/PresetSchema';
 import { MemoryStorage, PresetStore, STORAGE_KEYS } from '../presets/PresetStore';
 import {
   deserializePreset,
@@ -74,6 +74,31 @@ describe('Serialização', () => {
     if (result.ok) {
       expect(result.preset.marbles.pulseAmount).toBe(0);
       expect(result.warnings).toContain('marbles.pulseAmount: ausente, usando valor padrão.');
+    }
+  });
+
+  it('JSON apenas com os campos do schema original (obrigatórios) é aceito', () => {
+    const full = createDefaultProject() as unknown as Record<string, unknown>;
+    const minimal: Record<string, unknown> = {
+      version: 1,
+      name: 'Mínimo',
+      seed: 1,
+      timestamp: 0,
+      path: full.path,
+    };
+    for (const [section, specs] of Object.entries(SECTION_SPECS)) {
+      const source = full[section] as Record<string, unknown>;
+      minimal[section] = Object.fromEntries(
+        Object.entries(specs)
+          .filter(([, spec]) => spec.required)
+          .map(([key]) => [key, source[key]]),
+      );
+    }
+    const result = validatePreset(minimal);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.preset.output.encoder).toBe('mediaRecorder');
+      expect(result.preset.track.bankAngle).toBe(0);
     }
   });
 

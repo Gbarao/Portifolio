@@ -9,6 +9,7 @@ export interface Vec3Like {
 export type Fps = 30 | 60;
 export type ResolutionPresetId = 'vertical' | 'horizontal' | 'square' | 'custom';
 export type VideoCodec = 'vp8' | 'vp9';
+export type VideoEncoderId = 'mediaRecorder' | 'webCodecs';
 export type CurveType = 'centripetal' | 'chordal' | 'catmullrom';
 export type PathPresetId =
   | 'circle'
@@ -42,6 +43,8 @@ export interface OutputSettings {
   fileName: string;
   bitrateMbps: number;
   codec: VideoCodec;
+  /** mediaRecorder (padrão, tempo real) ou webCodecs (timestamps exatos, mais rápido). */
+  encoder: VideoEncoderId;
   autoLoop: boolean;
 }
 
@@ -259,6 +262,7 @@ export const OUTPUT_SPECS: SpecsFor<OutputSettings> = {
   fileName: { kind: 'string', maxLength: 120 },
   bitrateMbps: { kind: 'number', min: 2, max: 15, step: 0.5 },
   codec: { kind: 'enum', values: ['vp8', 'vp9'] },
+  encoder: { kind: 'enum', values: ['mediaRecorder', 'webCodecs'] },
   autoLoop: { kind: 'boolean' },
 };
 

@@ -358,6 +358,7 @@ export class ControlPanel {
       'Tensão da curva (efetiva apenas no tipo Catmull-Rom)',
       ['path'],
     );
+    this.resetButton(f, 'path');
     f.$children.append(this.pathStatus, this.pointTable.element);
   }
 
@@ -1261,6 +1262,15 @@ export class ControlPanel {
       { 'VP8 (compatível)': 'vp8', 'VP9 (menor arquivo)': 'vp9' },
       'Codec',
       'VP8 padrão; VP9 se suportado',
+      ['output'],
+    );
+    this.select(
+      f,
+      o,
+      'encoder',
+      { 'MediaRecorder (padrão)': 'mediaRecorder', 'WebCodecs (frame-exato)': 'webCodecs' },
+      'Encoder',
+      'MediaRecorder grava em tempo real; WebCodecs usa timestamps exatos e independe da GPU',
       ['output'],
     );
     this.bindChange(

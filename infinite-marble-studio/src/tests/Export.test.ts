@@ -6,6 +6,7 @@ import {
   validateExport,
 } from '../export/ExportValidator';
 import { buildExportFileName, slugify } from '../export/FileNaming';
+import { WEBM_IDS, encodeVint, muxWebm, readWebmBlocks } from '../export/WebmMuxer';
 import { ZipWriter, crc32 } from '../export/ZipWriter';
 import { createDefaultProject } from '../presets/DefaultPresets';
 import { MemoryStorage } from '../presets/PresetStore';
@@ -205,5 +206,56 @@ describe('Histórico de exportações', () => {
     history.clear();
     expect(history.list()).toEqual([]);
     expect(history.createId(1000)).not.toBe(history.createId(1000));
+  });
+});
+
+describe('WebmMuxer', () => {
+  it('codifica tamanhos EBML (vint) com o menor comprimento', () => {
+    expect([...encodeVint(0)]).toEqual([0x80]);
+    expect([...encodeVint(126)]).toEqual([0xfe]);
+    expect([...encodeVint(127)]).toEqual([0x40, 0x7f]);
+    expect(encodeVint(2 ** 20).length).toBe(3);
+  });
+
+  it('gera WebM com timestamps exatos por frame e clusters por keyframe', () => {
+    const fps = 30;
+    const frames = 90;
+    const chunks = Array.from({ length: frames }, (_, i) => ({
+      data: new Uint8Array([i & 0xff, 1, 2, 3]),
+      timestampUs: Math.round((i * 1_000_000) / fps),
+      keyFrame: i % 60 === 0,
+    }));
+    const bytes = muxWebm(chunks, {
+      codecId: 'V_VP8',
+      width: 1080,
+      height: 1920,
+      frameRate: fps,
+      durationMs: (frames * 1000) / fps,
+    });
+    expect(new DataView(bytes.buffer).getUint32(0)).toBe(WEBM_IDS.EBML);
+    const { blocks, durationMs } = readWebmBlocks(bytes);
+    expect(durationMs).toBe(3000);
+    expect(blocks).toHaveLength(frames);
+    blocks.forEach((block, i) => {
+      expect(block.timecodeMs).toBe(Math.round((i * 1000) / fps));
+      expect(block.keyFrame).toBe(i % 60 === 0);
+      expect(block.size).toBe(4);
+    });
+    expect(new TextDecoder().decode(bytes)).toContain('V_VP8');
+  });
+
+  it('exige keyframe inicial e pelo menos um frame', () => {
+    expect(() =>
+      muxWebm([], { codecId: 'V_VP8', width: 2, height: 2, frameRate: 30, durationMs: 0 }),
+    ).toThrow();
+    expect(() =>
+      muxWebm([{ data: new Uint8Array(1), timestampUs: 0, keyFrame: false }], {
+        codecId: 'V_VP9',
+        width: 2,
+        height: 2,
+        frameRate: 30,
+        durationMs: 33,
+      }),
+    ).toThrow();
   });
 });
