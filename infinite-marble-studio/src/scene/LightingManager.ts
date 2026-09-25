@@ -126,6 +126,7 @@ export class LightingManager implements Disposable {
     const shadow = this.main.shadow;
     this.main.castShadow = settings.shadowsEnabled;
     shadow.bias = settings.shadowBias;
+    shadow.radius = settings.shadowSoftness;
     if (
       shadow.mapSize.x !== settings.shadowResolution ||
       previousResolution !== settings.shadowResolution

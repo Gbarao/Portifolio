@@ -7,7 +7,7 @@ import {
   Quaternion,
   SphereGeometry,
   Vector3,
-  type MeshStandardMaterial,
+  type MeshPhysicalMaterial,
 } from 'three';
 import type { Disposable } from '../core/Disposable';
 import type { MarbleSettings } from '../presets/PresetSchema';
@@ -19,8 +19,8 @@ import { applyMarbleMaterial, createMarbleMaterial } from './MarbleMaterial';
  * O loop de atualização não aloca objetos: usa vetores/matrizes temporários fixos.
  */
 export class MarbleSystem implements Disposable {
-  readonly mesh: InstancedMesh<SphereGeometry, MeshStandardMaterial>;
-  private readonly material: MeshStandardMaterial;
+  readonly mesh: InstancedMesh<SphereGeometry, MeshPhysicalMaterial>;
+  private readonly material: MeshPhysicalMaterial;
   private readonly geometry: SphereGeometry;
   private kinematics: MarbleKinematics;
   private radius: number;

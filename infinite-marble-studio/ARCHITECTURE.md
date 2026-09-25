@@ -24,12 +24,26 @@ Cores por instância usam `instanceColor`.
 (`SceneEvaluator.capture`) verificam loop perfeito e determinismo no mesmo código usado em
 produção.
 
-**Frames de transporte paralelo em vez de Frenet-Serret puro.** Os frames de Frenet invertem em
-pontos de inflexão e ficam indefinidos em trechos retos, o que faria as bolinhas "pularem" de lado.
-`PathFrames` usa o método da dupla reflexão (frames com rotação mínima), distribui a torção
-residual para que `frame(0) = frame(1)` em curvas fechadas e aplica uma rolagem global constante
-que alinha o "para cima" a +Y (ou +Z em curvas verticais planas). As bolinhas e o dual rail usam os
-mesmos frames, então as bolinhas ficam sempre centralizadas entre os trilhos.
+**Frames alinhados à gravidade ou por transporte paralelo, em vez de Frenet-Serret puro.** Os
+frames de Frenet invertem em pontos de inflexão e ficam indefinidos em trechos retos, o que faria as
+bolinhas "pularem" de lado. `PathFrames` escolhe entre dois modos:
+
+- **gravity**, quando nenhum trecho do trajeto é vertical (|tangente·Y| < 0,85): o "para cima" é a
+  projeção do eixo Y no plano normal à tangente. É o comportamento de uma pista real: a canaleta
+  fica aberta para cima e as bolinhas por cima do trilho, inclusive em bobinas, onde o transporte
+  paralelo acumularia torção e giraria a canaleta.
+- **transport**, em loops verticais: método da dupla reflexão (frames com rotação mínima), com a
+  torção residual distribuída para que `frame(0) = frame(1)` e uma rolagem constante que alinha o
+  "para cima" a +Y (ou +Z em curvas verticais planas).
+
+Nos dois modos o frame depende só da tangente naquele ponto, então fecha sem emenda. Trilho,
+canaleta, dual rail, hastes e bolinhas usam os mesmos frames: as bolinhas ficam sempre dentro da
+canaleta ou centralizadas entre os trilhos.
+
+**Canaleta (groove) extrudada.** Perfil em U (superfície interna, externa e duas bordas, com
+vértices separados para arestas nítidas) extrudado ao longo dos frames, com normais analíticas e
+UV ao longo do comprimento. A textura de madeira é desenhada por código, periódica no sentido do
+comprimento, e repetida um número inteiro de vezes, então não há emenda no fechamento do loop.
 
 **Periodicidade por construção.** Toda grandeza animada é `f(t)` com período 1: senos e cossenos
 com número inteiro de ciclos, `modulo(…, 1)` e ruído gradiente periódico (`PeriodicNoise`). Nenhum
@@ -114,6 +128,7 @@ src/app/App.ts                    Orquestrador: estado, cena, relógio, UI, pers
 src/app/AppState.ts               Estado global (singleton) + assignDeep
 src/app/EventBus.ts               Emissor de eventos tipado
 src/app/ErrorHandler.ts           Tratamento centralizado de erros
+src/app/SimplePace.ts             Duração no modo simples preservando a velocidade das bolinhas
 
 src/core/LoopClock.ts             Relógio preview/export, conversões de frame e tempo de animação
 src/core/SeededRandom.ts          Mulberry32, derivação de seeds, hash
@@ -132,10 +147,13 @@ src/path/PathValidator.ts         Validação (mínimo de pontos, duplicados, Na
 src/path/PathEditor.ts            Operações puras: adicionar, duplicar, mover, remover
 src/path/PathHandles.ts           Esferas de controle, TransformControls e seleção por clique
 
-src/track/TrackBuilder.ts         Interface, fábrica e material (ponto de extensão do Groove)
+src/track/TrackBuilder.ts         Interface, fábrica, material físico e raio externo do trilho
+src/track/GrooveTrackBuilder.ts   Canaleta em U extrudada ao longo dos frames
 src/track/TubeTrackBuilder.ts     Tubo contínuo (TubeGeometry)
 src/track/DualRailTrackBuilder.ts Dois trilhos paralelos (curvas deslocadas pelos frames)
-src/track/TrackManager.ts         Reconstrução e descarte da geometria do trilho
+src/track/TrackManager.ts         Reconstrução e descarte da geometria e da textura do trilho
+src/track/WoodTexture.ts          Veios de madeira procedurais (periódicos, sem emenda)
+src/track/SupportBuilder.ts       Hastes de suporte (layout determinístico + InstancedMesh)
 
 src/marbles/MarbleKinematics.ts   Fase, u, altura de repouso, rotação, cor (função pura de t)
 src/marbles/MarbleSystem.ts       InstancedMesh e atualização sem alocação
@@ -156,6 +174,7 @@ src/scene/SceneManager.ts         Cena Three.js, câmeras, helpers, aplicação 
 src/scene/RendererManager.ts      WebGLRenderer, letterbox, preview × resolução de export
 src/scene/LightingManager.ts      Hemisphere, principal, fill, rim, sombras, ambiente
 src/scene/BackgroundManager.ts    Cor/gradiente/padrão, névoa e chão
+src/scene/DecorationManager.ts    Cúpulas decorativas no chão (posições pela seed)
 
 src/presets/PresetSchema.ts       Tipos, specs de campos (validação e UI), limites
 src/presets/PresetValidator.ts    Validação, migração v0 → v1 e (de)serialização
@@ -174,6 +193,7 @@ src/export/DownloadUtils.ts       Download de Blob, toBlob e miniaturas
 src/export/CaptureHost.ts         Contrato entre exportadores e App
 
 src/ui/ControlPanel.ts            lil-gui em 10 seções, com dicas e visibilidade por modo
+src/ui/SimplePanel.ts             Modo simples: estilo, formato, duração e baixar
 src/ui/TopBar.ts                  Barra de ações
 src/ui/StatusPanel.ts             FPS, draw calls, memória, curva, arquivo
 src/ui/PointTable.ts              Tabela de pontos de controle

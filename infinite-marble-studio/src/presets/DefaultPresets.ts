@@ -1,5 +1,6 @@
 import { DEFAULT_CUSTOM_COLORS } from '../marbles/MarbleColorPalette';
 import { createPresetPoints } from '../path/PathFactory';
+import { PathModel } from '../path/PathModel';
 import {
   PRESET_VERSION,
   type BackgroundSettings,
@@ -63,6 +64,10 @@ export function createDefaultTrack(): TrackSettings {
     receiveShadow: true,
     visible: true,
     bankAngle: 0,
+    finish: 'smooth',
+    clearcoat: 0,
+    supports: false,
+    supportColor: 0x3b3f48,
   };
 }
 
@@ -92,6 +97,7 @@ export function createDefaultMarbles(): MarbleSettings {
     pulseAmount: 0,
     pulseCycles: 1,
     segments: 32,
+    clearcoat: 0,
   };
 }
 
@@ -128,6 +134,7 @@ export const LIGHTING_PRESETS: Record<Exclude<LightingPresetId, 'custom'>, Light
     shadowsEnabled: true,
     shadowResolution: 1024,
     shadowBias: -0.0005,
+    shadowSoftness: 2,
     globalIntensity: 1,
     environmentIntensity: 0.35,
     toneMapping: 'linear',
@@ -152,6 +159,7 @@ export const LIGHTING_PRESETS: Record<Exclude<LightingPresetId, 'custom'>, Light
     shadowsEnabled: false,
     shadowResolution: 1024,
     shadowBias: -0.0005,
+    shadowSoftness: 2,
     globalIntensity: 1,
     environmentIntensity: 0.55,
     toneMapping: 'linear',
@@ -176,6 +184,7 @@ export const LIGHTING_PRESETS: Record<Exclude<LightingPresetId, 'custom'>, Light
     shadowsEnabled: true,
     shadowResolution: 1024,
     shadowBias: -0.0005,
+    shadowSoftness: 2,
     globalIntensity: 1,
     environmentIntensity: 0.45,
     toneMapping: 'linear',
@@ -200,6 +209,7 @@ export const LIGHTING_PRESETS: Record<Exclude<LightingPresetId, 'custom'>, Light
     shadowsEnabled: true,
     shadowResolution: 2048,
     shadowBias: -0.0004,
+    shadowSoftness: 2,
     globalIntensity: 1,
     environmentIntensity: 0.9,
     toneMapping: 'linear',
@@ -224,6 +234,7 @@ export const LIGHTING_PRESETS: Record<Exclude<LightingPresetId, 'custom'>, Light
     shadowsEnabled: true,
     shadowResolution: 2048,
     shadowBias: -0.0004,
+    shadowSoftness: 2,
     globalIntensity: 1,
     environmentIntensity: 0.6,
     toneMapping: 'linear',
@@ -238,6 +249,31 @@ export const LIGHTING_PRESETS: Record<Exclude<LightingPresetId, 'custom'>, Light
     pulseAmount: 0,
     pulseCycles: 1,
   },
+  softStudio: {
+    preset: 'softStudio',
+    ambientIntensity: 0.6,
+    mainLightIntensity: 2.7,
+    fillLightIntensity: 0.85,
+    rimLightIntensity: 0.7,
+    exposure: 1.0,
+    shadowsEnabled: true,
+    shadowResolution: 2048,
+    shadowBias: -0.0004,
+    shadowSoftness: 5,
+    globalIntensity: 1,
+    environmentIntensity: 0.55,
+    toneMapping: 'neutral',
+    skyColor: 0xfff4ea,
+    groundColor: 0xc9a58a,
+    mainColor: 0xfff1e2,
+    mainPosition: { x: 5, y: 12, z: 7 },
+    fillColor: 0xffe6d2,
+    fillPosition: { x: -8, y: 4, z: 5 },
+    rimColor: 0xffffff,
+    rimPosition: { x: 0, y: 6, z: -10 },
+    pulseAmount: 0,
+    pulseCycles: 1,
+  },
 };
 
 export const LIGHTING_PRESET_LABELS: Record<LightingPresetId, string> = {
@@ -246,6 +282,7 @@ export const LIGHTING_PRESET_LABELS: Record<LightingPresetId, string> = {
   pastel: 'Pastel',
   metallicGold: 'Metallic Gold',
   woodenWarm: 'Wooden Warm',
+  softStudio: 'Soft Studio',
   custom: 'Custom',
 };
 
@@ -280,6 +317,7 @@ export function createDefaultBackground(): BackgroundSettings {
     groundSize: 80,
     groundRoughness: 0.85,
     groundMetalness: 0,
+    decorations: false,
   };
 }
 
@@ -324,7 +362,14 @@ function buildPreset(overrides: PresetOverrides): ScenePreset {
 }
 
 function pathFor(
-  id: 'circle' | 'figureEight' | 'wave3d' | 'toroidalSpiral' | 'torusKnot',
+  id:
+    | 'circle'
+    | 'figureEight'
+    | 'wave3d'
+    | 'toroidalSpiral'
+    | 'torusKnot'
+    | 'coilTower'
+    | 'spiralTower',
 ): PathSettings {
   return {
     preset: id,
@@ -335,8 +380,103 @@ function pathFor(
   };
 }
 
+/** Altura do chão logo abaixo do ponto mais baixo do trajeto (o trilho "encosta" no chão). */
+function groundUnder(path: PathSettings, clearance: number): number {
+  const model = new PathModel(path);
+  return Number((model.boundingBox.min.y - clearance).toFixed(2));
+}
+
+const COIL_PATH = pathFor('coilTower');
+const TOWER_PATH = pathFor('spiralTower');
+
 /** Presets de cena prontos (built-in). */
 export const BUILT_IN_PRESETS: readonly ScenePreset[] = [
+  buildPreset({
+    name: 'Wooden Coil',
+    description: 'Canaleta de madeira em torre espiral, bolinhas brilhantes, estúdio suave.',
+    seed: 7070,
+    path: TOWER_PATH,
+    track: {
+      style: 'groove',
+      radius: 0.46,
+      color: 0xe0955a,
+      finish: 'wood',
+      metalness: 0,
+      roughness: 0.42,
+      clearcoat: 0.5,
+      segmentCount: 400,
+      radialSegments: 14,
+      supports: true,
+      supportColor: 0xdcc9a8,
+    },
+    marbles: {
+      count: 10,
+      radius: 0.33,
+      palette: 'custom',
+      customColors: [0x12857c, 0xe5531a],
+      metalness: 0,
+      roughness: 0.16,
+      clearcoat: 1,
+    },
+    camera: { mode: 'fixed', position: { x: 3, y: 6.5, z: 12.5 }, framingMargin: 0.08 },
+    lighting: createLightingPreset('softStudio'),
+    background: {
+      type: 'solid',
+      colorMain: 0xe8c29e,
+      fogEnabled: true,
+      fogType: 'linear',
+      fogMatchBackground: true,
+      fogNear: 22,
+      fogFar: 60,
+      groundEnabled: true,
+      groundHeight: groundUnder(TOWER_PATH, 0.56),
+      groundColor: 0xe8c29e,
+      groundRoughness: 0.95,
+      decorations: true,
+    },
+  }),
+  buildPreset({
+    name: 'Blue Coaster',
+    description: 'Canaleta azul com hastes metálicas, rampa ondulada e bolinhas de vidro.',
+    seed: 8080,
+    path: COIL_PATH,
+    track: {
+      style: 'groove',
+      radius: 0.3,
+      color: 0x1f6fe5,
+      metalness: 0,
+      roughness: 0.28,
+      clearcoat: 0.8,
+      segmentCount: 400,
+      radialSegments: 14,
+      supports: true,
+      supportColor: 0x3a342f,
+    },
+    marbles: {
+      count: 20,
+      radius: 0.19,
+      palette: 'custom',
+      customColors: [0x1d2a44, 0xe9e3d8, 0x8a4a2c, 0x3b6d46, 0xb3262a, 0x6a6a6a],
+      metalness: 0.05,
+      roughness: 0.06,
+      clearcoat: 1,
+    },
+    camera: { mode: 'fixed', position: { x: -6, y: 10, z: 9 }, framingMargin: 0.06 },
+    lighting: { ...createLightingPreset('softStudio'), mainPosition: { x: -6, y: 12, z: 6 } },
+    background: {
+      type: 'solid',
+      colorMain: 0xd8cfc2,
+      fogEnabled: true,
+      fogType: 'linear',
+      fogMatchBackground: true,
+      fogNear: 22,
+      fogFar: 60,
+      groundEnabled: true,
+      groundHeight: groundUnder(COIL_PATH, 0.38),
+      groundColor: 0xd8cfc2,
+      groundRoughness: 0.95,
+    },
+  }),
   buildPreset({
     name: 'Mesmerizing Circle',
     description: 'Círculo simples, bolinhas neon, câmera fixa.',

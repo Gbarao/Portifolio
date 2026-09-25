@@ -14,8 +14,10 @@ import type { Disposable } from '../core/Disposable';
 import { MarbleSystem } from '../marbles/MarbleSystem';
 import { PathHandles } from '../path/PathHandles';
 import type { ScenePreset, SectionKey, TrackSettings, Vec3Like } from '../presets/PresetSchema';
+import { SupportManager } from '../track/SupportBuilder';
 import { TrackManager } from '../track/TrackManager';
 import { BackgroundManager } from './BackgroundManager';
+import { DecorationManager } from './DecorationManager';
 import { LightingManager } from './LightingManager';
 import type { RendererManager } from './RendererManager';
 import { Simulation } from './Simulation';
@@ -110,6 +112,8 @@ export class SceneManager implements Disposable {
   private readonly lighting: LightingManager;
   private readonly background: BackgroundManager;
   private readonly track: TrackManager;
+  private readonly supports: SupportManager;
+  private readonly decorations: DecorationManager;
   private marbles: MarbleSystem;
   private readonly grid = new GridHelper(24, 24, 0x5566aa, 0x2a3050);
   private readonly rigControls: OrbitControls;
@@ -140,6 +144,8 @@ export class SceneManager implements Disposable {
     this.lighting.ensureEnvironment(renderer);
     this.background = new BackgroundManager(this.scene);
     this.track = new TrackManager(this.scene, project.track);
+    this.supports = new SupportManager(this.scene);
+    this.decorations = new DecorationManager(this.scene);
     this.marbles = new MarbleSystem(this.simulation.kinematics, project.marbles);
     this.scene.add(this.marbles.mesh);
 
@@ -223,9 +229,27 @@ export class SceneManager implements Disposable {
 
     const bounds = this.simulation.path.boundingSphere;
     if (trackDirty) {
-      this.track.rebuild(this.simulation.path, project.track);
-    } else if (dirty.has('track')) {
-      this.track.applySettings(project.track);
+      this.track.rebuild(this.simulation.path, project.track, project.seed);
+    } else if (dirty.has('track') || dirty.has('seed')) {
+      this.track.applySettings(project.track, project.seed);
+    }
+    const background = project.background;
+    if (trackDirty || dirty.has('track') || dirty.has('background')) {
+      this.supports.rebuild(
+        this.simulation.path,
+        project.track,
+        background.groundHeight,
+        project.track.supports && background.groundEnabled,
+      );
+    }
+    if (pathDirty || dirty.has('background') || dirty.has('marbles') || dirty.has('seed')) {
+      this.decorations.rebuild(
+        project.seed,
+        bounds,
+        background.groundHeight,
+        this.simulation.kinematics.baseColors,
+        background.decorations && background.groundEnabled,
+      );
     }
 
     if (pathDirty || trackDirty || dirty.has('marbles') || dirty.has('seed')) {
@@ -359,6 +383,8 @@ export class SceneManager implements Disposable {
     this.handles.dispose();
     this.marbles.dispose();
     this.track.dispose();
+    this.supports.dispose();
+    this.decorations.dispose();
     this.background.dispose();
     this.lighting.dispose();
     this.grid.removeFromParent();

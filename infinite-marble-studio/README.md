@@ -209,9 +209,13 @@ ffmpeg -framerate 30 -i frame_%05d.png -c:v libx264 -pix_fmt yuv420p -movflags +
 
 ## Presets e JSON
 
-- **Presets de cena built-in**: Mesmerizing Circle, Golden Spiral, Twisted Figure, Dark Loop e
-  Minimalist (`src/presets/DefaultPresets.ts`).
-- **Presets de iluminação**: Dark Neon, Clean Studio, Pastel, Metallic Gold e Wooden Warm.
+- **Presets de cena built-in**: Wooden Coil (Madeira), Blue Coaster (Montanha Azul), Mesmerizing
+  Circle, Golden Spiral, Twisted Figure, Dark Loop e Minimalist (`src/presets/DefaultPresets.ts`).
+- **Presets de iluminação**: Dark Neon, Clean Studio, Pastel, Metallic Gold, Wooden Warm e Soft
+  Studio (sombras suaves para fundo claro de estúdio).
+- **Estilos de trilho**: canaleta em U (as bolinhas correm dentro do canal), tubo e dual rail;
+  acabamento liso ou **madeira** (veios gerados por código); hastes de suporte até o chão;
+  verniz (clearcoat) no trilho e nas bolinhas; cúpulas decorativas no chão.
 - **Salvar/Carregar/Excluir** presets próprios (armazenados no navegador).
 - **Exportar/Importar JSON**: o arquivo contém o schema versionado (`version: 1`) com todas as
   configurações: `output`, `loop`, `path` (pontos de controle), `track`, `marbles`, `camera`,
@@ -264,6 +268,8 @@ de exportação, ZIP e muxer WebM.
 | "Armazenamento local cheio"                         | Exclua presets salvos ou itens do histórico. O histórico remove miniaturas automaticamente quando falta espaço.                                                        |
 | Preset JSON rejeitado                               | A mensagem indica o campo e o intervalo esperado. Corrija o arquivo ou use _Restaurar padrão_.                                                                         |
 | Curva "inválida"                                    | Remova pontos duplicados consecutivos, mantenha pelo menos 4 pontos e use _AutoFitPath_ para recentralizar.                                                            |
+| Canaleta virada de lado                             | Em trajetos com trecho vertical (círculo vertical, pista em S, espiral toroidal) o "para cima" do trilho acompanha a curva. Use o estilo **Tubo** nesses trajetos.     |
+| Hastes de suporte não aparecem                      | Elas só aparecem com o chão ativado (Fundo → Chão) e onde nenhum outro trecho do trilho está no caminho até o chão.                                                    |
 | Bolinhas "flutuando" entre trilhos                  | No dual rail, se `raio da bolinha + raio do trilho` for menor que metade da largura, a bolinha fica centralizada entre os trilhos. Aumente o raio ou reduza a largura. |
 
 ## Créditos

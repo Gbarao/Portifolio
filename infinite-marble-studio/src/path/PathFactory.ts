@@ -14,6 +14,8 @@ export const PATH_PRESET_LABELS: Record<PathPresetId, string> = {
   torusKnot: 'Torus knot (3,2)',
   sTrack: 'Pista em S',
   stackedCircuit: 'Circuito empilhado',
+  coilTower: 'Bobina e rampa',
+  spiralTower: 'Torre espiral',
   custom: 'Percurso personalizado',
 };
 
@@ -27,6 +29,8 @@ export const BUILT_IN_PATH_PRESETS: readonly BuiltInPathPresetId[] = [
   'torusKnot',
   'sTrack',
   'stackedCircuit',
+  'coilTower',
+  'spiralTower',
 ];
 
 function sample(count: number, fn: (theta: number) => Vec3Like): Vec3Like[] {
@@ -82,6 +86,64 @@ const RAW_PRESETS: Record<BuiltInPathPresetId, () => Vec3Like[]> = {
       const turns = 4;
       const r = 3.5 + 1.1 * Math.sin(t);
       return { x: r * Math.cos(turns * t), y: 3.6 * Math.cos(t), z: r * Math.sin(turns * t) };
+    }),
+
+  // Bobina de 3 voltas subindo + rampa ondulada descendo num laço ao lado (tangente em A).
+  // Nas emendas a inclinação é zero e a direção horizontal coincide: fechamento suave.
+  coilTower: () =>
+    sample(50, (theta) => {
+      const t = theta / TAU;
+      const coilShare = 0.6;
+      const turns = 3;
+      const coilRadius = 1.5;
+      const lobeRadius = 3.4;
+      const halfHeight = 3.2;
+      if (t < coilShare) {
+        const k = t / coilShare;
+        const phi = TAU * turns * k;
+        return {
+          x: coilRadius * Math.cos(phi),
+          y: -halfHeight * Math.cos(Math.PI * k),
+          z: coilRadius * Math.sin(phi),
+        };
+      }
+      const k = (t - coilShare) / (1 - coilShare);
+      const psi = Math.PI - TAU * k;
+      const wiggle = 0.55 * Math.sin(Math.PI * k) * Math.sin(TAU * 3 * k);
+      return {
+        x: coilRadius + lobeRadius + lobeRadius * Math.cos(psi),
+        y: halfHeight * Math.cos(Math.PI * k) + wiggle,
+        z: 0.8 * lobeRadius * Math.sin(psi),
+      };
+    }),
+
+  // Vertical (bom para 9:16): bobina de 4 voltas subindo no centro e uma rampa ondulada que
+  // desce contornando a torre (círculos tangentes internamente em A, mesmo sentido de giro).
+  spiralTower: () =>
+    sample(64, (theta) => {
+      const t = theta / TAU;
+      const coilShare = 0.62;
+      const turns = 4;
+      const coilRadius = 1.3;
+      const ringRadius = 3.3;
+      const halfHeight = 4;
+      if (t < coilShare) {
+        const k = t / coilShare;
+        const phi = TAU * turns * k;
+        return {
+          x: coilRadius * Math.cos(phi),
+          y: -halfHeight * Math.cos(Math.PI * k),
+          z: coilRadius * Math.sin(phi),
+        };
+      }
+      const k = (t - coilShare) / (1 - coilShare);
+      const psi = TAU * k;
+      const wiggle = 0.45 * Math.sin(Math.PI * k) * Math.sin(TAU * 4 * k);
+      return {
+        x: coilRadius - ringRadius + ringRadius * Math.cos(psi),
+        y: halfHeight * Math.cos(Math.PI * k) + wiggle,
+        z: ringRadius * Math.sin(psi),
+      };
     }),
 };
 

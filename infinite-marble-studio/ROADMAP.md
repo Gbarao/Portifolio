@@ -3,10 +3,14 @@
 A versão 1 (MVP) está completa. Os itens abaixo **não fazem parte da v1** e ficam registrados aqui
 para evitar aumento de escopo.
 
+## Já implementado após a v1
+
+- Trilho **Groove** (canaleta em U), acabamento madeira, hastes de suporte, verniz, sombras suaves
+  e cúpulas decorativas.
+- Modo simples e arquivo único que abre com dois cliques.
+
 ## Fase 2 (não implementado)
 
-- Trilho **Groove**: canal côncavo/pista em U (ponto de extensão em `src/track/TrackBuilder.ts`,
-  marcado com `// TODO FUTURE: Groove track builder`).
 - Modo infinito (geração procedural contínua).
 - Chunking e object pooling para cenas enormes.
 - Publicação automática em TikTok/Instagram.

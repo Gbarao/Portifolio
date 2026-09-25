@@ -1,4 +1,4 @@
-import { CanvasTexture, MeshStandardMaterial, SRGBColorSpace } from 'three';
+import { CanvasTexture, MeshPhysicalMaterial, SRGBColorSpace } from 'three';
 import type { MarbleSettings } from '../presets/PresetSchema';
 
 /** Textura procedural com faixa no equador: torna a rolagem visível. */
@@ -21,21 +21,23 @@ function createStripeTexture(): CanvasTexture | null {
   return texture;
 }
 
-export function createMarbleMaterial(settings: MarbleSettings): MeshStandardMaterial {
-  const material = new MeshStandardMaterial({ color: 0xffffff });
+export function createMarbleMaterial(settings: MarbleSettings): MeshPhysicalMaterial {
+  const material = new MeshPhysicalMaterial({ color: 0xffffff });
   applyMarbleMaterial(material, settings);
   return material;
 }
 
 /** Atualiza o material in-place (sem recriar shaders quando possível). */
 export function applyMarbleMaterial(
-  material: MeshStandardMaterial,
+  material: MeshPhysicalMaterial,
   settings: MarbleSettings,
 ): void {
   material.metalness = settings.metalness;
   material.roughness = settings.roughness;
   material.emissive.setHex(settings.emissive);
   material.emissiveIntensity = settings.emissiveIntensity;
+  material.clearcoat = settings.clearcoat;
+  material.clearcoatRoughness = 0.06;
   const wantsStripes = settings.pattern === 'striped';
   if (wantsStripes && !material.map) {
     material.map = createStripeTexture();

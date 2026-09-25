@@ -19,13 +19,16 @@ export type PathPresetId =
   | 'torusKnot'
   | 'sTrack'
   | 'stackedCircuit'
+  | 'coilTower'
+  | 'spiralTower'
   | 'custom';
-export type TrackStyle = 'tube' | 'dualRail';
+export type TrackStyle = 'tube' | 'dualRail' | 'groove';
+export type TrackFinish = 'smooth' | 'wood';
 export type PaletteId = 'rainbow' | 'metal' | 'pastels' | 'neon' | 'custom';
 export type MarblePattern = 'solid' | 'striped';
 export type CameraMode = 'fixed' | 'orbit' | 'follow' | 'rail' | 'topView';
 export type LightingPresetId =
-  'darkNeon' | 'cleanStudio' | 'pastel' | 'metallicGold' | 'woodenWarm' | 'custom';
+  'darkNeon' | 'cleanStudio' | 'pastel' | 'metallicGold' | 'woodenWarm' | 'softStudio' | 'custom';
 export type ToneMappingId = 'linear' | 'aces' | 'agx' | 'neutral' | 'none';
 export type BackgroundType = 'solid' | 'gradient' | 'pattern';
 export type GradientMode = 'vertical' | 'radial';
@@ -87,6 +90,13 @@ export interface TrackSettings {
   visible: boolean;
   /** Rotação constante (graus) dos frames em torno da tangente. */
   bankAngle: number;
+  /** Acabamento: liso ou madeira (textura procedural). */
+  finish: TrackFinish;
+  /** Camada de verniz/brilho (0–1). */
+  clearcoat: number;
+  /** Hastes de suporte até o chão (visíveis com o chão ativado). */
+  supports: boolean;
+  supportColor: number;
 }
 
 export interface MarbleSettings {
@@ -118,6 +128,8 @@ export interface MarbleSettings {
   pulseAmount: number;
   pulseCycles: number;
   segments: number;
+  /** Camada de verniz/brilho tipo plástico (0–1). */
+  clearcoat: number;
 }
 
 export interface CameraSettings {
@@ -151,6 +163,8 @@ export interface LightingSettings {
   shadowsEnabled: boolean;
   shadowResolution: number;
   shadowBias: number;
+  /** Raio de desfoque da sombra (PCF); maior = sombra mais suave. */
+  shadowSoftness: number;
   globalIntensity: number;
   /** Intensidade do ambiente procedural (RoomEnvironment). 0 = desativado. */
   environmentIntensity: number;
@@ -189,6 +203,8 @@ export interface BackgroundSettings {
   groundSize: number;
   groundRoughness: number;
   groundMetalness: number;
+  /** Cúpulas decorativas no chão (posições derivadas da seed). */
+  decorations: boolean;
 }
 
 export interface ScenePreset {
@@ -283,6 +299,8 @@ export const PATH_SPECS: SpecsFor<Omit<PathSettings, 'points'>> = {
       'torusKnot',
       'sTrack',
       'stackedCircuit',
+      'coilTower',
+      'spiralTower',
       'custom',
     ],
     required: true,
@@ -297,7 +315,7 @@ export const MIN_PATH_POINTS = 4;
 export const MAX_PATH_POINTS = 256;
 
 export const TRACK_SPECS: SpecsFor<TrackSettings> = {
-  style: { kind: 'enum', values: ['tube', 'dualRail'], required: true },
+  style: { kind: 'enum', values: ['tube', 'dualRail', 'groove'], required: true },
   radius: { kind: 'number', min: 0.02, max: 1.5, step: 0.01, required: true },
   railDistance: { kind: 'number', min: 0.1, max: 3, step: 0.01 },
   railRadius: { kind: 'number', min: 0.02, max: 0.6, step: 0.01 },
@@ -313,6 +331,10 @@ export const TRACK_SPECS: SpecsFor<TrackSettings> = {
   receiveShadow: { kind: 'boolean' },
   visible: { kind: 'boolean' },
   bankAngle: { kind: 'number', min: -180, max: 180, step: 1 },
+  finish: { kind: 'enum', values: ['smooth', 'wood'] },
+  clearcoat: { kind: 'number', min: 0, max: 1, step: 0.01 },
+  supports: { kind: 'boolean' },
+  supportColor: { kind: 'color' },
 };
 
 export const MARBLE_SPECS: SpecsFor<MarbleSettings> = {
@@ -344,6 +366,7 @@ export const MARBLE_SPECS: SpecsFor<MarbleSettings> = {
   pulseAmount: { kind: 'number', min: 0, max: 0.5, step: 0.01 },
   pulseCycles: { kind: 'number', min: 1, max: 16, step: 1, integer: true },
   segments: { kind: 'number', min: 8, max: 64, step: 1, integer: true },
+  clearcoat: { kind: 'number', min: 0, max: 1, step: 0.01 },
 };
 
 export const CAMERA_SPECS: SpecsFor<CameraSettings> = {
@@ -368,7 +391,15 @@ export const CAMERA_SPECS: SpecsFor<CameraSettings> = {
 export const LIGHTING_SPECS: SpecsFor<LightingSettings> = {
   preset: {
     kind: 'enum',
-    values: ['darkNeon', 'cleanStudio', 'pastel', 'metallicGold', 'woodenWarm', 'custom'],
+    values: [
+      'darkNeon',
+      'cleanStudio',
+      'pastel',
+      'metallicGold',
+      'woodenWarm',
+      'softStudio',
+      'custom',
+    ],
     required: true,
   },
   ambientIntensity: { kind: 'number', min: 0, max: 5, step: 0.01, required: true },
@@ -379,6 +410,7 @@ export const LIGHTING_SPECS: SpecsFor<LightingSettings> = {
   shadowsEnabled: { kind: 'boolean', required: true },
   shadowResolution: { kind: 'enum', values: SHADOW_RESOLUTIONS, required: true },
   shadowBias: { kind: 'number', min: -0.005, max: 0.005, step: 0.0001, required: true },
+  shadowSoftness: { kind: 'number', min: 0, max: 16, step: 0.5 },
   globalIntensity: { kind: 'number', min: 0, max: 3, step: 0.01 },
   environmentIntensity: { kind: 'number', min: 0, max: 3, step: 0.01 },
   toneMapping: { kind: 'enum', values: ['linear', 'aces', 'agx', 'neutral', 'none'] },
@@ -416,6 +448,7 @@ export const BACKGROUND_SPECS: SpecsFor<BackgroundSettings> = {
   groundSize: { kind: 'number', min: 5, max: 400, step: 1 },
   groundRoughness: { kind: 'number', min: 0, max: 1, step: 0.01 },
   groundMetalness: { kind: 'number', min: 0, max: 1, step: 0.01 },
+  decorations: { kind: 'boolean' },
 };
 
 export const SECTION_SPECS = {

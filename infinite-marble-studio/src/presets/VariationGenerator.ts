@@ -8,6 +8,7 @@ import {
   createPresetPoints,
   randomizePath,
 } from '../path/PathFactory';
+import { PathModel } from '../path/PathModel';
 import { computeBounds } from '../path/PathValidator';
 import { LIGHTING_PRESET_LABELS, createLightingPreset } from './DefaultPresets';
 import type {
@@ -16,6 +17,7 @@ import type {
   PaletteId,
   PathPresetId,
   ScenePreset,
+  TrackStyle,
   Vec3Like,
 } from './PresetSchema';
 
@@ -122,6 +124,47 @@ function placeCamera(project: ScenePreset, azimuth: number, jitterDeg = 0): void
   project.camera.height = round(Math.min(10, height));
 }
 
+const TRACK_STYLE_LABELS: Record<TrackStyle, string> = {
+  tube: 'Tubo',
+  dualRail: 'Dual rail',
+  groove: 'Canaleta',
+};
+
+const round2 = (v: number): number => Number(v.toFixed(2));
+
+/** Ajusta as medidas do trilho ao raio das bolinhas (canaleta mais larga que a bolinha etc.). */
+function fitTrackToMarbles(project: ScenePreset): void {
+  const r = project.marbles.radius;
+  const t = project.track;
+  if (t.style === 'groove') t.radius = round2(Math.min(1.5, Math.max(t.radius, r * 1.4)));
+  if (t.style === 'tube') t.radius = round2(Math.min(1.5, Math.max(0.08, r * 0.9)));
+  if (t.style === 'dualRail') {
+    t.railRadius = round2(Math.max(0.04, r * 0.3));
+    t.railDistance = round2((t.railRadius + r) * 1.6);
+  }
+}
+
+/**
+ * A canaleta precisa de frames alinhados à gravidade (sem trechos verticais); em loops
+ * verticais ela ficaria de lado, então vira tubo.
+ */
+function ensureStyleFitsPath(project: ScenePreset): void {
+  if (project.track.style !== 'groove') return;
+  const frames = new PathModel(project.path, { frameSamples: 256 }).frames;
+  if (frames.mode !== 'gravity') {
+    project.track.style = 'tube';
+    fitTrackToMarbles(project);
+  }
+}
+
+/** Chão logo abaixo do ponto mais baixo do trajeto (para o trilho "encostar" no chão). */
+function groundUnderPath(project: ScenePreset): number {
+  const { min } = computeBounds(project.path.points);
+  const t = project.track;
+  const outer = t.style === 'dualRail' ? t.railRadius : t.radius * 1.22;
+  return round2(Math.max(-30, min.y - outer - 0.35));
+}
+
 const MUTATORS: Record<VariationCategory, Mutator> = {
   path(project, rng, seed, options) {
     const before = project.path.preset;
@@ -134,6 +177,9 @@ const MUTATORS: Record<VariationCategory, Mutator> = {
     // Mantém o azimute atual e ajusta a elevação ao formato do novo trajeto.
     const { position } = project.camera;
     placeCamera(project, Math.atan2(position.x, position.z));
+    ensureStyleFitsPath(project);
+    if (project.background.groundEnabled)
+      project.background.groundHeight = groundUnderPath(project);
     return `Trajeto: ${PATH_PRESET_LABELS[before]} → ${PATH_PRESET_LABELS[next]}${
       next === 'custom' ? ` (seed ${seed})` : ''
     }`;
@@ -145,6 +191,7 @@ const MUTATORS: Record<VariationCategory, Mutator> = {
     project.marbles.spacing = 0;
     project.marbles.radius = Number(rng.nextFloat(0.12, 0.26).toFixed(2));
     project.camera.followMarbleIndex = 0;
+    fitTrackToMarbles(project);
     return `Bolinhas: ${before} → ${next} (raio ${project.marbles.radius})`;
   },
   palette(project, rng) {
@@ -181,6 +228,7 @@ const MUTATORS: Record<VariationCategory, Mutator> = {
       'pastel',
       'metallicGold',
       'woodenWarm',
+      'softStudio',
     ];
     const next = pickDifferent(rng, options, before as Exclude<LightingPresetId, 'custom'>);
     project.lighting = createLightingPreset(next);
@@ -188,14 +236,41 @@ const MUTATORS: Record<VariationCategory, Mutator> = {
   },
   material(project, rng) {
     const m = project.marbles;
-    const beforeMetal = m.metalness;
-    const beforeRough = m.roughness;
-    m.metalness = Number(rng.nextFloat(0, 1).toFixed(2));
-    m.roughness = Number(rng.nextFloat(0.05, 0.6).toFixed(2));
-    project.track.color = randomColor(rng, [0.1, 0.5], [0.12, 0.6]);
-    project.track.metalness = Number(rng.nextFloat(0, 1).toFixed(2));
-    project.track.roughness = Number(rng.nextFloat(0.15, 0.7).toFixed(2));
-    return `Material: metalness ${beforeMetal} → ${m.metalness}, roughness ${beforeRough} → ${m.roughness}, trilho ${hex(project.track.color)}`;
+    const t = project.track;
+    const beforeStyle = t.style;
+    const styles: TrackStyle[] = [
+      'groove',
+      'groove',
+      'groove',
+      'groove',
+      'groove',
+      'tube',
+      'tube',
+      'tube',
+      'dualRail',
+      'dualRail',
+    ];
+    t.style = rng.pick(styles);
+    const wood = t.style !== 'dualRail' && rng.nextBool(0.35);
+    t.finish = wood ? 'wood' : 'smooth';
+    t.color = wood
+      ? new Color()
+          .setHSL(rng.nextFloat(0.05, 0.1), rng.nextFloat(0.5, 0.7), rng.nextFloat(0.5, 0.62))
+          .getHex()
+      : randomColor(rng, [0.3, 0.85], [0.35, 0.6]);
+    t.metalness = wood ? 0 : rng.pick([0, 0, 0.2, 0.8]);
+    t.roughness = round2(wood ? 0.42 : rng.nextFloat(0.2, 0.5));
+    t.clearcoat = round2(rng.nextFloat(0.3, 1));
+    t.segmentCount = Math.max(t.segmentCount, 300);
+    t.radialSegments = Math.max(t.radialSegments, 12);
+    m.metalness = rng.pick([0, 0, 0.1, 0.9]);
+    m.roughness = round2(rng.nextFloat(0.05, 0.35));
+    m.clearcoat = m.metalness > 0.5 ? 0.3 : 1;
+    fitTrackToMarbles(project);
+    ensureStyleFitsPath(project);
+    return `Material: trilho ${TRACK_STYLE_LABELS[beforeStyle]} → ${TRACK_STYLE_LABELS[t.style]}${
+      wood ? ' de madeira' : ''
+    } ${hex(t.color)}, bolinhas metalness ${m.metalness}`;
   },
   speed(project, rng) {
     const before = project.marbles.cycleCount;
@@ -206,12 +281,41 @@ const MUTATORS: Record<VariationCategory, Mutator> = {
   background(project, rng) {
     const b = project.background;
     const before = `${b.type} ${hex(b.colorMain)}`;
+    if (rng.nextBool(0.55)) {
+      // Estúdio: fundo claro liso, chão da mesma cor, névoa escondendo o horizonte.
+      b.type = 'solid';
+      b.colorMain = new Color()
+        .setHSL(rng.nextFloat(0, 1), rng.nextFloat(0.2, 0.45), rng.nextFloat(0.7, 0.8))
+        .getHex();
+      b.groundEnabled = true;
+      b.groundColor = b.colorMain;
+      b.groundOpacity = 1;
+      b.groundRoughness = 0.95;
+      b.groundHeight = groundUnderPath(project);
+      b.fogEnabled = true;
+      b.fogType = 'linear';
+      b.fogMatchBackground = true;
+      b.fogNear = 22;
+      b.fogFar = 60;
+      b.decorations = rng.nextBool(0.6);
+      project.track.supports = true;
+      project.track.supportColor = rng.pick([0x3a342f, 0xdcc9a8, 0x8a8f99]);
+      // Luz calibrada para fundo claro (as demais estouram o branco).
+      project.lighting = createLightingPreset('softStudio');
+      return `Fundo: ${before} → estúdio ${hex(b.colorMain)} com luz suave${
+        b.decorations ? ' e decoração' : ''
+      }`;
+    }
     const dark = rng.nextBool(0.65);
     b.type = rng.nextBool(0.7) ? 'gradient' : 'solid';
     b.gradientMode = rng.nextBool(0.5) ? 'vertical' : 'radial';
     b.colorMain = randomColor(rng, [0.3, 0.8], dark ? [0.08, 0.22] : [0.75, 0.92]);
     b.colorSecondary = randomColor(rng, [0.2, 0.7], dark ? [0.01, 0.06] : [0.85, 0.97]);
     b.fogColor = b.colorSecondary;
+    b.fogEnabled = false;
+    b.groundEnabled = false;
+    b.decorations = false;
+    project.track.supports = false;
     return `Fundo: ${before} → ${b.type} ${hex(b.colorMain)}`;
   },
 };

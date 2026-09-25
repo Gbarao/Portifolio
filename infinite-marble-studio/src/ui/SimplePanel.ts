@@ -13,6 +13,16 @@ export interface SimpleStyle {
 
 export const SIMPLE_STYLES: readonly SimpleStyle[] = [
   {
+    presetName: 'Wooden Coil',
+    label: 'Madeira',
+    swatch: 'linear-gradient(160deg, #e39a5b, #9c5a2c)',
+  },
+  {
+    presetName: 'Blue Coaster',
+    label: 'Montanha Azul',
+    swatch: 'linear-gradient(160deg, #3b86f0, #163f86)',
+  },
+  {
     presetName: 'Mesmerizing Circle',
     label: 'Círculo Neon',
     swatch: 'radial-gradient(circle at 50% 50%, #3b1a70, #07030f)',

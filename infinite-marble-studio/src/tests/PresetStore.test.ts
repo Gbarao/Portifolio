@@ -49,7 +49,7 @@ describe('Serialização', () => {
     const project = createDefaultProject() as unknown as Record<string, Record<string, unknown>>;
     project.marbles!.count = 500;
     project.marbles!.cycleCount = 1.5;
-    project.track!.style = 'groove';
+    project.track!.style = 'monorail';
     project.lighting!.shadowsEnabled = 'sim';
     project.background!.colorMain = 'azul';
     const result = validatePreset(project);
@@ -194,15 +194,17 @@ describe('PresetStore (localStorage)', () => {
 });
 
 describe('Presets padrão', () => {
-  it('possui 5 presets de cena e 5 de iluminação', () => {
+  it('possui 7 presets de cena e 6 de iluminação', () => {
     expect(BUILT_IN_PRESETS.map((p) => p.name)).toEqual([
+      'Wooden Coil',
+      'Blue Coaster',
       'Mesmerizing Circle',
       'Golden Spiral',
       'Twisted Figure',
       'Dark Loop',
       'Minimalist',
     ]);
-    expect(Object.keys(LIGHTING_PRESETS)).toHaveLength(5);
+    expect(Object.keys(LIGHTING_PRESETS)).toHaveLength(6);
     for (const lighting of Object.values(LIGHTING_PRESETS)) {
       const ratio = lighting.fillLightIntensity / lighting.mainLightIntensity;
       expect(ratio).toBeGreaterThanOrEqual(0.3);

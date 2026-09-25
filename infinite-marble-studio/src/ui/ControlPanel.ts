@@ -369,9 +369,9 @@ export class ControlPanel {
       f,
       t,
       'style',
-      { Tubo: 'tube', 'Dual rail': 'dualRail' },
+      { Canaleta: 'groove', Tubo: 'tube', 'Dual rail': 'dualRail' },
       'Estilo',
-      'Tubo contínuo ou dois trilhos paralelos',
+      'Canaleta em U (bolinhas dentro), tubo contínuo ou dois trilhos paralelos',
       ['track'],
       () => this.refreshVisibility(),
     );
@@ -380,8 +380,8 @@ export class ControlPanel {
       t,
       'radius',
       TRACK_SPECS.radius,
-      'Raio do tubo',
-      'Espessura do tubo contínuo',
+      'Raio',
+      'Raio do tubo, ou raio interno da canaleta (maior que o das bolinhas)',
       ['track'],
     );
     const railDistance = this.num(
@@ -452,6 +452,33 @@ export class ControlPanel {
     this.bool(f, t, 'visible', 'Visível', 'Mostrar o trilho', ['track']);
     this.bool(f, t, 'castShadow', 'Projeta sombra', 'O trilho projeta sombras', ['track']);
     this.bool(f, t, 'receiveShadow', 'Recebe sombra', 'O trilho recebe sombras', ['track']);
+    this.select(
+      f,
+      t,
+      'finish',
+      { Liso: 'smooth', Madeira: 'wood' },
+      'Acabamento',
+      'Liso ou madeira (veios gerados por código, tingidos pela cor do trilho)',
+      ['track'],
+    );
+    this.num(
+      f,
+      t,
+      'clearcoat',
+      TRACK_SPECS.clearcoat,
+      'Verniz',
+      'Camada de brilho sobre o material (0–1)',
+      ['track'],
+    );
+    this.bool(
+      f,
+      t,
+      'supports',
+      'Hastes de suporte',
+      'Hastes até o chão (aparecem com o chão ativado em Fundo → Chão)',
+      ['track'],
+    );
+    this.color(f, t, 'supportColor', 'Cor das hastes', 'Cor das hastes de suporte', ['track']);
     this.resetButton(f, 'track');
     return { radius, railDistance, railRadius };
   }
@@ -558,6 +585,15 @@ export class ControlPanel {
       MARBLE_SPECS.emissiveIntensity,
       'Intensidade emissiva',
       'Brilho próprio (0–2)',
+      ['marbles'],
+    );
+    this.num(
+      f,
+      m,
+      'clearcoat',
+      MARBLE_SPECS.clearcoat,
+      'Verniz',
+      'Brilho de plástico/verniz sobre as bolinhas (0–1)',
       ['marbles'],
     );
     this.num(
@@ -980,6 +1016,16 @@ export class ControlPanel {
       ['lighting'],
       custom,
     );
+    this.num(
+      shadows,
+      l,
+      'shadowSoftness',
+      LIGHTING_SPECS.shadowSoftness,
+      'Suavidade',
+      'Desfoque da borda da sombra (0 = dura)',
+      ['lighting'],
+      custom,
+    );
     const pulse = this.folder(f, 'Pulsação', 'Variação periódica de intensidade');
     this.num(
       pulse,
@@ -1148,6 +1194,14 @@ export class ControlPanel {
       BACKGROUND_SPECS.groundMetalness,
       'Metalness',
       'Reflexividade metálica',
+      ['background'],
+    );
+    this.bool(
+      ground,
+      b,
+      'decorations',
+      'Cúpulas decorativas',
+      'Meias-esferas brilhantes no chão, nas cores das bolinhas',
       ['background'],
     );
     fog.close();
@@ -1382,7 +1436,7 @@ export class ControlPanel {
 
   refreshVisibility(): void {
     const { track, marbles, camera, background, output } = this.project;
-    this.trackControllers.radius.show(track.style === 'tube');
+    this.trackControllers.radius.show(track.style !== 'dualRail');
     this.trackControllers.railDistance.show(track.style === 'dualRail');
     this.trackControllers.railRadius.show(track.style === 'dualRail');
     const custom = marbles.palette === 'custom';

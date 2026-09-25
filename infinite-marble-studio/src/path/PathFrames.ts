@@ -4,17 +4,26 @@ import { modulo } from '../core/MathUtils';
 const WORLD_UP = new Vector3(0, 1, 0);
 const WORLD_FORWARD = new Vector3(0, 0, 1);
 
+/** Inclinação máxima (|tangente·Y|) para usar frames alinhados à gravidade. */
+export const GRAVITY_FRAME_MAX_SLOPE = 0.85;
+
+export type FrameMode = 'gravity' | 'transport';
+
 /**
- * Frames de transporte paralelo (rotation-minimizing, método da dupla reflexão) amostrados
- * ao longo do comprimento de arco. Diferente dos frames de Frenet-Serret puros, não invertem
- * em pontos de inflexão. Em curvas fechadas a torção residual é distribuída ao longo do
- * percurso, garantindo frame(0) === frame(1) — sem salto no fechamento.
+ * Frames amostrados ao longo do comprimento de arco, em dois modos:
+ * - gravity: "para cima" = projeção do eixo Y no plano normal à tangente. Usado quando o
+ *   trajeto não tem trechos verticais; mantém a canaleta aberta para cima e as bolinhas por
+ *   cima do trilho mesmo em bobinas (onde o transporte paralelo acumularia torção).
+ * - transport: transporte paralelo (rotation-minimizing, dupla reflexão), necessário em loops
+ *   verticais. Não inverte em pontos de inflexão; em curvas fechadas a torção residual é
+ *   distribuída, garantindo frame(0) === frame(1).
  *
  * Convenção: side = up × tangent (base destra: side, up, tangent).
  */
 export class PathFrames {
   readonly samples: number;
   readonly closed: boolean;
+  mode: FrameMode = 'transport';
   private readonly tangents: Float64Array;
   private readonly ups: Float64Array;
   private readonly sides: Float64Array;
@@ -53,6 +62,15 @@ export class PathFrames {
       (positions[n] as Vector3).copy(positions[0] as Vector3);
       (tangents[n] as Vector3).copy(tangents[0] as Vector3);
     }
+
+    const maxSlope = tangents.reduce((max, t) => Math.max(max, Math.abs(t.y)), 0);
+    if (maxSlope < GRAVITY_FRAME_MAX_SLOPE) {
+      this.mode = 'gravity';
+      const ups = tangents.map((t) => WORLD_UP.clone().addScaledVector(t, -t.y).normalize());
+      this.store(tangents, ups, bankAngleRad);
+      return;
+    }
+    this.mode = 'transport';
 
     // Normal inicial: projeção do "para cima" global no plano normal à tangente.
     const t0 = tangents[0] as Vector3;
@@ -118,7 +136,13 @@ export class PathFrames {
     let roll = 0;
     if (Math.hypot(sumUpY, sumSideY) > threshold) roll = Math.atan2(sumSideY, sumUpY);
     else if (Math.hypot(sumUpZ, sumSideZ) > threshold) roll = Math.atan2(sumSideZ, sumUpZ);
-    roll += bankAngleRad;
+    this.store(tangents, ups, roll + bankAngleRad);
+  }
+
+  /** Aplica uma rolagem constante e grava os frames nos buffers. */
+  private store(tangents: readonly Vector3[], ups: readonly Vector3[], roll: number): void {
+    const n = this.samples;
+    const side = new Vector3();
     const cosR = Math.cos(roll);
     const sinR = Math.sin(roll);
 

@@ -2,6 +2,7 @@ import type { Color } from 'three';
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { TAU, modulo } from '../core/MathUtils';
 import type { PathModel } from '../path/PathModel';
+import { GROOVE_HALF_ANGLE_DEG } from '../track/GrooveTrackBuilder';
 import type { MarbleSettings, TrackSettings } from '../presets/PresetSchema';
 import { generateMarbleColors, generateMarbleScales } from './MarbleColorPalette';
 
@@ -25,12 +26,22 @@ export function computeMarbleU(
 /**
  * Altura do centro da bolinha acima da linha central do trilho.
  * Tubo: apoiada no topo. Dual rail: encaixada entre os trilhos (centralizada).
+ * Canaleta: dentro do canal (altura negativa).
  */
 export function computeRestHeight(
   track: Pick<TrackSettings, 'style' | 'radius' | 'railDistance' | 'railRadius'>,
   marbleRadius: number,
 ): number {
   if (track.style === 'tube') return track.radius + marbleRadius;
+  if (track.style === 'groove') {
+    // Dentro do canal: encosta no fundo. Maior que o canal: apoia nas duas bordas.
+    const inner = track.radius;
+    if (marbleRadius < inner) return marbleRadius - inner;
+    const angle = (GROOVE_HALF_ANGLE_DEG * Math.PI) / 180;
+    const rimX = inner * Math.sin(angle);
+    const rimY = -inner * Math.cos(angle);
+    return rimY + Math.sqrt(Math.max(0, marbleRadius * marbleRadius - rimX * rimX));
+  }
   const half = track.railDistance / 2;
   const reach = track.railRadius + marbleRadius;
   return reach > half ? Math.sqrt(reach * reach - half * half) : 0;
