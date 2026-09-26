@@ -111,6 +111,39 @@ validateExport (checklist) ─► beginCapture: oculta GUI/helpers, buffer na re
      ─► endCapture: restaura preview ─► download (Blob + <a download>) ─► histórico
 ```
 
+## Subsistema Satisfying Objects (Squeeze)
+
+Implementado como subsistema isolado (`src/satisfying/`, decisão registrada em
+`.dev/DECISIONS.md`). O Marble Run não foi reescrito; os pontos de contato são:
+
+- `ScenePreset` ganhou dois campos **opcionais**: `generator` (`'marbleRun'` | `'satisfying'`;
+  ausente = Marble Run) e `satisfying` (validado por `SatisfyingSchema.ts` com as mesmas tabelas
+  `FieldSpec`, agora em `presets/FieldValidation.ts`). Presets antigos continuam idênticos.
+- `App.renderFrame(t)` delega ao gerador ativo; preview, exportação, PNG e verificação de
+  determinismo usam esse mesmo caminho.
+- `SceneManager.setInteractive(false)` desliga handles/órbita do Marble quando o Squeeze ocupa o
+  canvas. `SatisfyingController` troca o shadow map para VSM e o devolve para PCF.
+
+Fluxo de um frame:
+
+```
+normalizedTime ─► PressureCurve (fases + easing, periódica)
+               ─► SqueezeSimulation.evaluate: pose da esfera, indent/squash, câmera macro
+               ─► SqueezeDeformer.apply (buffers pré-alocados, 2 passadas):
+                    compressão global + indentação Hertz/esfera + bulging
+                    + compensação de volume (ΔV = Σ Aᵢ nᵢ·dᵢ) + restrição de contato
+                    + normais recalculadas + oclusão de contato por vértice
+               ─► SqueezeScene: atualiza atributos, ferramenta, sombra de contato, câmera
+```
+
+Arquivos: `SatisfyingSettings.ts` (tipos/padrões), `SatisfyingSchema.ts` (validação),
+`SqueezeSimulation.ts` (sem WebGL, usado nos testes), `SqueezeScene.ts`, `SatisfyingController.ts`,
+`geometry/SoftBlockGeometry.ts`, `deformation/*`, `animation/PressureCurve.ts`,
+`pressure/PressureTool.ts` + `SpherePressureTool.ts`, `materials/`, `lighting/`, `camera/`,
+`scene/` (ciclorama e sombra de contato), `presets/` (presets, variação, lote),
+`lab/squeezeLab.ts` + `lab/squeeze.html` (validação visual, só `npm run dev`).
+UI: `ui/SatisfyingPanel.ts`, seletor de gerador na `TopBar`, estilos dinâmicos no `SimplePanel`.
+
 ## Árvore de arquivos
 
 ```

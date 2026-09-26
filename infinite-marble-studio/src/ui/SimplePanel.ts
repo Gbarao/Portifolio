@@ -93,36 +93,33 @@ function choiceButton(
 /** Interface simplificada: estilo → formato → duração → baixar. */
 export class SimplePanel {
   private readonly styleButtons = new Map<string, HTMLButtonElement>();
+  private readonly styleGrid = el('div', { className: 'style-grid' });
+  private readonly surpriseButton: HTMLButtonElement;
+  /** Ações do Satisfying Objects (visível só nesse gerador). */
+  readonly actionRow = el('div', { className: 'choice-row action-row', hidden: true });
+  private readonly actionNote = el('p', { className: 'simple-info action-note', hidden: true });
   private readonly formatButtons = new Map<SimpleFormat, HTMLButtonElement>();
   private readonly durationButtons = new Map<number, HTMLButtonElement>();
   private readonly info = el('p', { className: 'simple-info', 'aria-live': 'polite' });
 
-  constructor(container: HTMLElement, actions: SimplePanelActions) {
+  constructor(
+    container: HTMLElement,
+    private readonly actions: SimplePanelActions,
+  ) {
     const step = (number: number, title: string, ...children: HTMLElement[]): HTMLElement =>
       el('section', { className: 'simple-step' }, [
         el('h2', {}, [`${number}. ${title}`]),
         ...children,
       ]);
 
-    const styleGrid = el('div', { className: 'style-grid' });
-    for (const style of SIMPLE_STYLES) {
-      const card = choiceButton(
-        style.label,
-        `Usar o estilo ${style.label}`,
-        () => actions.applyStyle(style.presetName),
-        'style-card',
-      );
-      card.style.setProperty('--swatch', style.swatch);
-      this.styleButtons.set(style.presetName, card);
-      styleGrid.append(card);
-    }
-    const surprise = choiceButton(
+    this.surpriseButton = choiceButton(
       '🎲 Surpreenda-me',
       'Cria uma animação aleatória nova a cada clique',
       () => actions.surprise(),
       'style-card style-card-surprise',
     );
-    styleGrid.append(surprise);
+    this.setStyles(SIMPLE_STYLES);
+    const styleGrid = this.styleGrid;
 
     const formatRow = el('div', { className: 'choice-row' });
     for (const format of FORMATS) {
@@ -164,10 +161,51 @@ export class SimplePanel {
     image.removeAttribute('aria-pressed');
 
     container.append(
-      step(1, 'Escolha um estilo', styleGrid),
+      step(1, 'Escolha um estilo', this.actionRow, this.actionNote, styleGrid),
       step(2, 'Formato', formatRow),
       step(3, 'Duração', durationRow),
       step(4, 'Baixar', video, image, this.info),
+    );
+  }
+
+  /** Troca os cartões de estilo (cada gerador tem os seus). */
+  setStyles(styles: readonly SimpleStyle[]): void {
+    this.styleButtons.clear();
+    const cards = styles.map((style) => {
+      const card = choiceButton(
+        style.label,
+        `Usar o estilo ${style.label}`,
+        () => this.actions.applyStyle(style.presetName),
+        'style-card',
+      );
+      card.style.setProperty('--swatch', style.swatch);
+      this.styleButtons.set(style.presetName, card);
+      return card;
+    });
+    this.styleGrid.replaceChildren(...cards, this.surpriseButton);
+  }
+
+  /** Linha de ações (Squeeze ativo; demais anunciadas como futuras). */
+  setActions(items: readonly { label: string; active: boolean; enabled: boolean }[]): void {
+    this.actionRow.hidden = items.length === 0;
+    const soon = items.filter((i) => !i.enabled).map((i) => i.label);
+    this.actionNote.hidden = soon.length === 0;
+    this.actionNote.textContent = soon.length > 0 ? `Em breve: ${soon.join(', ')}.` : '';
+    this.actionRow.replaceChildren(
+      ...items.map((item) => {
+        const b = el(
+          'button',
+          {
+            type: 'button',
+            className: 'btn choice',
+            'aria-pressed': String(item.active),
+            disabled: !item.enabled,
+            title: item.enabled ? item.label : `${item.label}: em breve`,
+          },
+          [item.label],
+        );
+        return b;
+      }),
     );
   }
 

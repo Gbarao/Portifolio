@@ -8,6 +8,16 @@ para evitar aumento de escopo.
 - Trilho **Groove** (canaleta em U), acabamento madeira, hastes de suporte, verniz, sombras suaves
   e cúpulas decorativas.
 - Modo simples e arquivo único que abre com dois cliques.
+- **Satisfying Objects · Squeeze** (subsistema `src/satisfying/`): Soft Block + esfera, 9
+  materiais, 8 iluminações, 6 presets, variação, lote de configurações.
+
+## Satisfying Objects — próximos passos (não implementado)
+
+- Ações Crush, Stretch, Push, Pinch e Roll (a arquitetura `PressureTool` já prevê).
+- Ferramentas Plate, Cylinder, Roller, Wedge, dedo procedural e multiponto.
+- Outras formas (esfera macia, cilindro, "mochi").
+- Renderização em lote de vídeos (hoje o lote gera as configurações JSON).
+- Deformação no vertex shader caso a CPU limite o preview em GPUs reais (função já é pura).
 
 ## Fase 2 (não implementado)
 

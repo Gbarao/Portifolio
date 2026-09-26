@@ -1,43 +1,44 @@
 # Current State
 
 Current Phase:
-Phase 1 — Visual Prototype — CONCLUÍDA (validação visual PASS).
-Próxima: Phase 2–4 (engine/materiais/tool) já têm base; Phase 5 editor + integração.
+MVP do Squeeze concluído (Fases 0–9). Fase atual: refinamento/manutenção.
 
 Completed:
 
-- Fase 0: discovery (.dev/DISCOVERY.md), decisões (.dev/DECISIONS.md, Estratégia B).
-- src/satisfying/ (subsistema isolado; Marble Studio não foi modificado):
-  - geometry/SoftBlockGeometry.ts — rounded box soldada, alta subdivisão.
-  - animation/PressureCurve.ts — fases (repouso→aproximação→contato→pico→hold→
-    soltura→recuperação viscosa + rebote elástico→repouso), periódica.
-  - deformation/SqueezeDeformer.ts — compressão global + Hertz local + conformação
-    à esfera + bulging + compensação de volume na malha (2 passadas) + contato +
-    oclusão por vértice. deformation/MeshNormals.ts — normais/volume/áreas.
-  - pressure/PressureTool.ts (interface) + SpherePressureTool.ts.
-  - materials/SatisfyingMaterials.ts — 9 tipos (softRubber, glossyGel, slime, foam,
-    silicone, wax, softPlastic, butter, candy).
-  - lighting/SatisfyingLighting.ts — key (VSM suave) + fill + rim + top (RectArea)
-    - hemisfério + RoomEnvironment; 8 presets.
-  - camera/MacroCameraRig.ts — macro vertical, órbita/dolly periódicos.
-  - scene/StudioBackdrop.ts (ciclorama), scene/ContactShadow.ts (sombra analítica).
-  - SatisfyingSettings.ts (tipos + defaults), SqueezeSimulation.ts (sem WebGL),
-    SqueezeScene.ts (cena WebGL).
-  - lab/squeezeLab.ts + lab/squeeze.html (apenas dev).
-- src/tests/Squeeze.test.ts (17 testes).
+- Fase 0: discovery (.dev/DISCOVERY.md) e decisões (.dev/DECISIONS.md, Estratégia B).
+- Fase 1: protótipo visual validado (Soft Block + esfera, contato, bulging, volume).
+- Fase 2: engine de deformação reutilizável (SqueezeDeformer puro + SqueezeSimulation).
+- Fase 3: 9 materiais procedurais (SatisfyingMaterials.ts).
+- Fase 4: PressureTool (interface) + SpherePressureTool.
+- Fase 5: editor — SatisfyingPanel (lil-gui), seletor de gerador na TopBar, estilos e ações
+  no modo simples, status adaptado.
+- Fase 6: presets Pink Slime, Yellow Soft Block, Blue Gel, Candy Cube, Dark Rubber, Soft
+  Silicone (validados visualmente: docs/satisfying-presets.png).
+- Fase 7: Nova Variação (≥ 3 categorias, relatório VARIATION #seed).
+- Fase 8: exportação integrada (PNG, WebM MediaRecorder/WebCodecs, formatos, duração, FPS,
+  histórico) via App.renderFrame → mesmo caminho do Marble.
+- Fase 9: lote (seed inicial + quantidade → ZIP de squeeze-<seed>.json).
+- Persistência: ScenePreset v1 + `generator?` + `satisfying?` (retrocompatível).
+- Docs: README (seção Satisfying Objects), ARCHITECTURE, ROADMAP.
 
-Arquivos modificados fora de src/satisfying: nenhum (apenas novos testes/lab/.dev).
+Arquivos do Marble Studio modificados (aditivos):
 
-Estado do build: PASS. Estado visual: PASS (ver VALIDATION.md).
+- src/app/App.ts (delegação por gerador, painéis, variação/lote do squeeze)
+- src/presets/PresetSchema.ts (campos opcionais), PresetValidator.ts (validação opcional),
+  FieldValidation.ts (extraído, sem mudança de comportamento)
+- src/scene/SceneManager.ts (setInteractive)
+- src/ui/TopBar.ts, SimplePanel.ts, StatusPanel.ts, styles/ui.css
+- vitest.config.ts (cobertura inclui src/satisfying)
+
+Estado do build: PASS (build e build:single). Estado visual: PASS.
 
 Known limitations:
 
-- Só squeeze + esfera + soft block (por decisão do MVP).
-- Ainda sem UI no app principal, sem persistência, sem export integrado.
-- Lighting usa VSMShadowMap: ao integrar no App, restaurar PCFShadowMap ao voltar
-  para o Marble Run (ver DECISIONS D-007).
+- Performance em GPU real NÃO medida (ambiente só tem SwiftShader). Deformação: ~6 ms/frame
+  em CPU no Chromium headless para ~30 mil vértices.
+- Bundle 1,11 MB (RectAreaLight inclui tabelas LTC) — D-010.
+- Lote gera configurações, não vídeos.
+- Apenas Squeeze + esfera + bloco (escopo do MVP).
 
 Next Exact Step:
-Integração no App (Phase 5): seletor de gerador "Marble Run | Satisfying Objects"
-
-- painel do Squeeze + delegação de render/captura (CaptureHost) — ver TODO_NEXT.md.
+Nenhuma pendência obrigatória. Candidatos em TODO_NEXT.md.

@@ -554,8 +554,34 @@ body:not(.mode-simple) .simple-panel,
 body.is-capturing .simple-panel,
 body.mode-simple .sidebar,
 body.mode-simple .status-panel,
-body.mode-simple .topbar .btn-group:not(.mode-group) {
+body.mode-simple .topbar .btn-group:not(.mode-group, .generator-group) {
   display: none !important;
+}
+
+/* ---------- Seleção de gerador ---------- */
+body.generator-satisfying .marble-only {
+  display: none !important;
+}
+
+.generator-group .choice {
+  flex: none;
+  padding: 0 12px;
+}
+
+.action-row {
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.action-row .choice {
+  flex: 1 1 30%;
+  min-height: 36px;
+  font-size: 0.78rem;
+}
+
+.action-row .choice:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .mode-group {

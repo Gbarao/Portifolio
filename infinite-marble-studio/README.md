@@ -1,8 +1,12 @@
 # Infinite Marble Studio
 
-Aplicação web local para criar **animações 3D hipnóticas em loop perfeito**: bolinhas percorrendo
-continuamente um trilho tridimensional editável, com exportação de vídeo vertical (9:16) pronta para
-TikTok, Instagram Reels, YouTube Shorts e X.
+Aplicação web local para criar **animações 3D hipnóticas em loop perfeito**, com exportação de
+vídeo vertical (9:16) pronta para TikTok, Instagram Reels, YouTube Shorts e X. Dois geradores:
+
+- **Marble Run** — bolinhas percorrendo continuamente um trilho tridimensional editável.
+- **Satisfying Objects · Squeeze** — um objeto macio sendo pressionado por uma esfera, com
+  deformação localizada, bulging e rebote elástico (veja
+  [Satisfying Objects](#satisfying-objects-squeeze)).
 
 - Sem backend, login, APIs pagas ou IA generativa. Funciona offline.
 - Tudo é gerado por código: trajetos, trilhos, cores, fundo, iluminação e ambiente de reflexos.
@@ -37,6 +41,34 @@ arquivo antes de publicar (veja [Conversão opcional para MP4](#conversão-opcio
 ![Presets built-in](docs/presets.png)
 
 _Capturas feitas em renderização por software (SwiftShader); em GPU real o FPS é muito maior._
+
+## Satisfying Objects (Squeeze)
+
+![Satisfying Objects no modo simples](docs/screenshot-satisfying.png)
+
+No topo, clique em **◆ Satisfying Objects**. O Marble Run continua disponível no botão ao lado
+(e presets antigos abrem nele, como antes).
+
+- **Modo simples:** escolha um estilo (Slime Rosa, Bloco Amarelo, Gel Azul, Cubo de Bala,
+  Borracha Escura, Silicone Menta) ou 🎲 Surpreenda-me, o formato, a duração e baixe o vídeo.
+  A ação disponível é **Squeeze**; Crush, Stretch, Push, Pinch e Roll aparecem como "em breve".
+- **Modo avançado:** painel com Objeto, Material (Soft Rubber, Glossy Gel, Slime, Foam,
+  Silicone, Wax, Soft Plastic, Butter-like, Candy), Pressão (força, raio, hold, soltura, bounce),
+  Deformação (maciez, viscosidade, bulge, preservação de volume, falloff), Câmera macro,
+  Iluminação (8 presets), Fundo, Loop/exportação e **Lote**.
+- **✦ Variação** muda 3 ou mais categorias e mostra um relatório (`VARIATION #seed / Changed`).
+- **Lote:** seed inicial + quantidade → ZIP com `squeeze-<seed>.json` reproduzíveis (importe
+  qualquer um pelo JSON para renderizar).
+- PNG, WebM, duração, FPS, formatos e histórico são os mesmos do Marble Run.
+
+![Presets do Squeeze (repouso e pico da pressão)](docs/satisfying-presets.png)
+
+Como funciona: a deformação é um campo contínuo calculado a cada frame a partir do tempo
+normalizado (compressão do corpo + indentação com perfil de Hertz conformada à esfera + bulging
+com compensação de volume medida na malha), sem física acumulada — o loop fecha exatamente e a
+mesma seed reproduz o mesmo vídeo. Detalhes em [ARCHITECTURE.md](ARCHITECTURE.md).
+
+![Sequência: repouso, 25/50/75/100 % de pressão e recuperação](docs/satisfying-sequence.png)
 
 ## Sumário
 

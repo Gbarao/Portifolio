@@ -1,3 +1,4 @@
+import type { SatisfyingSettings } from '../satisfying/SatisfyingSettings';
 export const PRESET_VERSION = 1;
 
 export interface Vec3Like {
@@ -207,12 +208,20 @@ export interface BackgroundSettings {
   decorations: boolean;
 }
 
+/** Geradores disponíveis. Ausente no JSON = 'marbleRun' (presets antigos). */
+export type GeneratorId = 'marbleRun' | 'satisfying';
+export const GENERATOR_IDS: readonly GeneratorId[] = ['marbleRun', 'satisfying'];
+
 export interface ScenePreset {
   version: number;
   name: string;
   description?: string;
   seed: number;
   timestamp: number;
+  /** Gerador ativo (opcional e retrocompatível: ausente = Marble Run). */
+  generator?: GeneratorId;
+  /** Configurações do Satisfying Objects (opcional; só presente quando usado). */
+  satisfying?: SatisfyingSettings;
   output: OutputSettings;
   loop: LoopSettings;
   path: PathSettings;

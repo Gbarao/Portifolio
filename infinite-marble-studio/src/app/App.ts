@@ -8,6 +8,7 @@ import { createRandomSeed } from '../core/SeedSource';
 import { normalizeSeed } from '../core/SeededRandom';
 import type { CaptureHost } from '../export/CaptureHost';
 import { downloadBlob, downloadText } from '../export/DownloadUtils';
+import { ZipWriter } from '../export/ZipWriter';
 import {
   ExportHistory,
   type ExportHistoryEntry,
@@ -40,6 +41,7 @@ import {
 import {
   RESOLUTION_PRESETS,
   type CameraMode,
+  type GeneratorId,
   type LightingPresetId,
   type PathPresetId,
   type ResolutionPresetId,
@@ -58,6 +60,27 @@ import {
   formatVariationReport,
   type VariationOptions,
 } from '../presets/VariationGenerator';
+import { SatisfyingController } from '../satisfying/SatisfyingController';
+import { withMaterialPreset } from '../satisfying/materials/SatisfyingMaterials';
+import { createSatisfyingLighting } from '../satisfying/lighting/SatisfyingLighting';
+import {
+  SATISFYING_PRESETS,
+  createSatisfyingProject,
+  findSatisfyingPreset,
+} from '../satisfying/presets/SatisfyingPresets';
+import { createSqueezeBatch } from '../satisfying/presets/SqueezeBatch';
+import {
+  SQUEEZE_VARIATION_CATEGORIES,
+  createSqueezeVariation,
+  formatSqueezeVariationReport,
+  type SqueezeVariationCategory,
+} from '../satisfying/presets/SqueezeVariation';
+import {
+  FUTURE_ACTIONS,
+  createDefaultSatisfyingSettings,
+  type SatisfyingLightingId,
+  type SatisfyingMaterialId,
+} from '../satisfying/SatisfyingSettings';
 import { RendererManager } from '../scene/RendererManager';
 import { SceneManager, type DirtySection } from '../scene/SceneManager';
 import { ControlPanel } from '../ui/ControlPanel';
@@ -66,6 +89,7 @@ import { ExportProgress } from '../ui/ExportProgress';
 import { installKeyboardShortcuts } from '../ui/KeyboardShortcuts';
 import { Notifier } from '../ui/Notifier';
 import { SafeAreaOverlay } from '../ui/SafeAreaOverlay';
+import { SatisfyingPanel, type OutputSection } from '../ui/SatisfyingPanel';
 import { ShortcutsDialog } from '../ui/ShortcutsDialog';
 import { SIMPLE_STYLES, SimplePanel } from '../ui/SimplePanel';
 import { StatusPanel } from '../ui/StatusPanel';
@@ -118,6 +142,10 @@ export class App implements CaptureHost {
   private readonly imageExporter: ImageExporter;
   private readonly sidebar: HTMLElement;
   private readonly simplePanel: SimplePanel;
+  private readonly satisfying: SatisfyingController;
+  private readonly satisfyingPanel: SatisfyingPanel;
+  /** Configurações do squeeze alteradas e ainda não aplicadas à cena. */
+  private satisfyingDirty = true;
   /** Estilo escolhido no modo simples (null após "Surpreenda-me" ou edições). */
   private simpleStyle: string | null = null;
   /** Ritmo das bolinhas preservado ao trocar a duração no modo simples. */
@@ -181,6 +209,7 @@ export class App implements CaptureHost {
       fps: project.loop.fps,
     });
     this.sceneManager = new SceneManager(this.rendererManager, project);
+    this.satisfying = new SatisfyingController(this.rendererManager);
     this.history = new History(this.state.snapshot(), 50);
     this.videoExporter = new VideoExporter(this);
     this.imageExporter = new ImageExporter(this);
@@ -192,12 +221,14 @@ export class App implements CaptureHost {
       togglePlay: () => this.togglePlay(),
       restart: () => this.clock.reset(),
       randomizeAll: () =>
-        this.randomize({ categories: ALL_VARIATION_CATEGORIES }, 'Randomizar tudo'),
+        this.isSatisfying
+          ? this.randomizeSqueeze(SQUEEZE_VARIATION_CATEGORIES, 'Tudo aleatório')
+          : this.randomize({ categories: ALL_VARIATION_CATEGORIES }, 'Randomizar tudo'),
       randomizePath: () =>
         this.randomize({ categories: ['path'], forceRandomPath: true }, 'Trajeto randomizado'),
       randomizeAppearance: () =>
         this.randomize({ categories: APPEARANCE_CATEGORIES }, 'Aparência randomizada'),
-      newVariation: () => this.randomize({}, 'Nova variação'),
+      newVariation: () => this.newVariation(),
       undo: () => this.undo(),
       redo: () => this.redo(),
       toggleHelpers: () => this.setHelpersVisible(!this.state.runtime.helpersVisible),
@@ -206,15 +237,18 @@ export class App implements CaptureHost {
       showShortcuts: () => this.shortcutsDialog.toggle(),
       toggleUiMode: () =>
         this.setUiMode(this.state.runtime.uiMode === 'simple' ? 'advanced' : 'simple'),
+      setGenerator: (id) => this.setGenerator(id),
     });
     this.statusPanel = new StatusPanel(requireElement('status-panel'));
     this.simplePanel = new SimplePanel(requireElement('simple-panel'), {
       applyStyle: (name) => this.applySimpleStyle(name),
       surprise: () =>
-        this.randomize(
-          { categories: ALL_VARIATION_CATEGORIES, cameraModes: OVERVIEW_CAMERA_MODES },
-          'Nova animação criada',
-        ),
+        this.isSatisfying
+          ? this.randomizeSqueeze(SQUEEZE_VARIATION_CATEGORIES, 'Nova animação criada')
+          : this.randomize(
+              { categories: ALL_VARIATION_CATEGORIES, cameraModes: OVERVIEW_CAMERA_MODES },
+              'Nova animação criada',
+            ),
       setFormat: (format) => this.applyResolutionPreset(format),
       setDuration: (seconds) => this.setSimpleDuration(seconds),
       downloadVideo: () => void this.exportVideo({ preferExactEncoder: true }),
@@ -303,6 +337,22 @@ export class App implements CaptureHost {
       this.exportProgress.inline,
     );
 
+    this.satisfyingPanel = new SatisfyingPanel(this.sidebar, {
+      onChange: (commit) => this.onSatisfyingChanged(commit),
+      onProjectChange: (sections, commit) => this.onSatisfyingProjectChanged(sections, commit),
+      loadPreset: (name) => this.loadSatisfyingPreset(name),
+      newVariation: () => this.randomizeSqueeze(undefined, 'Nova variação'),
+      randomizeAll: () => this.randomizeSqueeze(SQUEEZE_VARIATION_CATEGORIES, 'Tudo aleatório'),
+      applyMaterialType: (type) => this.applySqueezeMaterial(type),
+      applyLightingPreset: (id) => this.applySqueezeLighting(id),
+      applyResolutionPreset: (id) => this.applyResolutionPreset(id),
+      exportVideo: () => void this.exportVideo(),
+      capturePng: () => void this.capturePng(),
+      exportJson: () => this.exportJson(),
+      importJson: () => this.fileInput.click(),
+      generateBatch: (seedStart, amount) => void this.generateSqueezeBatch(seedStart, amount),
+    });
+
     this.fileInput = document.createElement('input');
     this.fileInput.type = 'file';
     this.fileInput.accept = '.json,application/json';
@@ -322,6 +372,7 @@ export class App implements CaptureHost {
     this.panel.historyPanel.render(this.exportHistory.list());
     this.panel.setVariationReport('');
     this.setUiMode(uiMode, false);
+    this.applyGenerator();
   }
 
   // ------------------------------------------------------------------ setup
@@ -373,12 +424,14 @@ export class App implements CaptureHost {
         togglePlay: () => this.togglePlay(),
         restart: () => this.clock.reset(),
         randomizeAll: () =>
-          this.randomize({ categories: ALL_VARIATION_CATEGORIES }, 'Randomizar tudo'),
+          this.isSatisfying
+            ? this.randomizeSqueeze(SQUEEZE_VARIATION_CATEGORIES, 'Tudo aleatório')
+            : this.randomize({ categories: ALL_VARIATION_CATEGORIES }, 'Randomizar tudo'),
         randomizePath: () =>
           this.randomize({ categories: ['path'], forceRandomPath: true }, 'Trajeto randomizado'),
         randomizeAppearance: () =>
           this.randomize({ categories: APPEARANCE_CATEGORIES }, 'Aparência randomizada'),
-        newVariation: () => this.randomize({}, 'Nova variação'),
+        newVariation: () => this.newVariation(),
         undo: () => this.undo(),
         redo: () => this.redo(),
         savePreset: () => this.savePreset(this.state.project.name),
@@ -433,7 +486,7 @@ export class App implements CaptureHost {
       if (this.state.runtime.exporting || this.capturing) return;
       this.flushImmediate();
       const t = this.clock.getNormalizedTime();
-      this.sceneManager.renderAt(t);
+      this.renderFrame(t);
       this.perf.recordFrame(now);
       this.panel.setLiveInfo({
         fps: this.perf.getSnapshot().fps,
@@ -450,6 +503,231 @@ export class App implements CaptureHost {
 
   stop(): void {
     this.running = false;
+  }
+
+  // ------------------------------------------------------------------ geradores
+
+  get generator(): GeneratorId {
+    return this.state.project.generator ?? 'marbleRun';
+  }
+
+  get isSatisfying(): boolean {
+    return this.generator === 'satisfying';
+  }
+
+  /** Renderiza o frame do gerador ativo (preview, export e verificação usam o mesmo caminho). */
+  private renderFrame(normalizedTime: number): void {
+    if (this.isSatisfying) {
+      this.flushSatisfying();
+      this.satisfying.renderAt(normalizedTime);
+    } else {
+      this.sceneManager.renderAt(normalizedTime);
+    }
+  }
+
+  private flushSatisfying(): void {
+    const project = this.state.project;
+    if (!this.satisfyingDirty || !project.satisfying) return;
+    this.satisfyingDirty = false;
+    this.satisfying.sync(project.satisfying, project.seed);
+  }
+
+  /** Alterna o gerador (Marble Run permanece o padrão de presets antigos). */
+  setGenerator(id: GeneratorId): void {
+    if (this.state.runtime.exporting || id === this.generator) return;
+    const project = this.state.project;
+    if (id === 'satisfying') {
+      project.generator = 'satisfying';
+      if (!project.satisfying) {
+        const first = SATISFYING_PRESETS[0];
+        project.satisfying = first ? first.build() : createDefaultSatisfyingSettings();
+      }
+      this.simpleStyle = null;
+    } else {
+      project.generator = 'marbleRun';
+    }
+    this.satisfyingDirty = true;
+    this.applyGenerator();
+    this.state.runtime.dirtySinceSave = true;
+    this.autosave();
+    this.commitHistory();
+    this.notify(
+      id === 'satisfying'
+        ? 'Satisfying Objects · Squeeze ativo. O Marble Run continua disponível no topo.'
+        : 'Marble Run ativo.',
+      'info',
+    );
+  }
+
+  /** Aplica o gerador do projeto atual a cena, painéis e renderer. */
+  private applyGenerator(): void {
+    const satisfying = this.isSatisfying;
+    document.body.classList.toggle('generator-satisfying', satisfying);
+    this.sceneManager.setInteractive(!satisfying);
+    if (satisfying) {
+      this.satisfyingDirty = true;
+      this.flushSatisfying();
+      this.satisfying.activate();
+      this.satisfyingPanel.bind(this.state.project);
+      this.satisfyingPanel.setVisible(true);
+      this.panel.gui.show(false);
+    } else {
+      this.satisfying.deactivate();
+      // Restaura tone mapping/sombras do Marble Run.
+      this.sceneManager.applyChanges(this.state.project, new Set<DirtySection>(['lighting']));
+      this.satisfyingPanel.setVisible(false);
+      this.panel.gui.show(true);
+    }
+    this.simplePanel.setStyles(
+      satisfying
+        ? SATISFYING_PRESETS.map((p) => ({
+            presetName: p.name,
+            label: p.label,
+            swatch: p.swatch,
+          }))
+        : SIMPLE_STYLES,
+    );
+    this.simplePanel.setActions(
+      satisfying
+        ? [
+            { label: 'Squeeze', active: true, enabled: true },
+            ...FUTURE_ACTIONS.map((a) => ({
+              label: a.charAt(0).toUpperCase() + a.slice(1),
+              active: false,
+              enabled: false,
+            })),
+          ]
+        : [],
+    );
+    this.updateSimplePanel();
+    this.updateTopBar();
+  }
+
+  private onSatisfyingChanged(commit: boolean): void {
+    if (this.state.runtime.exporting) return;
+    this.satisfyingDirty = true;
+    this.state.runtime.dirtySinceSave = true;
+    this.simpleStyle = null;
+    this.autosave();
+    if (commit) this.commitHistory();
+    this.updateSimplePanel();
+  }
+
+  private onSatisfyingProjectChanged(sections: OutputSection[], commit: boolean): void {
+    const project = this.state.project;
+    if (sections.includes('loop')) project.output.durationSeconds = project.loop.durationSeconds;
+    if (sections.includes('output')) project.loop.fps = project.output.fps;
+    if (sections.includes('seed')) this.satisfyingDirty = true;
+    this.onSettingsChanged(sections, commit);
+  }
+
+  private loadSatisfyingPreset(name: string): void {
+    const definition = findSatisfyingPreset(name);
+    if (!definition || this.state.runtime.exporting) return;
+    const current = this.state.project;
+    const project = createSatisfyingProject(definition);
+    project.output = { ...project.output, ...current.output };
+    project.loop = {
+      ...project.loop,
+      durationSeconds: current.loop.durationSeconds,
+      fps: current.loop.fps,
+    };
+    project.satisfying = definition.build();
+    this.applySqueezePace(project, current.loop.durationSeconds);
+    this.loadProject(
+      project,
+      this.state.runtime.uiMode === 'simple' ? '' : `Preset "${name}" carregado.`,
+    );
+    this.simpleStyle = name;
+    this.updateSimplePanel();
+  }
+
+  /**
+   * Ritmo do squeeze para a duração do vídeo: ~1 pressão a cada 6 s e 1 volta de câmera a
+   * cada 12 s (ciclos inteiros → loop perfeito em qualquer duração).
+   */
+  private applySqueezePace(project: ScenePreset, seconds: number): void {
+    project.loop.durationSeconds = seconds;
+    project.output.durationSeconds = seconds;
+    if (!project.satisfying) return;
+    project.satisfying.pressure.cycles = Math.max(1, Math.round(seconds / 6));
+    project.satisfying.camera.cycles = Math.max(1, Math.round(seconds / 12));
+  }
+
+  private newVariation(): void {
+    if (this.isSatisfying) this.randomizeSqueeze(undefined, 'Nova variação');
+    else this.randomize({}, 'Nova variação');
+  }
+
+  /** Nova variação do squeeze (≥ 3 categorias) com relatório. */
+  private randomizeSqueeze(
+    categories: readonly SqueezeVariationCategory[] | undefined,
+    title: string,
+  ): void {
+    if (this.state.runtime.exporting) return;
+    const current = this.state.project;
+    const seed = createRandomSeed();
+    const result = createSqueezeVariation(
+      current.satisfying ?? createDefaultSatisfyingSettings(),
+      seed,
+      categories ? { categories } : {},
+    );
+    const project = structuredClone(current);
+    project.generator = 'satisfying';
+    project.satisfying = result.settings;
+    project.seed = seed;
+    project.name = `squeeze-${seed}`;
+    // Mantém o ritmo da duração atual (cycles são inteiros por loop).
+    project.satisfying.pressure.cycles = current.satisfying?.pressure.cycles ?? 1;
+    project.satisfying.camera.cycles = current.satisfying?.camera.cycles ?? 1;
+    const report = formatSqueezeVariationReport(result);
+    this.state.runtime.lastVariationReport = report;
+    this.loadProject(project, '');
+    this.simpleStyle = null;
+    this.updateSimplePanel();
+    this.satisfyingPanel.setReport(report);
+    if (this.state.runtime.uiMode === 'simple') {
+      this.notify(`${title}! Não gostou? Clique de novo.`, 'success');
+    } else {
+      this.notify(`${title}\n${report}`, 'info');
+    }
+  }
+
+  private applySqueezeMaterial(type: SatisfyingMaterialId): void {
+    const settings = this.state.project.satisfying;
+    if (!settings) return;
+    assignDeep(
+      settings.material as unknown as Record<string, unknown>,
+      withMaterialPreset(settings.material, type) as unknown as Record<string, unknown>,
+    );
+    this.satisfyingPanel.refresh();
+    this.onSatisfyingChanged(true);
+  }
+
+  private applySqueezeLighting(id: SatisfyingLightingId): void {
+    const settings = this.state.project.satisfying;
+    if (!settings) return;
+    assignDeep(
+      settings.lighting as unknown as Record<string, unknown>,
+      createSatisfyingLighting(id) as unknown as Record<string, unknown>,
+    );
+    this.satisfyingPanel.refresh();
+    this.onSatisfyingChanged(true);
+  }
+
+  /** Lote reproduzível: ZIP com squeeze-<seed>.json (seed inicial + quantidade). */
+  private async generateSqueezeBatch(seedStart: number, amount: number): Promise<void> {
+    const items = createSqueezeBatch(this.state.project, seedStart, amount);
+    const zip = new ZipWriter();
+    const encoder = new TextEncoder();
+    for (const item of items) {
+      zip.addFile(`${item.name}.json`, encoder.encode(serializePreset(item.project)));
+    }
+    const first = items[0]?.name ?? 'squeeze';
+    const last = items[items.length - 1]?.name ?? first;
+    downloadBlob(zip.finish(), `${first}_a_${last}.zip`);
+    this.notify(`Lote gerado: ${items.length} configurações (${first} … ${last}).`, 'success');
+    await Promise.resolve();
   }
 
   // ------------------------------------------------------------------ mudanças
@@ -511,7 +789,7 @@ export class App implements CaptureHost {
     this.panel.refresh();
     this.updatePathUi();
     this.updateExportInfo();
-    this.updateSimplePanel();
+    this.applyGenerator();
     this.state.runtime.dirtySinceSave = true;
     this.autosave();
   }
@@ -646,6 +924,10 @@ export class App implements CaptureHost {
 
   private randomize(options: VariationOptions, title: string): void {
     if (this.state.runtime.exporting) return;
+    if (this.isSatisfying) {
+      this.notify('Esta ação é do Marble Run. Use ✦ Variação ou 🎲 Tudo no Squeeze.', 'info');
+      return;
+    }
     const seed = createRandomSeed();
     const result = createVariation(this.state.project, seed, options);
     if (this.state.runtime.uiMode === 'simple') {
@@ -697,6 +979,10 @@ export class App implements CaptureHost {
 
   /** Carrega um estilo pronto mantendo o formato e a duração escolhidos. */
   private applySimpleStyle(presetName: string): void {
+    if (this.isSatisfying) {
+      this.loadSatisfyingPreset(presetName);
+      return;
+    }
     const preset = findBuiltInPreset(presetName);
     if (!preset || this.state.runtime.exporting) return;
     const current = this.state.project;
@@ -710,6 +996,13 @@ export class App implements CaptureHost {
 
   /** Duração do vídeo no modo simples, mantendo a velocidade das bolinhas. */
   private setSimpleDuration(seconds: number): void {
+    if (this.isSatisfying) {
+      this.applySqueezePace(this.state.project, seconds);
+      this.satisfyingDirty = true;
+      this.satisfyingPanel.refresh();
+      this.onSettingsChanged(['loop', 'output'], true);
+      return;
+    }
     applySimpleDuration(this.state.project, this.simplePace, seconds);
     this.onSettingsChanged(['loop', 'output', 'marbles', 'camera'], true);
     this.panel.refresh();
@@ -874,6 +1167,7 @@ export class App implements CaptureHost {
       guiVisible: runtime.guiVisible,
       editorView: runtime.editorView,
       simpleMode: runtime.uiMode === 'simple',
+      generator: this.generator,
     });
   }
 
@@ -906,16 +1200,24 @@ export class App implements CaptureHost {
       exportSeconds: plan.durationSeconds,
       recordingElapsedMs:
         this.recordingStartedAt === null ? null : performance.now() - this.recordingStartedAt,
-      recommendations: getPerformanceRecommendations(
-        {
-          marbleCount: project.marbles.count,
-          shadowsEnabled: project.lighting.shadowsEnabled,
-          trackSegments: project.track.segmentCount,
-          shadowResolution: project.lighting.shadowResolution,
-          pixelRatio: this.state.runtime.maxPixelRatio,
-        },
-        snapshot.sampleCount >= 30 ? snapshot.level : 'good',
-      ),
+      recommendations: this.isSatisfying
+        ? snapshot.sampleCount >= 30 && snapshot.level !== 'good'
+          ? [
+              'Reduza a subdivisão do objeto ou a transmissão do material.',
+              'Use "Preview na resolução de exportação" desligado e pixel ratio 1.',
+            ]
+          : []
+        : getPerformanceRecommendations(
+            {
+              marbleCount: project.marbles.count,
+              shadowsEnabled: project.lighting.shadowsEnabled,
+              trackSegments: project.track.segmentCount,
+              shadowResolution: project.lighting.shadowResolution,
+              pixelRatio: this.state.runtime.maxPixelRatio,
+            },
+            snapshot.sampleCount >= 30 ? snapshot.level : 'good',
+          ),
+      ...(this.isSatisfying ? { satisfying: this.satisfying.getStats() } : {}),
     });
   }
 
@@ -1047,11 +1349,11 @@ export class App implements CaptureHost {
 
   renderExportFrame(frameIndex: number): void {
     this.clock.setFrameIndex(frameIndex);
-    this.sceneManager.renderAt(this.clock.getNormalizedTime());
+    this.renderFrame(this.clock.getNormalizedTime());
   }
 
   renderNormalizedTime(normalizedTime: number): void {
-    this.sceneManager.renderAt(normalizedTime);
+    this.renderFrame(normalizedTime);
   }
 
   isCaptureClean(): { helpersHidden: boolean; guiHidden: boolean } {
@@ -1271,11 +1573,11 @@ export class App implements CaptureHost {
         gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buffer);
         return buffer;
       };
-      this.sceneManager.renderAt(previewTime);
+      this.renderFrame(previewTime);
       const a = read();
-      this.sceneManager.renderAt(exportTime);
+      this.renderFrame(exportTime);
       const b = read();
-      this.sceneManager.renderAt(previewTime);
+      this.renderFrame(previewTime);
       const c = read();
       let maxDiff = 0;
       let repeatDiff = 0;

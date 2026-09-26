@@ -15,6 +15,8 @@ export interface StatusData {
   exportSeconds: number;
   recordingElapsedMs: number | null;
   recommendations: string[];
+  /** Presente quando o gerador Satisfying Objects está ativo. */
+  satisfying?: { vertices: number; deformMs: number };
 }
 
 /** Painel de desempenho e status em tempo real (sobre a cena, oculto nas capturas). */
@@ -29,6 +31,7 @@ export class StatusPanel {
   private readonly recording = el('span', { className: 'stat-value' });
   private readonly recordingRow: HTMLElement;
   private readonly tips = el('ul', { className: 'stat-tips' });
+  private readonly curveLabel = el('span', { className: 'stat-label' }, ['Curva']);
 
   constructor(private readonly container: HTMLElement) {
     const row = (label: string, value: HTMLElement, title: string): HTMLElement =>
@@ -43,7 +46,10 @@ export class StatusPanel {
       row('Mín/Máx', this.minMax, 'FPS mínimo e máximo nos últimos 60 frames'),
       row('Draw calls', this.calls, 'WebGLRenderer.info.render.calls'),
       row('Memória', this.memory, 'Estimativa aproximada: geometrias, texturas e sombras'),
-      row('Curva', this.curve, 'Estado da curva (fechada e válida é exigido para exportar)'),
+      el('div', { className: 'stat-row', title: 'Curva (Marble Run) ou malha (Squeeze)' }, [
+        this.curveLabel,
+        this.curve,
+      ]),
       row('Projeto', this.project, 'Seed, bolinhas e duração do loop'),
       row('Arquivo', this.file, 'Tamanho estimado do vídeo (bitrate × duração)'),
       this.recordingRow,
@@ -63,9 +69,19 @@ export class StatusPanel {
       p.sampleCount > 0 ? `${p.minFps.toFixed(0)} / ${p.maxFps.toFixed(0)}` : '–';
     this.calls.textContent = `${data.drawCalls} (${(data.triangles / 1000).toFixed(0)}k tri)`;
     this.memory.textContent = `~${formatBytes(data.memoryBytes)}`;
-    this.curve.textContent = `${data.curveClosed ? 'fechada' : 'aberta'} · ${data.curveValid ? 'válida' : 'inválida'}`;
-    this.curve.dataset.level = data.curveClosed && data.curveValid ? 'good' : 'critical';
-    this.project.textContent = `seed ${data.seed} · ${data.marbleCount} bolinhas · ${data.loopSeconds}s`;
+    if (data.satisfying) {
+      const sq = data.satisfying;
+      this.curveLabel.textContent = 'Malha';
+      this.curve.textContent = `${(sq.vertices / 1000).toFixed(1)}k vért. · ${sq.deformMs.toFixed(1)} ms`;
+      this.curve.dataset.level =
+        sq.deformMs < 8 ? 'good' : sq.deformMs < 16 ? 'warning' : 'critical';
+      this.project.textContent = `seed ${data.seed} · squeeze · ${data.loopSeconds}s`;
+    } else {
+      this.curveLabel.textContent = 'Curva';
+      this.curve.textContent = `${data.curveClosed ? 'fechada' : 'aberta'} · ${data.curveValid ? 'válida' : 'inválida'}`;
+      this.curve.dataset.level = data.curveClosed && data.curveValid ? 'good' : 'critical';
+      this.project.textContent = `seed ${data.seed} · ${data.marbleCount} bolinhas · ${data.loopSeconds}s`;
+    }
     this.file.textContent = `~${formatBytes(data.estimatedFileBytes)} (${data.exportSeconds}s)`;
     this.recordingRow.hidden = data.recordingElapsedMs === null;
     if (data.recordingElapsedMs !== null) {

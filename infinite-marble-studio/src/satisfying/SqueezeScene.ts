@@ -11,7 +11,7 @@ import {
 import type { Disposable } from '../core/Disposable';
 import { createSoftBlockGeometry } from './geometry/SoftBlockGeometry';
 import { SatisfyingLighting } from './lighting/SatisfyingLighting';
-import { createSoftMaterial } from './materials/SatisfyingMaterials';
+import { createSoftMaterial, updateSoftMaterial } from './materials/SatisfyingMaterials';
 import type { PressureTool } from './pressure/PressureTool';
 import { SpherePressureTool } from './pressure/SpherePressureTool';
 import type { SatisfyingSettings } from './SatisfyingSettings';
@@ -35,16 +35,19 @@ export class SqueezeScene implements Disposable {
   private readonly softMesh: Mesh<BufferGeometry, MeshPhysicalMaterial>;
   private readonly tool: PressureTool;
   private readonly lighting: SatisfyingLighting;
-  private readonly backdrop: StudioBackdrop;
+  private backdrop: StudioBackdrop;
+  private renderer: WebGLRenderer | null = null;
+  private settingsValue: SatisfyingSettings;
   private readonly contactShadow: ContactShadow;
   private readonly positionAttr: BufferAttribute;
   private readonly normalAttr: BufferAttribute;
   private readonly colorAttr: BufferAttribute;
 
   constructor(
-    readonly settings: SatisfyingSettings,
+    settings: SatisfyingSettings,
     readonly seed: number,
   ) {
+    this.settingsValue = settings;
     this.simulation = new SqueezeSimulation(settings, seed);
     const size = Math.max(settings.object.width, settings.object.height, settings.object.depth);
     this.scene.name = 'satisfying-squeeze';
@@ -81,8 +84,47 @@ export class SqueezeScene implements Disposable {
     this.scene.add(this.backdrop.mesh, this.contactShadow.mesh, this.softMesh, this.tool.object);
   }
 
+  get settings(): SatisfyingSettings {
+    return this.settingsValue;
+  }
+
   attachRenderer(renderer: WebGLRenderer): void {
+    this.renderer = renderer;
     this.lighting.attachRenderer(renderer);
+  }
+
+  /** Verdadeiro se `settings` pode ser aplicado sem reconstruir a malha. */
+  canUpdateInPlace(settings: SatisfyingSettings, seed: number): boolean {
+    return (
+      seed === this.seed && JSON.stringify(settings.object) === JSON.stringify(this.settings.object)
+    );
+  }
+
+  /**
+   * Aplica material, luz, fundo, ferramenta, pressão, deformação e câmera sem recriar a
+   * malha (sem alocação de geometria do objeto).
+   */
+  applySettings(settings: SatisfyingSettings): void {
+    const previous = this.settingsValue;
+    this.settingsValue = settings;
+    this.simulation.updateSettings(settings);
+    updateSoftMaterial(this.softMesh.material, settings.material);
+    this.tool.configure(settings.pressure);
+    this.lighting.apply(settings.lighting);
+    if (this.renderer) this.lighting.attachRenderer(this.renderer);
+    const bg = settings.background;
+    if (
+      bg.color !== previous.background.color ||
+      bg.floorColor !== previous.background.floorColor
+    ) {
+      (this.scene.background as Color).set(bg.color);
+      const size = Math.max(settings.object.width, settings.object.height, settings.object.depth);
+      this.backdrop.dispose();
+      this.backdrop = new StudioBackdrop(size, bg.floorColor, bg.color);
+      this.scene.add(this.backdrop.mesh);
+      this.contactShadow.setTint(bg.floorColor);
+      this.lighting.setStudioColors(0xffffff, bg.floorColor);
+    }
   }
 
   /** Atualiza toda a cena para o instante normalizado (determinístico, sem acúmulo). */

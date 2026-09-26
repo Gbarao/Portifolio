@@ -124,6 +124,8 @@ export class SceneManager implements Disposable {
   private helpersVisible = true;
   private editorView = false;
   private capturing = false;
+  /** Falso quando outro gerador ocupa o canvas: sem handles, sem controles de órbita. */
+  private interactive = true;
   private suppressControlEvents = false;
 
   /** Chamado quando o usuário move a câmera fixa com OrbitControls. */
@@ -170,7 +172,8 @@ export class SceneManager implements Disposable {
     this.editorControls.enableDamping = false;
     this.handles.onDraggingChanged = (dragging) => {
       this.rigControls.enabled = !dragging && this.isRigControlAllowed();
-      this.editorControls.enabled = !dragging && this.editorView && !this.capturing;
+      this.editorControls.enabled =
+        !dragging && this.interactive && this.editorView && !this.capturing;
     };
 
     this.applyChanges(project, new Set<DirtySection>(['all']));
@@ -190,12 +193,24 @@ export class SceneManager implements Disposable {
   }
 
   private isRigControlAllowed(): boolean {
-    return this.project.camera.mode === 'fixed' && !this.editorView && !this.capturing;
+    return (
+      this.interactive &&
+      this.project.camera.mode === 'fixed' &&
+      !this.editorView &&
+      !this.capturing
+    );
+  }
+
+  /** Liga/desliga toda interação com o canvas (usado quando outro gerador está ativo). */
+  setInteractive(interactive: boolean): void {
+    this.interactive = interactive;
+    this.refreshHelperVisibility();
+    this.updateControlState();
   }
 
   private updateControlState(): void {
     this.rigControls.enabled = this.isRigControlAllowed();
-    this.editorControls.enabled = this.editorView && !this.capturing;
+    this.editorControls.enabled = this.interactive && this.editorView && !this.capturing;
     this.handles.setCamera(this.activeCamera);
     this.suppressControlEvents = true;
     const target = this.project.camera.target;
@@ -328,7 +343,7 @@ export class SceneManager implements Disposable {
   }
 
   private refreshHelperVisibility(): void {
-    const show = this.helpersVisible && !this.capturing;
+    const show = this.helpersVisible && this.interactive && !this.capturing;
     this.grid.visible = show;
     this.handles.setVisible(show);
   }

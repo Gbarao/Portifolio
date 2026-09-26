@@ -8,7 +8,7 @@ const FINISHES: Record<
   { metalness: number; roughness: number; clearcoat: number; transmission: number }
 > = {
   chrome: { metalness: 1, roughness: 0.08, clearcoat: 0, transmission: 0 },
-  satinMetal: { metalness: 1, roughness: 0.28, clearcoat: 0, transmission: 0 },
+  satinMetal: { metalness: 1, roughness: 0.36, clearcoat: 0, transmission: 0 },
   ceramic: { metalness: 0, roughness: 0.25, clearcoat: 1, transmission: 0 },
   glass: { metalness: 0, roughness: 0.04, clearcoat: 1, transmission: 1 },
 };

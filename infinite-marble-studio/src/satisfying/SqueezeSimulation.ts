@@ -107,13 +107,15 @@ export function applyImperfections(mesh: SoftBlockMesh, seed: number, amount: nu
 export class SqueezeSimulation {
   readonly mesh: SoftBlockMesh;
   readonly deformer: SqueezeDeformer;
-  private readonly motion: PressureMotion;
-  private readonly params: SqueezeDeformationParams;
+  private motion: PressureMotion;
+  private params: SqueezeDeformationParams;
+  private settingsValue: SatisfyingSettings;
 
   constructor(
-    readonly settings: SatisfyingSettings,
+    settings: SatisfyingSettings,
     readonly seed: number,
   ) {
+    this.settingsValue = settings;
     this.mesh = buildSoftBlockMesh(settings.object);
     const size = Math.min(settings.object.width, settings.object.height, settings.object.depth);
     applyImperfections(this.mesh, seed, size * 0.004);
@@ -123,6 +125,20 @@ export class SqueezeSimulation {
       depth: settings.object.depth,
       radius: this.mesh.radius,
     });
+    this.motion = pressureMotionFrom(settings);
+    this.params = deformationParamsFrom(settings);
+  }
+
+  get settings(): SatisfyingSettings {
+    return this.settingsValue;
+  }
+
+  /**
+   * Troca pressão/deformação/câmera sem reconstruir a malha. A forma (`object`) e a seed
+   * definem a malha: mudá-las exige uma nova simulação.
+   */
+  updateSettings(settings: SatisfyingSettings): void {
+    this.settingsValue = settings;
     this.motion = pressureMotionFrom(settings);
     this.params = deformationParamsFrom(settings);
   }

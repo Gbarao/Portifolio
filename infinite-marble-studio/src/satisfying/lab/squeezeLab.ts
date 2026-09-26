@@ -7,6 +7,7 @@ import { timeForPressure } from '../animation/PressureCurve';
 import { createDefaultSatisfyingSettings, type SatisfyingSettings } from '../SatisfyingSettings';
 import { SqueezeScene } from '../SqueezeScene';
 import { pressureMotionFrom } from '../SqueezeSimulation';
+import { SATISFYING_PRESETS, findSatisfyingPreset } from '../presets/SatisfyingPresets';
 
 interface SqueezeLab {
   settings: SatisfyingSettings;
@@ -16,6 +17,8 @@ interface SqueezeLab {
   renderPressure(fraction: number): string;
   timeForPressure(fraction: number): number;
   measureFrameMs(samples: number): number;
+  presets: string[];
+  loadPreset(name: string): void;
 }
 
 declare global {
@@ -66,6 +69,12 @@ const lab: SqueezeLab = {
   },
   timeForPressure(fraction) {
     return timeForPressure(fraction, settings.pressure.timing, pressureMotionFrom(settings));
+  },
+  presets: SATISFYING_PRESETS.map((p) => p.name),
+  loadPreset(name) {
+    const preset = findSatisfyingPreset(name);
+    if (!preset) throw new Error(`Preset desconhecido: ${name}`);
+    lab.rebuild(preset.build(), preset.seed);
   },
   measureFrameMs(samples) {
     const start = performance.now();

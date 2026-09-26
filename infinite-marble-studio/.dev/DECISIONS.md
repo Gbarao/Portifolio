@@ -130,3 +130,32 @@ Reason: estimativa por grade retangular errava ~3,5 % (ignorava arredondamento e
 compressão vertical das laterais). Medido após a mudança: ≤ 1,3 % no ciclo.
 
 Alternativa descartada: relaxar o teste de volume.
+
+---
+
+## D-009 — Schema: campos opcionais no ScenePreset v1 (sem bump de versão)
+
+Decision: `generator?: 'marbleRun' | 'satisfying'` e `satisfying?: SatisfyingSettings`
+opcionais; ausentes = Marble Run. Validação do squeeze em `SatisfyingSchema.ts` usando as
+mesmas tabelas `FieldSpec` (código genérico extraído para `presets/FieldValidation.ts`).
+
+Reason: presets antigos continuam idênticos (teste de igualdade após validação); presets de
+Marble salvos pela nova versão continuam legíveis. Bump para v2 faria versões anteriores
+rejeitarem até presets de Marble.
+
+---
+
+## D-010 — RectAreaLight (softbox) apesar do custo de bundle
+
+`RectAreaLightUniformsLib` adiciona ~300 KB (tabelas LTC) ao bundle (810 KB → 1,11 MB). Mantido
+porque o reflexo retangular de softbox é o que dá leitura de "produto premium" ao clearcoat.
+Alternativa (se o tamanho virar problema): trocar por uma DirectionalLight superior + ajuste do
+environment, validando visualmente.
+
+---
+
+## D-011 — Integração no App por delegação, não por herança
+
+`App.renderFrame(t)` escolhe o gerador; CaptureHost/exportação/verificação de determinismo
+são os mesmos. O painel do Marble é ocultado (`gui.show(false)`), não destruído, para manter
+bindings e undo/redo. Troca de gerador entra no histórico.

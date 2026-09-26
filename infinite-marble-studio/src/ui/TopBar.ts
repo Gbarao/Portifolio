@@ -1,3 +1,4 @@
+import type { GeneratorId } from '../presets/PresetSchema';
 import { button, el } from './dom';
 
 export interface TopBarActions {
@@ -14,7 +15,13 @@ export interface TopBarActions {
   toggleEditorView(): void;
   showShortcuts(): void;
   toggleUiMode(): void;
+  setGenerator(id: GeneratorId): void;
 }
+
+const GENERATOR_LABELS: Record<GeneratorId, { label: string; title: string }> = {
+  marbleRun: { label: '◉ Marble Run', title: 'Gerador de bolinhas em trilhos' },
+  satisfying: { label: '◆ Satisfying Objects', title: 'Objetos macios pressionados (Squeeze)' },
+};
 
 /** Barra superior com as ações principais (alvos de toque ≥ 44 px). */
 export class TopBar {
@@ -25,6 +32,7 @@ export class TopBar {
   private readonly guiButton: HTMLButtonElement;
   private readonly editorButton: HTMLButtonElement;
   private readonly modeButton: HTMLButtonElement;
+  private readonly generatorButtons = new Map<GeneratorId, HTMLButtonElement>();
 
   constructor(container: HTMLElement, actions: TopBarActions) {
     const brand = el('div', { className: 'brand' }, [
@@ -55,12 +63,32 @@ export class TopBar {
       actions.toggleEditorView,
     );
 
+    const marbleOnly = (b: HTMLButtonElement): HTMLButtonElement => {
+      b.classList.add('marble-only');
+      return b;
+    };
+    marbleOnly(this.helpersButton);
+    marbleOnly(this.editorButton);
+    for (const id of Object.keys(GENERATOR_LABELS) as GeneratorId[]) {
+      const { label, title } = GENERATOR_LABELS[id];
+      const b = button(label, title, () => actions.setGenerator(id), 'btn choice');
+      b.setAttribute('aria-pressed', 'false');
+      this.generatorButtons.set(id, b);
+    }
+    const generatorGroup = el(
+      'div',
+      { className: 'btn-group generator-group', role: 'group', 'aria-label': 'Geradores' },
+      [...this.generatorButtons.values()],
+    );
+
     const groups = [
       [this.playButton, button('⟲ Reiniciar', 'Reiniciar (R)', actions.restart)],
       [
         button('🎲 Tudo', 'Randomizar tudo (T)', actions.randomizeAll),
-        button('Trajeto', 'Randomizar trajeto (Shift+T)', actions.randomizePath),
-        button('Aparência', 'Randomizar aparência (Shift+A)', actions.randomizeAppearance),
+        marbleOnly(button('Trajeto', 'Randomizar trajeto (Shift+T)', actions.randomizePath)),
+        marbleOnly(
+          button('Aparência', 'Randomizar aparência (Shift+A)', actions.randomizeAppearance),
+        ),
         button('✦ Variação', 'Nova variação: altera 3+ categorias (N)', actions.newVariation),
       ],
       [this.undoButton, this.redoButton],
@@ -79,6 +107,7 @@ export class TopBar {
     );
     container.append(
       brand,
+      generatorGroup,
       ...groups.map((items) => el('div', { className: 'btn-group' }, items)),
       el('div', { className: 'btn-group mode-group' }, [this.modeButton]),
     );
@@ -92,7 +121,11 @@ export class TopBar {
     guiVisible: boolean;
     editorView: boolean;
     simpleMode: boolean;
+    generator: GeneratorId;
   }): void {
+    for (const [id, b] of this.generatorButtons) {
+      b.setAttribute('aria-pressed', String(id === state.generator));
+    }
     this.modeButton.textContent = state.simpleMode ? '⚙ Modo avançado' : '✨ Modo simples';
     this.playButton.textContent = state.playing ? '⏸ Pausar' : '▶ Play';
     this.undoButton.disabled = !state.canUndo;
