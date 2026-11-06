@@ -25,7 +25,7 @@ CENT = D("0.01")
 ANO = 2026
 COD_VER_ICMS = "020"   # sintetico
 COD_VER_CONTRIB = "006"  # sintetico
-COD_AJ_CREDITO_ESTIMULO = "AM029999"  # codigo sintetico
+COD_AJ_CREDITO_ESTIMULO = "AM040014"  # deducao (4o caractere = 4), padrao do AM
 COD_OR_FTI = "090"
 COD_REC_FTI = "FTI9"
 
@@ -401,26 +401,29 @@ def gerar_icms(e: Estab, mes: int, retificadora: bool = False, extra_valor: Deci
     # Bloco E
     w.raw("E001", "0")
     w.add("E100", DT_INI=dt(1, mes), DT_FIN=dt(ultimo_dia(mes), mes))
-    ce = e.ajustes_ce.get(mes, D(0))
     ant = sldo_ant.get("icms", D(0))
-    cred_total = cred_icms + ce + ant
+    cred_total = cred_icms + ant
     sld_apurado = max(D(0), deb_icms - cred_total)
     transp = max(D(0), cred_total - deb_icms)
     sldo_ant["icms"] = transp
+    # Credito estimulo lancado como DEDUCAO (E110.VL_TOT_DED), limitado ao saldo apurado
+    ce = min(e.ajustes_ce.get(mes, D(0)), sld_apurado)
+    recolher = sld_apurado - ce
     w.add("E110", VL_TOT_DEBITOS=deb_icms, VL_AJ_DEBITOS=D(0), VL_TOT_AJ_DEBITOS=D(0),
           VL_ESTORNOS_CRED=D(0), VL_TOT_CREDITOS=cred_icms, VL_AJ_CREDITOS=D(0),
-          VL_TOT_AJ_CREDITOS=ce, VL_ESTORNOS_DEB=D(0), VL_SLD_CREDOR_ANT=ant,
-          VL_SLD_APURADO=sld_apurado, VL_TOT_DED=D(0), VL_ICMS_RECOLHER=sld_apurado,
+          VL_TOT_AJ_CREDITOS=D(0), VL_ESTORNOS_DEB=D(0), VL_SLD_CREDOR_ANT=ant,
+          VL_SLD_APURADO=sld_apurado, VL_TOT_DED=ce, VL_ICMS_RECOLHER=recolher,
           VL_SLD_CREDOR_TRANSPORTAR=transp, DEB_ESP=D(0))
     if ce:
         w.add("E111", COD_AJ_APUR=COD_AJ_CREDITO_ESTIMULO,
               DESCR_COMPL_AJ="Credito estimulo (sintetico)", VL_AJ_APUR=ce)
-    if sld_apurado:
-        w.add("E116", COD_OR="000", VL_OR=sld_apurado, DT_VCTO=dt(10, mes % 12 + 1),
+    if recolher:
+        w.add("E116", COD_OR="000", VL_OR=recolher, DT_VCTO=dt(10, mes % 12 + 1),
               COD_REC="1234", IND_PROC="", MES_REF=f"{mes:02d}{ANO}")
     if e.fundo_fti.get(mes):
         w.add("E116", COD_OR=COD_OR_FTI, VL_OR=e.fundo_fti[mes], DT_VCTO=dt(10, mes % 12 + 1),
-              COD_REC=COD_REC_FTI, MES_REF=f"{mes:02d}{ANO}")
+              COD_REC=COD_REC_FTI, TXT_COMPL="Contribuicao ao FTI (sintetico)",
+              MES_REF=f"{mes:02d}{ANO}")
     w.add("E500", IND_APUR="0", DT_INI=dt(1, mes), DT_FIN=dt(ultimo_dia(mes), mes))
     for (cfop, cst), x in e510.items():
         w.add("E510", CFOP=cfop, CST_IPI=cst, VL_CONT_IPI=x[0], VL_BC_IPI=x[1], VL_IPI=x[2])

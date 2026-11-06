@@ -67,5 +67,17 @@ with ui.protegido("listar os avisos"):
     else:
         st.dataframe(av, hide_index=True, use_container_width=True)
 
-st.caption("As checagens Q3 a Q11 (conciliações entre documentos, apurações e as duas EFDs) "
-           "entram na Fase 3.")
+st.subheader("Q3 a Q11 – Conciliações")
+st.caption("Cada checagem lista onde não fecha (tolerância em Parâmetros > Premissas). "
+           "Abra a linha para ver o arquivo e a linha da EFD.")
+with ui.protegido("rodar as conciliações"):
+    from zfm import conciliacoes
+    ui.preparar(con)
+    for cod, (titulo, func) in conciliacoes.CHECAGENS.items():
+        d = conciliacoes.filtrar(func(con), selecao)
+        rot = f"{cod} – {titulo}: " + ("OK" if d.empty else f"{len(d)} divergência(s)")
+        with st.expander(("✅ " if d.empty else "⚠️ ") + rot):
+            if d.empty:
+                st.caption("Nenhuma divergência.")
+            else:
+                ui.tabela(d)

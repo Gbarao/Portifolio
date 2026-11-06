@@ -1,0 +1,29 @@
+﻿cenario;ano;aliq_cbs;aliq_ibs;fator_icms;fator_cp_entrada;aplica_cp_450;ipi_protegido_override;aliq_contrib_art457;fonte
+base;2027;11,2;0,0;1,0;0,0;sim;;0,0;"CBS 11,3%: TCU, out/2026 (alíquota de referência 2027); IBS 18,7%: premissa da Resolução CGIBS 14/2026 para projeção de arrecadação | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+base;2028;11,2;0,0;1,0;0,0;sim;;0,0;"CBS 11,3%: TCU, out/2026 (alíquota de referência 2027); IBS 18,7%: premissa da Resolução CGIBS 14/2026 para projeção de arrecadação | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+base;2029;11,3;1,87;0,9;0,1;sim;;0,0;"CBS 11,3%: TCU, out/2026 (alíquota de referência 2027); IBS 18,7%: premissa da Resolução CGIBS 14/2026 para projeção de arrecadação | IBS do ano = referência × (1 − fator_icms) (aproximação)"
+base;2030;11,3;3,74;0,8;0,2;sim;;0,0;"CBS 11,3%: TCU, out/2026 (alíquota de referência 2027); IBS 18,7%: premissa da Resolução CGIBS 14/2026 para projeção de arrecadação | IBS do ano = referência × (1 − fator_icms) (aproximação)"
+base;2031;11,3;5,61;0,7;0,3;sim;;0,0;"CBS 11,3%: TCU, out/2026 (alíquota de referência 2027); IBS 18,7%: premissa da Resolução CGIBS 14/2026 para projeção de arrecadação | IBS do ano = referência × (1 − fator_icms) (aproximação)"
+base;2032;11,3;7,48;0,6;0,4;sim;;0,0;"CBS 11,3%: TCU, out/2026 (alíquota de referência 2027); IBS 18,7%: premissa da Resolução CGIBS 14/2026 para projeção de arrecadação | IBS do ano = referência × (1 − fator_icms) (aproximação)"
+base;2033;11,3;18,7;0,0;1,0;sim;;0,0;"CBS 11,3%: TCU, out/2026 (alíquota de referência 2027); IBS 18,7%: premissa da Resolução CGIBS 14/2026 para projeção de arrecadação"
+baixo;2027;8,7;0,0;1,0;0,0;sim;;0,0;"Teto conjunto de 26,5% (LC 214/2025): CBS 8,8% + IBS 17,7% (divisão usada pelo CGIBS) | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+baixo;2028;8,7;0,0;1,0;0,0;sim;;0,0;"Teto conjunto de 26,5% (LC 214/2025): CBS 8,8% + IBS 17,7% (divisão usada pelo CGIBS) | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+baixo;2029;8,8;1,77;0,9;0,1;sim;;0,0;Teto conjunto de 26,5% (LC 214/2025): CBS 8,8% + IBS 17,7% (divisão usada pelo CGIBS) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+baixo;2030;8,8;3,54;0,8;0,2;sim;;0,0;Teto conjunto de 26,5% (LC 214/2025): CBS 8,8% + IBS 17,7% (divisão usada pelo CGIBS) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+baixo;2031;8,8;5,31;0,7;0,3;sim;;0,0;Teto conjunto de 26,5% (LC 214/2025): CBS 8,8% + IBS 17,7% (divisão usada pelo CGIBS) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+baixo;2032;8,8;7,08;0,6;0,4;sim;;0,0;Teto conjunto de 26,5% (LC 214/2025): CBS 8,8% + IBS 17,7% (divisão usada pelo CGIBS) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+baixo;2033;8,8;17,7;0,0;1,0;sim;;0,0;Teto conjunto de 26,5% (LC 214/2025): CBS 8,8% + IBS 17,7% (divisão usada pelo CGIBS)
+alto;2027;11,2;0,0;1,0;0,0;sim;;0,0;"Sensibilidade: cenário base + 1 p.p. no IBS (hipótese, sem fonte oficial) | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+alto;2028;11,2;0,0;1,0;0,0;sim;;0,0;"Sensibilidade: cenário base + 1 p.p. no IBS (hipótese, sem fonte oficial) | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+alto;2029;11,3;1,97;0,9;0,1;sim;;0,0;Sensibilidade: cenário base + 1 p.p. no IBS (hipótese, sem fonte oficial) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+alto;2030;11,3;3,94;0,8;0,2;sim;;0,0;Sensibilidade: cenário base + 1 p.p. no IBS (hipótese, sem fonte oficial) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+alto;2031;11,3;5,91;0,7;0,3;sim;;0,0;Sensibilidade: cenário base + 1 p.p. no IBS (hipótese, sem fonte oficial) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+alto;2032;11,3;7,88;0,6;0,4;sim;;0,0;Sensibilidade: cenário base + 1 p.p. no IBS (hipótese, sem fonte oficial) | IBS do ano = referência × (1 − fator_icms) (aproximação)
+alto;2033;11,3;19,7;0,0;1,0;sim;;0,0;Sensibilidade: cenário base + 1 p.p. no IBS (hipótese, sem fonte oficial)
+adverso;2027;11,2;0,0;1,0;0,0;nao;nao;0,0;"Cenário base sem créditos presumidos do art. 450 e sem IPI protegido | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+adverso;2028;11,2;0,0;1,0;0,0;nao;nao;0,0;"Cenário base sem créditos presumidos do art. 450 e sem IPI protegido | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável com a CBS tratado como neutro"
+adverso;2029;11,3;1,87;0,9;0,1;nao;nao;0,0;Cenário base sem créditos presumidos do art. 450 e sem IPI protegido | IBS do ano = referência × (1 − fator_icms) (aproximação)
+adverso;2030;11,3;3,74;0,8;0,2;nao;nao;0,0;Cenário base sem créditos presumidos do art. 450 e sem IPI protegido | IBS do ano = referência × (1 − fator_icms) (aproximação)
+adverso;2031;11,3;5,61;0,7;0,3;nao;nao;0,0;Cenário base sem créditos presumidos do art. 450 e sem IPI protegido | IBS do ano = referência × (1 − fator_icms) (aproximação)
+adverso;2032;11,3;7,48;0,6;0,4;nao;nao;0,0;Cenário base sem créditos presumidos do art. 450 e sem IPI protegido | IBS do ano = referência × (1 − fator_icms) (aproximação)
+adverso;2033;11,3;18,7;0,0;1,0;nao;nao;0,0;Cenário base sem créditos presumidos do art. 450 e sem IPI protegido

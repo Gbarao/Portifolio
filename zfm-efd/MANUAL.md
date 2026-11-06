@@ -1,6 +1,6 @@
 # Manual do usuário — Programa ZFM × Reforma Tributária
 
-> Versão da Fase 1. As partes marcadas como *(em construção)* chegam nas próximas fases.
+> Versão das Fases 0 a 7.
 
 ## 1. O que o programa faz
 
@@ -73,18 +73,85 @@ Observações:
   A EFD Contribuições é procurada pela empresa (raiz do CNPJ), porque é entregue pela matriz.
 - **Q2 – Integridade:** compara a quantidade de registros lidos com a informada no próprio arquivo
   (registros 9900 e 9999). Divergência indica arquivo incompleto ou alterado.
+- **Q3 a Q11 – Conciliações:** cada linha abre a lista do que não fecha (documento × itens, documentos × apuração, EFD ICMS/IPI × EFD Contribuições, alíquotas de PIS/COFINS, CST de IPI, códigos sem classificação).
 - **Avisos de leitura:** linhas com formato diferente do esperado (o arquivo foi carregado,
   mas convém conferir).
 
 **Seletor de empresas (barra lateral):** marcado *Todas as empresas (consolidado)* por padrão.
 Desmarque para escolher uma ou várias empresas. Vale para todas as telas.
 
-## 6. Parâmetros, resultados e Excel *(em construção)*
+## 6. Preencher os parâmetros (tela 3. Parâmetros)
 
-Tabelas de parâmetros, telas de Saídas, Entradas, Apurações, Benefício atual, Simulação e
-Exportação para o Excel entram nas Fases 2 a 7.
+1. Depois de carregar as EFDs, clique em **Preencher a partir das EFDs**. O programa acrescenta
+   empresas, produtos (registro 0200), CFOPs e códigos de ajuste do ICMS (E111/E116) encontrados nos
+   arquivos. O que você já editou não é apagado.
+2. Revise cada aba e clique em **Salvar** na própria aba. Alternativa: **Baixar CSV**, editar no
+   Excel, salvar como CSV e usar **Importar CSV**.
+3. Avisos amarelos no topo mostram o que falta (por exemplo, produtos sem alíquota TIPI).
 
-## 7. Quando der erro
+**Aba "Premissas e alíquotas" (a primeira):**
+- *1. Alíquotas de referência*: digite a CBS e o IBS de referência (%) de cada cenário e clique em
+  **Aplicar aos anos 2027–2033**. O programa calcula os anos de transição sozinho. Para criar um
+  cenário novo, acrescente uma linha.
+- *2. Todas as premissas adotadas*: lista, em linguagem simples, cada premissa usada nos cálculos,
+  o valor adotado, onde alterar e a fonte. É a mesma lista da aba "Premissas adotadas" do Excel.
+
+Abas e exemplo de linha preenchida:
+
+| Aba | O que preencher | Exemplo |
+| --- | --- | --- |
+| Empresas | Nome curto e se entra na análise | `12345678; ALFA ELETRONICOS LTDA; Alfa; sim` |
+| Produtos | Incentivado, tipo de bem, **alíquota TIPI de 31/12/2023 (%)**, IPI protegido, nível de crédito estímulo (%) | `12345678; TV50; 85287200; Televisor; sim; final; 15; ; sim; não; não; 55; não` |
+| Alíquotas por cenário | CBS e IBS do ano (%), fator do ICMS, crédito presumido do art. 450 | `base; 2033; 11,3; 18,7; 0; 1; sim; ; 0` |
+| Códigos de ajuste | Classe de cada código E111/E116 (crédito estímulo, fundo FTI/UEA/FMPES, outros) | `AM040014; E111; credito_estimulo; ...; sim` |
+| Tratamento das entradas | Como cada origem de compra é tratada após a reforma | `nacional_fora_zfm; aliquota_zero; aliquota_zero; sim; não` |
+| Regime geral | PIS 1,65% e COFINS 7,6% (contrafactual fora da ZFM) | `PIS; 1,65` |
+| CFOPs | Categoria e se é receita | `6101; venda_producao; sim` |
+| Municípios da ZFM | Código IBGE | `1302603; Manaus` |
+| Teses | Efeito de cada tese (R$/mês ou %) e vigência | `T1; Exclusão X; todas; ICMS; valor_fixo_mensal; 10000; 2026-01; 2032-12; ativa` |
+| Premissas | Bases de cálculo, rateios, prazo do crédito presumido | `prazo_cp_anos; 5` |
+
+**Códigos de ajuste:** como os códigos não eram conhecidos, o programa classifica sozinho pela
+descrição na EFD (ex.: texto com "ESTÍMULO", "FTI", "UEA", "FMPES") e pelo tipo do código
+(dedução do ICMS no AM = crédito estímulo). A coluna *regra_automatica* mostra o motivo. Confira e
+marque *revisado*.
+
+**Alíquotas de CBS e IBS:** os valores iniciais vêm de pesquisa de 06/11/2026 (coluna *fonte*):
+CBS 11,3% (TCU) e IBS 18,7% (premissa do Comitê Gestor) no cenário base. Edite quando o Senado
+fixar as alíquotas.
+
+## 7. Ler as telas de resultado
+
+- **4. Saídas / 5. Entradas / 6. Apurações:** receitas, compras e apurações por empresa e mês.
+  Quando aparecer o aviso de *rateio*, o destino do produto foi estimado (EFD Contribuições
+  consolidada). A tela 6 mostra também os saldos credores no último mês (informação para a transição).
+- **7. Benefício atual:** quanto a ZFM reduz hoje de IPI, PIS, COFINS e ICMS
+  (benefício = imposto que seria pago fora da ZFM − imposto pago hoje). O percentual mostra o
+  benefício sobre a receita das vendas incentivadas. No fim da tela, escolha tributo, empresa e mês
+  para ver o arquivo e a linha da EFD de cada valor.
+- **8. Simulação e cenários:**
+  - *Benefício hoje (anualizado)*: benefício de 2026 levado para 12 meses.
+  - *Benefício pós-reforma*: benefício no ano e cenário escolhidos (CBS, IBS, ICMS residual,
+    IPI protegido, menos a contribuição estadual do art. 457).
+  - *Δ*: pós-reforma − hoje. Negativo = perda.
+  - *Ponte*: como se sai do benefício de hoje para o pós-reforma, tributo por tributo.
+  - *Teste de absorção*: crédito presumido gerado, usado e expirado. "Saldo credor estrutural" =
+    a empresa acumula crédito que não consegue usar (o crédito presumido vence em 5 anos e não é
+    devolvido).
+- **Filtros da barra lateral:** empresas, *Com teses* e *Eliminar operações entre empresas do grupo*.
+  Valem para todas as telas.
+- **Visão do benefício (telas 7 e 8):** *Completa*, *Só saídas* (efeito sobre as vendas) ou
+  *Só entradas* (efeito sobre as compras). Na tela 7, "Só entradas" mostra as compras com isenção,
+  suspensão ou alíquota zero (informativo). Na tela 8, saídas + entradas = benefício total.
+  As telas 4 (Saídas) e 5 (Entradas) mostram as operações de cada lado.
+
+## 8. Exportar para o Excel (tela 9)
+
+Clique em **Gerar Excel** e depois em **Baixar Excel** (o arquivo vai para a pasta Downloads).
+O arquivo traz uma aba por visão (uma coluna por empresa e uma de total), as divergências das
+conciliações e a aba **Premissas** com todos os parâmetros usados.
+
+## 9. Quando der erro
 
 - **Erro na janela preta do `iniciar.bat`:** selecione o texto da janela, copie e envie ao
   Claude Code. A instalação também grava um arquivo em `data\logs\instalacao_*.log`.
@@ -93,11 +160,14 @@ Exportação para o Excel entram nas Fases 2 a 7.
 - **Nunca envie EFDs reais na conversa.** Só a mensagem de erro e o arquivo de log.
 - **Testes automáticos:** duplo clique em `testar.bat` mostra quantos testes passaram e falharam.
 
-## 8. Perguntas frequentes
+## 10. Perguntas frequentes
 
 - **Os dados saem do meu computador?** Não. O programa só aceita conexões do próprio
   computador (`127.0.0.1`) e não usa internet depois da instalação das bibliotecas.
 - **Onde ficam os dados?** Na pasta `data` dentro da pasta do programa (banco `zfm.duckdb` e logs).
 - **Posso abrir duas janelas do programa?** Não ao mesmo tempo: feche a janela preta antiga antes.
+- **Por que o benefício de IPI está zerado?** Falta a alíquota TIPI dos produtos em
+  Parâmetros > Produtos.
+- **Mudei um parâmetro e nada mudou.** Clique em *Salvar* na aba; as telas usam o valor salvo.
 - **O antivírus/TI perguntou sobre o Python acessando a rede:** é o servidor local do programa
   (endereço `127.0.0.1`, só dentro do computador).

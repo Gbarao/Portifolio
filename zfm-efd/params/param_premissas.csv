@@ -1,0 +1,26 @@
+﻿chave;valor;descricao
+ano_base;2026;Ano das EFDs usadas como base (YTD).
+base_cbs_ibs;liquida_sem_tributos;"Base da simulação: 'liquida_sem_tributos' = VL_ITEM − VL_DESC − ICMS − PIS − COFINS (ICMS por item estimado pela proporção ICMS/valor do CFOP no mês); 'valor_liquido' = VL_ITEM − VL_DESC."
+anualizacao;meses_observados_mais_media;Ano simulado = meses observados de 2026 + média mensal nos meses sem dado (= média × 12).
+rateio_produto_uf;proporcao_c190_por_cfop;Saídas sem destinatário por item (C180/C181): destino rateado pela proporção do C190 + 0150 da EFD ICMS/IPI no mesmo estabelecimento, mês e CFOP.
+alocacao_credito_estimulo;receita_incentivada;Crédito estímulo e fundos alocados aos produtos pela receita incentivada do estabelecimento no mês.
+ordem_deducao_ibs;debito-creditos-cp447_449-cp450;Débito − créditos − CP entradas (447/449) → aplica p_ibs_450 sobre o saldo devedor atribuível aos incentivados. CONFERIR na Resolução CGIBS / NT 2025.002.
+prazo_cp_anos;5;Prazo para usar crédito presumido (art. 452).
+nivel_apuracao_cbs_ibs;raiz;Apuração de CBS/IBS por raiz do CNPJ.
+tolerancia_conciliacao;1,00;Tolerância das conciliações, em R$.
+cst_ipi_isento;52;"CSTs de IPI de saída considerados isenção ZFM (separar por ;)."
+ipi_sem_cst_assume_isento;sim;Saídas sem CST de IPI por item (C181): produto incentivado é tratado como isento.
+aliq_pis_zfm_validas;"0,65;1,3;0";Alíquotas de PIS aceitas nas saídas incentivadas (Q9).
+aliq_cofins_zfm_validas;"3;6;0";Alíquotas de COFINS aceitas nas saídas incentivadas (Q9).
+beneficio_entradas_no_total;nao;Benefícios nas entradas entram no total? (informativo)
+reducao_cbs_2027_2028;0,1;Redução da CBS em 2027-2028, em p.p. (IBS-teste de 0,1% compensável com a CBS).
+limite_tipi_ipi;6,5;"TIPI (%) a partir da qual o IPI é mantido para o produto da ZFM (art. 454); abaixo dela o crédito presumido de CBS é o maior (art. 450)."
+p_cbs_450_ipi_zerado;6;Crédito presumido de CBS (art. 450), % da venda: produto com TIPI abaixo do limite, produzido na ZFM em 2024 e não TIC.
+p_cbs_450_demais;2;Crédito presumido de CBS (art. 450), % da venda: demais produtos.
+p_ibs_450_final;55;Crédito presumido de IBS (art. 450), % do saldo devedor: bens de consumo final.
+p_ibs_450_capital;75;Idem, bens de capital.
+p_ibs_450_intermediario;90,25;Idem, bens intermediários.
+p_ibs_450_informatica_ou_ce100;100;Idem, bens de informática ou produto com crédito estímulo de 100% até 2023.
+cp447_sul_sudeste_exceto_es;7,5;Crédito presumido de IBS (art. 447), % das compras com alíquota zero de Sul/Sudeste exceto ES.
+cp447_demais_e_es;13,5;Idem, compras de Norte, Nordeste, Centro-Oeste e ES.
+cp449;7,5;Crédito presumido de IBS (art. 449), % das compras de intermediários da ZFM.

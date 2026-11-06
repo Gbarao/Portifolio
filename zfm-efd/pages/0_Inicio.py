@@ -17,8 +17,12 @@ st.markdown(
 1. **Carga de arquivos** – informe a pasta onde estão as EFDs (.txt) e clique em *Carregar*.
 2. **Perímetro e qualidade** – confira se há os dois arquivos de cada mês para cada
    estabelecimento e se os arquivos estão íntegros.
-3. *(próximas versões)* Parâmetros, Saídas, Entradas, Apurações, Benefício atual,
-   Simulação e Exportação para o Excel.
+3. **Parâmetros** – clique em *Preencher a partir das EFDs* e revise: produtos incentivados
+   e alíquota TIPI, classificação dos códigos de ajuste do ICMS, alíquotas de CBS/IBS por cenário.
+4. **Saídas, Entradas, Apurações** – confira as operações e as apurações.
+5. **Benefício atual** – benefício da ZFM hoje, por tributo, empresa, produto e mês.
+6. **Simulação e cenários** – benefício pós-reforma, Δ por empresa e teste de absorção.
+7. **Exportação** – Excel com os números e as premissas.
 """
 )
 
@@ -31,4 +35,4 @@ if con is not None:
         c1.metric("Arquivos em uso", f"{n[0]}")
         c2.metric("Empresas (raiz do CNPJ)", f"{n[1]}")
 
-st.caption("Versão em construção: Fase 1 (leitura das EFDs e checagens Q1 e Q2).")
+st.caption("Versão: Fases 0 a 7.")

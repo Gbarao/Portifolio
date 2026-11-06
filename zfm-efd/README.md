@@ -8,9 +8,14 @@ EFD ICMS/IPI e EFD Contribuições e simular o regime pós-Reforma. Especificaç
 
 | Fase | Entrega | Situação |
 | --- | --- | --- |
-| 0 | `iniciar.bat`, `diagnostico.bat`, `testar.bat`, ambiente `.venv` | pronta; falta validar no Windows do usuário |
-| 1 | Parser das duas EFDs + DuckDB + tela de carga + Q1/Q2 | pronta |
-| 2–7 | Visões, conciliações, parâmetros, benefício atual, simulação, exportação | a fazer |
+| 0 | `iniciar.bat`, `diagnostico.bat`, `testar.bat`, ambiente `.venv` | pronta; validada pelo usuário |
+| 1 | Parser das duas EFDs + DuckDB + tela de carga + Q1/Q2 | pronta; validada com EFDs reais |
+| 2 | Visões normalizadas + telas Saídas, Entradas, Apurações | pronta |
+| 3 | Conciliações Q3–Q11 | pronta |
+| 4 | Parâmetros (CSV) + preenchimento a partir das EFDs | pronta |
+| 5 | Benefício atual | pronta |
+| 6 | Simulação, teses, teste de absorção | pronta |
+| 7 | Exportação Excel | pronta |
 
 ## Estrutura
 
@@ -23,6 +28,13 @@ zfm/parsers/base.py leitura em streaming → arquivos temporários → DuckDB (r
 zfm/db.py           esquema: arquivos, arquivo_contagens, avisos_carga, raw_<icms|contrib>_<reg>
 zfm/empresas.py     cadastro automático de empresas/estabelecimentos
 zfm/qualidade.py    Q1 (completude) e Q2 (bloco 9)
+zfm/params.py       tabelas de parâmetros (CSV em data/params; modelos em params/)
+zfm/cfop.py         classificação automática de CFOP
+zfm/visoes.py       visões normalizadas (v_docs, v_saidas_item, v_saidas_dest, v_entradas_item, v_apur_*)
+zfm/conciliacoes.py Q3–Q11
+zfm/beneficio_atual.py  benefício As Is (7.5)
+zfm/simulacao.py    simulação pós-reforma e teste de absorção (7.6)
+zfm/exportacao.py   Excel
 tests/              pytest; tests/fixtures/gerador.py gera EFDs sintéticas
 data/               (fora do git) banco zfm.duckdb, logs, arquivos temporários
 ```

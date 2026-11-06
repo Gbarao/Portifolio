@@ -33,3 +33,17 @@ def con_carregado(con, pasta_efd):
         r = carregar_arquivo(con, p)
         assert r.situacao == "carregado", r.mensagem
     return con
+
+
+@pytest.fixture
+def con_param(con_carregado):
+    """Base carregada + parametros preenchidos a partir das EFDs + TIPI dos produtos."""
+    from zfm import params, visoes
+    visoes.preparar(con_carregado)
+    params.preencher_a_partir_das_efds(con_carregado)
+    pr = params.carregar("param_produtos")
+    pr.loc[pr.cod_item == "PROD01", "aliq_tipi_2023"] = 15.0
+    pr.loc[pr.cod_item == "PROD02", "aliq_tipi_2023"] = 5.0
+    params.salvar("param_produtos", pr)
+    visoes.preparar(con_carregado)
+    return con_carregado
