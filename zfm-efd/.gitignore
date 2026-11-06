@@ -1,0 +1,8 @@
+# Dados reais, banco local, logs e exportacoes: nunca no repositorio
+data/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.duckdb
+*.duckdb.wal

@@ -1,0 +1,9 @@
+# Lista fechada de pacotes (SPEC secao 2). Versoes fixadas e conferidas:
+# todas tem pacote pronto (wheel) para Windows 64 bits, Python 3.10 a 3.14.
+# Adicionar pacote exige justificativa em DECISOES.md.
+duckdb==1.5.6
+streamlit==1.65.0
+plotly==7.1.0
+pandas==2.3.3
+openpyxl==3.1.5
+pytest==9.2.0

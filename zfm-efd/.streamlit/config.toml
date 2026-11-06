@@ -1,0 +1,19 @@
+# Execucao 100% local: so aceita conexoes deste computador, sem telemetria.
+[server]
+address = "127.0.0.1"
+headless = true
+runOnSave = false
+fileWatcherType = "none"
+maxUploadSize = 50
+
+[browser]
+serverAddress = "127.0.0.1"
+gatherUsageStats = false
+
+[client]
+showErrorDetails = "none"
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#0B6E4F"
