@@ -5,13 +5,15 @@ Consolidador EFD — interface.
 Execute com:   python iniciar.py      (ou:  streamlit run app.py)
 
 A interface roda no navegador, mas tudo acontece neste computador: os
-arquivos são lidos do disco local e a base fica na pasta `base/`. Nenhum dado
-é enviado para fora.
+arquivos são lidos do disco local e a base fica gravada em disco (por padrão
+em Documentos/Consolidador EFD). Fechar o programa ou desligar o computador
+não apaga nada. Nenhum dado é enviado para fora.
 """
 
 import datetime as dt
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -23,13 +25,26 @@ if APP_DIR not in sys.path:
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from efd import __version__, base, consulta  # noqa: E402
+from efd import __version__, base, comando_modulo, comparacao, consulta, empacotado  # noqa: E402
 from efd.leiautes import (ATENCAO, CONTRIB, FISCAL, MEDIDAS_PADRAO, NOME_FONTE,  # noqa: E402
                           ROTULO_MEDIDA, ROTULO_PAREAMENTO)
 
-PASTA_BASE = os.environ.get("EFD_BASE") or os.path.join(APP_DIR, "base")
+
+def _pasta_base_padrao() -> str:
+    """Pasta permanente da base: Documentos/Consolidador EFD. Uma base criada pela
+    versão anterior (pasta base/ ao lado do programa) continua sendo usada."""
+    antiga = os.path.join(APP_DIR, "base")
+    if not empacotado() and os.path.isfile(os.path.join(antiga, "efd.duckdb")):
+        return antiga
+    casa = os.path.expanduser("~")
+    docs = os.path.join(casa, "Documents")
+    return os.path.join(docs if os.path.isdir(docs) else casa, "Consolidador EFD")
+
+
+PASTA_BASE = os.environ.get("EFD_BASE") or _pasta_base_padrao()
 ARQ_DB = os.path.join(PASTA_BASE, "efd.duckdb")
 ARQ_CFG = os.path.join(PASTA_BASE, "filtros_e_campos.json")
+ARQ_ESTADO = os.path.join(PASTA_BASE, "ultima_visao.json")
 
 st.set_page_config(page_title="Consolidador EFD", page_icon=":material/receipt_long:",
                    layout="wide")
@@ -95,6 +110,7 @@ def medida_curta(m: str, f: str) -> str:
 
 
 NOME_JUNTO = {"empresa_nome": "Nome da empresa", "part_nome": "Nome do fornecedor",
+              "estab_nome": "Nome do estabelecimento",
               "descr_item": "Descrição do item", "cfop_descricao": "Descrição do CFOP",
               "cfop_conc_descricao": "Descrição do CFOP conciliado",
               "chave": "Chave eletrônica", "n_linhas": "Linhas"}
@@ -114,8 +130,9 @@ def base_vazia() -> bool:
 def abrir_dialogo(modo: str):
     """Abre a janela nativa de seleção em outro processo. Devolve (caminhos, erro)."""
     try:
-        r = subprocess.run([sys.executable, "-m", "efd.seletor", modo], capture_output=True,
-                           text=True, cwd=APP_DIR, timeout=900)
+        r = subprocess.run(comando_modulo("efd.seletor", modo), capture_output=True,
+                           text=True, cwd=APP_DIR, timeout=900,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         dados = json.loads((r.stdout or "").strip().splitlines()[-1])
     except Exception:
         return [], ("Não foi possível abrir a janela de seleção neste ambiente. "
@@ -178,6 +195,268 @@ def baixar(rotulo, dados, nome, mime, chave):
 
 def csv_bytes(df) -> bytes:
     return df.to_csv(sep=";", decimal=",", index=False).encode("utf-8-sig")
+
+
+def gravar_json(caminho: str, dados):
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    tmp = caminho + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, indent=2, default=str)
+    os.replace(tmp, caminho)
+
+
+def ler_json(caminho: str):
+    try:
+        with open(caminho, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+# ============================================================================
+# Empresa / estabelecimento (vale para a Visão e para as Conferências)
+# ============================================================================
+
+def seletor_escopo(con, v):
+    """Seletor no topo da página. Devolve (raízes, estabelecimentos)."""
+    @st.cache_data(show_spinner=False)
+    def _opcoes(_v):
+        return base.empresas_e_estabelecimentos(conexao())
+
+    ops = _opcoes(v)
+    rotulos = {}
+    for tipo, cod, nome in ops:
+        if tipo == "E":
+            rotulos[f"E:{cod}"] = f"Empresa {mascara(cod)} · {nome} (todos os estabelecimentos)"
+        else:
+            rotulos[f"S:{cod}"] = f"Estabelecimento {mascara(cod)} · {nome}"
+    atual = [x for x in st.session_state.get("escopo", []) if x in rotulos]
+    if st.session_state.get("w_escopo") is None or \
+            any(x not in rotulos for x in st.session_state.get("w_escopo", [])):
+        st.session_state["w_escopo"] = atual
+
+    def _copiar():
+        st.session_state["escopo"] = list(st.session_state["w_escopo"])
+
+    escolhidos = st.multiselect(
+        "Empresa ou estabelecimento", list(rotulos), format_func=rotulos.get, key="w_escopo",
+        on_change=_copiar, placeholder="Todas as empresas e estabelecimentos (digite o CNPJ ou o nome para buscar)",
+        help="Escolha uma empresa inteira (matriz e filiais) ou estabelecimentos específicos. "
+             "Toda a consolidação e as conferências passam a considerar só essa escolha.")
+    st.session_state["escopo"] = list(escolhidos)
+    raizes = [x[2:] for x in escolhidos if x.startswith("E:")]
+    estabs = [x[2:] for x in escolhidos if x.startswith("S:")]
+    return raizes, estabs
+
+
+def filtro_escopo(raizes, estabs) -> list:
+    conds = []
+    if raizes:
+        conds.append({"grupo": 1, "campo": "empresa", "operador": "em", "valor": raizes})
+    if estabs:
+        conds.append({"grupo": 2, "campo": "estab", "operador": "em", "valor": estabs})
+    return [conds] if conds else []
+
+
+# ============================================================================
+# Memória da tela: a última visão é gravada em disco e reaberta
+# ============================================================================
+
+CHAVES_VISAO = ("v_dims", "v_medidas", "v_calcs", "v_ordem", "v_sentido", "v_limite",
+                "f_periodo", "f_fornecedor", "f_cfop_conc", "f_item", "f_pareamento",
+                "f_salvos", "escopo", "busca_tabela", "filtros_tabela")
+
+
+def restaurar_estado():
+    """Recoloca na sessão os valores da última visão (gravados em disco)."""
+    est = st.session_state.get("_estado_visao")
+    if est is None:
+        est = ler_json(ARQ_ESTADO) or {}
+        st.session_state["_estado_visao"] = est
+    for k, valor in est.items():
+        if k in CHAVES_VISAO and k not in st.session_state:
+            st.session_state[k] = valor
+
+
+def guardar_estado():
+    est = {k: st.session_state[k] for k in CHAVES_VISAO if k in st.session_state}
+    if est != st.session_state.get("_estado_visao"):
+        st.session_state["_estado_visao"] = est
+        try:
+            gravar_json(ARQ_ESTADO, est)
+        except OSError:
+            pass
+
+
+def aplicar_visao(estado: dict):
+    """Callback: troca a tela pela visão salva (roda antes de recriar os widgets)."""
+    for k in CHAVES_VISAO:
+        st.session_state.pop(k, None)
+    st.session_state.pop("w_escopo", None)
+    for k, valor in estado.items():
+        if k in CHAVES_VISAO:
+            st.session_state[k] = valor
+
+
+# ============================================================================
+# Pop-up: linhas do TXT lado a lado
+# ============================================================================
+
+COR_DIF = "background-color: #fde2e1"
+COR_FOCO = "background-color: #fff4cc"
+
+
+def _rotulo_lado(o) -> str:
+    fonte, _, linha_doc, ocorr, n_oc, _, periodo, nome_arq, cnpj = o
+    extra = f" · ocorrência {ocorr} de {n_oc}" if n_oc > 1 else ""
+    return (f"**{NOME_FONTE[fonte]}**{extra}  \n{nome_arq} · período {mes(periodo)} · "
+            f"estabelecimento {mascara(cnpj)}")
+
+
+def _mostrar_linhas(con, arquivo_id, linha_doc, destacar=(), foco=()):
+    linhas = base.linhas_documento(con, arquivo_id, linha_doc)
+    if not linhas:
+        st.warning("O texto original deste arquivo não está na base (ele foi carregado por uma "
+                   "versão anterior do programa). Remova e carregue o arquivo de novo para ver as linhas.")
+        return linhas
+    df = pd.DataFrame(linhas, columns=["Linha", "Registro", "Texto do TXT"])
+
+    def cor(row):
+        if row["Linha"] in destacar:
+            return [COR_DIF] * len(row)
+        if row["Linha"] in foco:
+            return [COR_FOCO] * len(row)
+        return [""] * len(row)
+
+    tabela(df.style.apply(cor, axis=1), hide_index=True, width="stretch",
+           height=min(420, 40 + 35 * len(df)),
+           column_config={"Linha": st.column_config.NumberColumn(format="%d", width="small"),
+                          "Registro": st.column_config.TextColumn(width="small"),
+                          "Texto do TXT": st.column_config.TextColumn(width="large")})
+    return linhas
+
+
+def _tabela_comparacao(comp, nome_a, nome_b):
+    if not comp:
+        st.info("Não há registros em comum para comparar campo a campo.")
+        return
+    so_dif = st.toggle("Mostrar só o que é diferente", value=True, key="pop_so_dif")
+    df = pd.DataFrame(comp)
+    if so_dif:
+        df = df[df["situacao"] != comparacao.IGUAL]
+    if df.empty:
+        st.success("Todos os campos em comum são iguais nas duas linhas.")
+        return
+    df = df.rename(columns={"registro": "Registro", "referencia": "Item", "campo": "Campo",
+                            "valor_a": nome_a, "valor_b": nome_b, "situacao": "Situação",
+                            "linha_a": f"Linha · {nome_a}", "linha_b": f"Linha · {nome_b}"})
+
+    def cor(row):
+        return [COR_DIF if row["Situação"] == comparacao.DIFERENTE else ""] * len(row)
+
+    tabela(df.style.apply(cor, axis=1), hide_index=True, width="stretch",
+           height=min(380, 40 + 35 * len(df)))
+
+
+@st.dialog("Linhas do TXT", width="large")
+def popup_documento(empresa_raiz, doc_id, destaque_cfop=None, mensagem=""):
+    """Mostra o documento como está nos TXT: EFD Contribuições à esquerda e
+    EFD Fiscal à direita (ou as duas ocorrências, se for repetição)."""
+    con = conexao()
+    ocorr = base.ocorrencias_documento(con, empresa_raiz, doc_id)
+    if not ocorr:
+        st.warning("Documento não encontrado na base.")
+        return
+    if mensagem:
+        st.caption(mensagem)
+    contrib = [o for o in ocorr if o[0] == CONTRIB]
+    fiscal = [o for o in ocorr if o[0] == FISCAL]
+    if contrib and fiscal:
+        lado_a, lado_b = contrib[0], fiscal[0]
+    elif len(ocorr) > 1:
+        lado_a, lado_b = ocorr[0], ocorr[1]
+    else:
+        lado_a, lado_b = ocorr[0], None
+
+    if lado_b is None:
+        st.markdown(_rotulo_lado(lado_a))
+        foco = set()
+        linhas = base.linhas_documento(con, lado_a[1], lado_a[2])
+        if destaque_cfop:
+            foco = {n for n, reg, txt in linhas if f"|{destaque_cfop}|" in txt}
+        _mostrar_linhas(con, lado_a[1], lado_a[2], foco=foco)
+        if destaque_cfop:
+            st.caption(f"Em amarelo: linhas com o CFOP {destaque_cfop}.")
+        st.info("Este documento só está em uma escrituração na base.")
+        return
+
+    texto_a = base.linhas_documento(con, lado_a[1], lado_a[2])
+    texto_b = base.linhas_documento(con, lado_b[1], lado_b[2])
+    comp, div_a, div_b = comparacao.comparar({"fonte": lado_a[0], "linhas": texto_a},
+                                             {"fonte": lado_b[0], "linhas": texto_b})
+    n_dif = sum(1 for c in comp if c["situacao"] == comparacao.DIFERENTE)
+    if n_dif:
+        st.error(f"{n_dif} campo(s) com conteúdo diferente. As linhas com diferença estão em vermelho.")
+    elif comp:
+        st.success("Os campos em comum têm o mesmo conteúdo nas duas linhas.")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown(_rotulo_lado(lado_a))
+        _mostrar_linhas(con, lado_a[1], lado_a[2], destacar=div_a)
+    with col_b:
+        st.markdown(_rotulo_lado(lado_b))
+        _mostrar_linhas(con, lado_b[1], lado_b[2], destacar=div_b)
+
+    nome_a = NOME_FONTE[lado_a[0]] if lado_a[0] != lado_b[0] else f"Ocorrência {lado_a[3]}"
+    nome_b = NOME_FONTE[lado_b[0]] if lado_a[0] != lado_b[0] else f"Ocorrência {lado_b[3]}"
+    if div_a or div_b:
+        st.markdown("**Linhas com diferença, como estão nos arquivos**")
+        por_linha_a = {n: t for n, _, t in texto_a}
+        por_linha_b = {n: t for n, _, t in texto_b}
+        pares = sorted({(c["linha_a"], c["linha_b"]) for c in comp
+                        if c["situacao"] == comparacao.DIFERENTE})
+        for la, lb in pares:
+            if la in por_linha_a:
+                st.caption(f"{nome_a} · linha {la}")
+                st.code(por_linha_a[la], language=None, wrap_lines=True)
+            if lb in por_linha_b:
+                st.caption(f"{nome_b} · linha {lb}")
+                st.code(por_linha_b[lb], language=None, wrap_lines=True)
+    st.markdown("**Campo a campo**")
+    _tabela_comparacao(comp, nome_a, nome_b)
+    st.caption("Números são comparados pelo valor (1000,00 = 1000,0). Campo vazio de um lado "
+               "aparece como \"informado só de um lado\". COD_PART e COD_ITEM são códigos "
+               "internos de cada arquivo e podem ser diferentes sem erro.")
+
+
+@st.dialog("Linha do TXT", width="large")
+def popup_linha(arquivo_id, linha, mensagem=""):
+    con = conexao()
+    if mensagem:
+        st.caption(mensagem)
+    for n, reg, texto in base.linha_txt(con, arquivo_id, linha):
+        st.caption(f"Linha {n} · registro {reg}")
+        st.code(texto, language=None, wrap_lines=True)
+
+
+def tabela_com_popup(df_tela, df_ref, chave, ao_selecionar, **kw):
+    """Tabela em que selecionar uma linha abre o pop-up. df_ref tem as referências
+    (mesma ordem de df_tela); colunas iniciadas por "_" ficam ocultas."""
+    colunas = getattr(df_tela, "data", df_tela).columns       # aceita DataFrame ou Styler
+    visiveis = [c for c in colunas if not str(c).startswith("_")]
+    evento = tabela(df_tela, hide_index=True, width="stretch", on_select="rerun",
+                    selection_mode="single-row", key=chave, column_order=visiveis, **kw)
+    linhas = evento.selection.rows if evento and evento.selection else []
+    marca = (chave, linhas[0]) if linhas else None
+    c1, _ = st.columns([1.4, 5])
+    abrir = c1.button("Ver linhas do TXT da linha selecionada", key=f"bt_{chave}",
+                      disabled=not linhas)
+    if linhas and linhas[0] < len(df_ref) and (abrir or st.session_state.get(f"_ult_{chave}") != marca):
+        st.session_state[f"_ult_{chave}"] = marca
+        ao_selecionar(df_ref.iloc[linhas[0]])
+    elif not linhas:
+        st.session_state[f"_ult_{chave}"] = None
+    st.caption("Selecione uma linha (caixa à esquerda) para ver as linhas do TXT.")
 
 
 # ============================================================================
@@ -339,6 +618,9 @@ def pagina_carregar():
                 st.rerun()
 
     st.divider()
+    _secao_dados_e_backup(con)
+
+    st.divider()
     st.subheader("Tabelas de apoio (opcionais)")
     t1, t2 = st.tabs(["Tabela de CFOP", "Regime tributário dos fornecedores"])
     with t1:
@@ -375,6 +657,87 @@ def pagina_carregar():
                 st.error(f"Não foi possível ler a planilha: {e}")
 
 
+def _pasta_temporaria(caminho: str) -> bool:
+    c = os.path.abspath(caminho).lower().replace("\\", "/")
+    return any(x in c for x in ("/appdata/local/temp", "/tmp/", "/temp/", ".zip/", "/_mei"))
+
+
+def _secao_dados_e_backup(con):
+    st.subheader("Onde os dados ficam e backup")
+    st.write(f"A base fica gravada em **`{PASTA_BASE}`**. Fechar o programa ou desligar o "
+             "computador não apaga nada: ao abrir de novo, as escriturações, os filtros salvos e "
+             "a última visão continuam lá. Os arquivos `.txt` originais podem ser movidos ou "
+             "apagados depois da carga, porque o conteúdo usado fica na base.")
+    if _pasta_temporaria(PASTA_BASE):
+        st.error("Esta pasta parece ser temporária (o Windows pode apagá-la). Extraia o programa "
+                 "para uma pasta comum, como Documentos, antes de carregar os arquivos.")
+    aviso = st.session_state.pop("aviso_backup", None)
+    if aviso:
+        st.success(aviso)
+    b1, b2 = st.tabs(["Fazer backup", "Restaurar um backup"])
+    with b1:
+        st.session_state.setdefault("pasta_backup", os.path.join(PASTA_BASE, "backups"))
+        if "_pend_pasta_backup" in st.session_state:        # valor escolhido na janela
+            st.session_state["pasta_backup"] = st.session_state.pop("_pend_pasta_backup")
+        c1, c2 = st.columns([4, 1.2])
+        c1.text_input("Pasta do backup (pode ser um pen drive ou uma pasta na nuvem)",
+                      key="pasta_backup")
+        if c2.button("Escolher pasta…", width="stretch", key="bk_pasta"):
+            caminhos, erro = abrir_dialogo("pasta")
+            if caminhos:
+                st.session_state["_pend_pasta_backup"] = caminhos[0]
+                st.rerun()
+            if erro:
+                st.warning(erro)
+        if st.button("Fazer backup agora", type="primary", key="bk_fazer"):
+            try:
+                with st.spinner("Copiando a base…"):
+                    destino = base.fazer_backup(con, st.session_state["pasta_backup"],
+                                                [ARQ_CFG, ARQ_ESTADO])
+                    n = base.validar_backup(destino)
+                st.success(f"Backup gravado e conferido ({n} escrituração(ões)): {destino}")
+            except Exception as e:
+                st.error(f"Não foi possível fazer o backup: {e}")
+    with b2:
+        st.write("Substitui a base atual pelo conteúdo de um backup. Antes de substituir, uma "
+                 "cópia da base atual é guardada na pasta da base.")
+        if "_pend_arq_restaurar" in st.session_state:
+            st.session_state["arq_restaurar"] = st.session_state.pop("_pend_arq_restaurar")
+        c1, c2 = st.columns([4, 1.2])
+        c1.text_input("Arquivo de backup (.duckdb)", key="arq_restaurar")
+        if c2.button("Escolher arquivo…", width="stretch", key="bk_arquivo"):
+            caminhos, erro = abrir_dialogo("backup")
+            if caminhos:
+                st.session_state["_pend_arq_restaurar"] = caminhos[0]
+                st.rerun()
+            if erro:
+                st.warning(erro)
+        certo = st.checkbox("Entendo que a base atual será substituída pelo backup", key="bk_certo")
+        if st.button("Restaurar backup", disabled=not certo, key="bk_restaurar"):
+            origem = st.session_state.get("arq_restaurar", "").strip().strip('"')
+            try:
+                n = base.validar_backup(origem)
+            except Exception as e:
+                st.error(f"O arquivo não é um backup válido do Consolidador EFD: {e}")
+            else:
+                try:
+                    con.execute("FORCE CHECKPOINT")
+                except Exception:
+                    pass
+                con.close()
+                _abrir_base.clear()
+                carimbo = time.strftime("%Y-%m-%d_%H%M%S")
+                if os.path.isfile(ARQ_DB):
+                    shutil.copy2(ARQ_DB, os.path.join(PASTA_BASE, f"efd_antes_da_restauracao_{carimbo}.duckdb"))
+                shutil.copy2(origem, ARQ_DB)
+                if os.path.isfile(ARQ_DB + ".wal"):
+                    os.remove(ARQ_DB + ".wal")
+                base.reconstruir(conexao())
+                st.cache_data.clear()
+                st.session_state["aviso_backup"] = f"Backup restaurado: {n} escrituração(ões)."
+                st.rerun()
+
+
 def _salvar_envio(envio) -> str:
     pasta = os.path.join(PASTA_BASE, "tmp")
     os.makedirs(pasta, exist_ok=True)
@@ -395,23 +758,24 @@ def _filtros_rapidos(con, v) -> list:
 
     def multiselecao(campo_id, titulo, formato):
         valores = opcoes(campo_id, v)
-        mapa = {x[0]: formato(x) for x in valores}
+        # as chaves são texto para que a seleção possa ser gravada em disco
+        mapa = {("" if x[0] is None else str(x[0])): formato(x) for x in valores}
+        chave = f"f_{campo_id}"
+        if chave in st.session_state:
+            st.session_state[chave] = [x for x in st.session_state[chave] if x in mapa]
         escolhidos = st.sidebar.multiselect(titulo, list(mapa), format_func=mapa.get,
-                                            key=f"f_{campo_id}", placeholder="Todos")
+                                            key=chave, placeholder="Todos")
         if not escolhidos:
             return
-        cheios = [x for x in escolhidos if x not in ("", None)]
+        cheios = [x for x in escolhidos if x != ""]
         conds = []
         if cheios:
-            conds.append({"grupo": 1, "campo": campo_id, "operador": "em",
-                          "valor": [str(x) for x in cheios]})
+            conds.append({"grupo": 1, "campo": campo_id, "operador": "em", "valor": cheios})
         if len(cheios) < len(escolhidos):
             conds.append({"grupo": 2, "campo": campo_id, "operador": "vazio"})
         filtros.append(conds)
 
-    multiselecao("empresa", "Empresa", lambda x: f"{mascara(x[0])} · {x[1] or ''}")
     multiselecao("periodo", "Período", lambda x: mes(x[0]))
-    multiselecao("estab", "Estabelecimento", lambda x: mascara(x[0]))
     multiselecao("fornecedor", "Fornecedor",
                  lambda x: f"{mascara(x[0])} · {x[1] or ''}" if x[0] else "(sem participante)")
     multiselecao("cfop_conc", "CFOP", lambda x: x[0] or "(sem CFOP)")
@@ -459,32 +823,122 @@ def _exibicao(dados: pd.DataFrame, medidas, nomes_calc) -> tuple[pd.DataFrame, d
     return tela, ajuda, numericas
 
 
+def _valido(chave, opcoes_validas, padrao, multiplo=True):
+    """Garante que o valor guardado de um seletor ainda existe nas opções."""
+    if chave not in st.session_state:
+        st.session_state[chave] = padrao
+    atual = st.session_state[chave]
+    if multiplo:
+        st.session_state[chave] = [x for x in (atual or []) if x in opcoes_validas]
+    elif atual not in opcoes_validas:
+        st.session_state[chave] = padrao
+
+
+def _visoes_salvas(cfg):
+    with st.expander("Visões salvas (agrupamento, colunas e filtros com um nome)"):
+        c1, c2, c3 = st.columns([2.2, 1, 1])
+        nomes = list(cfg["visoes"])
+        escolha = c1.selectbox("Abrir uma visão salva", nomes, index=None,
+                               placeholder="Nenhuma visão salva" if not nomes else "Escolha",
+                               key="vs_escolha")
+        c2.button("Abrir", disabled=escolha is None, width="stretch", key="vs_abrir",
+                  on_click=aplicar_visao, args=(cfg["visoes"].get(escolha, {}),))
+        if c3.button("Excluir", disabled=escolha is None, width="stretch", key="vs_excluir"):
+            cfg["visoes"].pop(escolha, None)
+            consulta.salvar_config(ARQ_CFG, cfg)
+            st.rerun()
+        c4, c5 = st.columns([3.2, 1])
+        nome = c4.text_input("Salvar a visão atual com o nome", key="vs_nome",
+                             placeholder="Ex.: Compras da matriz por fornecedor")
+        if c5.button("Salvar visão", type="primary", width="stretch", key="vs_salvar",
+                     disabled=not nome.strip()):
+            cfg["visoes"][nome.strip()] = {k: st.session_state[k] for k in CHAVES_VISAO
+                                           if k in st.session_state}
+            consulta.salvar_config(ARQ_CFG, cfg)
+            st.toast(f"Visão \"{nome.strip()}\" salva.")
+
+
+def _filtros_da_tabela(dims, medidas, calculados, r_nomes_calc_previstos):
+    """Busca e filtros sobre as linhas consolidadas (como o filtro de coluna do Excel)."""
+    cols = consulta.colunas_resultado(dims, medidas, calculados)
+    exib = {}
+    for c in cols:
+        if c in consulta.CAMPOS:
+            exib[curto(c)] = c
+        elif c in NOME_JUNTO:
+            exib[NOME_JUNTO[c]] = c
+        elif c.startswith("calc_"):
+            exib[r_nomes_calc_previstos.get(c, c)] = c
+        elif "__" in c:
+            m, f = c.split("__")
+            exib[medida_curta(m, FISCAL if f == "fiscal" else CONTRIB)] = c
+        else:
+            exib[c] = c
+    op_por_rotulo = {v: k for k, v in consulta.OPERADORES.items()}
+    st.text_input("Buscar na tabela", key="busca_tabela",
+                  placeholder="Procura o texto em todas as colunas de texto (nome, código, descrição...)")
+    guardados = [f for f in st.session_state.get("filtros_tabela", []) if f.get("coluna") in cols]
+    with st.expander(f"Filtros por coluna da tabela ({len(guardados)} ativo(s))",
+                     expanded=bool(guardados)):
+        inicial = pd.DataFrame([{
+            "Coluna": next((k for k, x in exib.items() if x == f["coluna"]), None),
+            "Condição": consulta.OPERADORES.get(f["operador"]), "Valor": f.get("valor", "")}
+            for f in guardados] or [{"Coluna": None, "Condição": None, "Valor": ""}])
+        editado = st.data_editor(
+            inicial, num_rows="dynamic", hide_index=True, width="stretch",
+            key=f"ed_tabela_{hash(tuple(cols))}",
+            column_config={
+                "Coluna": st.column_config.SelectboxColumn(options=list(exib), required=True),
+                "Condição": st.column_config.SelectboxColumn(options=list(op_por_rotulo), required=True),
+                "Valor": st.column_config.TextColumn(width="large")})
+        st.caption("Ex.: VL_ICMS · Fiscal \"é maior que\" 1000; Nome do fornecedor \"contém\" aço. "
+                   "As condições valem juntas (E) e os totais acompanham.")
+    novos = []
+    for linha in editado.to_dict("records"):
+        if linha.get("Coluna") in exib and linha.get("Condição") in op_por_rotulo:
+            novos.append({"coluna": exib[linha["Coluna"]],
+                          "operador": op_por_rotulo[linha["Condição"]],
+                          "valor": "" if linha.get("Valor") is None else str(linha["Valor"])})
+    st.session_state["filtros_tabela"] = novos
+    resultado = list(novos)
+    if st.session_state.get("busca_tabela", "").strip():
+        resultado.append({"coluna": "*", "operador": "contem",
+                          "valor": st.session_state["busca_tabela"].strip()})
+    return resultado
+
+
 def pagina_visao():
     con = conexao()
-    st.title("Visão consolidada")
     if base_vazia():
         st.switch_page(PAGINAS["carregar"])
+    restaurar_estado()
+    st.title("Visão consolidada")
     v = versao()
     cfg = consulta.carregar_config(ARQ_CFG)
-    filtros = _filtros_rapidos(con, v)
+    raizes, estabs = seletor_escopo(con, v)
+    filtros = filtro_escopo(raizes, estabs) + _filtros_rapidos(con, v)
+    _valido("f_salvos", cfg["filtros"], [])
     salvos = st.sidebar.multiselect("Meus filtros salvos", list(cfg["filtros"]), key="f_salvos",
                                     placeholder="Nenhum",
                                     help="Criados na página \"Meus filtros e cálculos\". "
                                          "Vários filtros marcados valem juntos (E).")
     filtros += [cfg["filtros"][n] for n in salvos]
+    _visoes_salvas(cfg)
 
     todas = consulta.medidas_disponiveis()
     rot_med = {medida_curta(m, f): (m, f) for m, f in todas}
+    _valido("v_dims", consulta.DIMENSOES, consulta.DIMENSOES_PADRAO)
+    _valido("v_medidas", rot_med, [medida_curta(m, f) for m, f in MEDIDAS_PADRAO])
+    _valido("v_calcs", cfg["calculados"], [])
     c1, c2 = st.columns([1, 1])
     dims = c1.multiselect(
         "Agrupar por (a ordem escolhida é a ordem dos níveis)",
-        consulta.DIMENSOES, default=consulta.DIMENSOES_PADRAO, format_func=curto, key="v_dims",
+        consulta.DIMENSOES, format_func=curto, key="v_dims",
         placeholder="Sem agrupamento (só o total)",
         help="Campos do documento (número, data, conta contábil, alíquota) deixam a consulta "
              "um pouco mais lenta, porque ela passa a ler item a item.")
     escolhidas = c2.multiselect(
-        "Colunas de valor", list(rot_med),
-        default=[medida_curta(m, f) for m, f in MEDIDAS_PADRAO], key="v_medidas",
+        "Colunas de valor", list(rot_med), key="v_medidas",
         placeholder="Escolha as colunas",
         help="Cada valor vem de uma única escrituração e fica em coluna própria. "
              "O mesmo tributo nunca é somado das duas fontes.")
@@ -497,14 +951,22 @@ def pagina_visao():
     opcoes_ordem = {"(primeira coluna de valor)": None, "Linhas": "n_linhas"}
     opcoes_ordem.update({medida_curta(m, f): consulta.col_medida(m, f) for m, f in medidas})
     opcoes_ordem.update({f"Nível: {curto(d)}": d for d in dims})
+    _valido("v_ordem", opcoes_ordem, "(primeira coluna de valor)", multiplo=False)
+    _valido("v_sentido", ["Maior primeiro", "Menor primeiro"], "Maior primeiro", multiplo=False)
+    _valido("v_limite", [500, 2000, 10000, 50000], 2000, multiplo=False)
     ordem = c4.selectbox("Ordenar por", list(opcoes_ordem), key="v_ordem")
     sentido = c5.selectbox("Sentido", ["Maior primeiro", "Menor primeiro"], key="v_sentido")
-    limite = c6.selectbox("Linhas na tela", [500, 2000, 10000, 50000], index=1, key="v_limite")
+    limite = c6.selectbox("Linhas na tela", [500, 2000, 10000, 50000], key="v_limite")
+
+    nomes_calc_previstos = {f"calc_{i}": n for i, n in enumerate(calculados)}
+    filtros_tabela = _filtros_da_tabela(dims, medidas, calculados, nomes_calc_previstos)
+    guardar_estado()
 
     try:
         r = consulta.consolidar(con, dims, medidas, filtros=filtros, calculados=calculados,
                                 ordem=opcoes_ordem[ordem],
-                                decrescente=sentido == "Maior primeiro", limite=limite)
+                                decrescente=sentido == "Maior primeiro", limite=limite,
+                                filtros_resultado=filtros_tabela)
     except consulta.FiltroInvalido as e:
         st.error(f"Filtro inválido: {e}")
         return
@@ -568,7 +1030,7 @@ def pagina_visao():
             completo = consulta.consolidar(
                 con, dims, medidas, filtros=filtros, calculados=calculados,
                 ordem=opcoes_ordem[ordem], decrescente=sentido == "Maior primeiro",
-                limite=consulta.LIMITE_EXCEL)
+                limite=consulta.LIMITE_EXCEL, filtros_resultado=filtros_tabela)
             return consulta.para_csv(completo["dados"], rot)
 
         with e3:
@@ -599,23 +1061,47 @@ def pagina_visao():
         det["Situação nas duas EFDs"] = det["Situação nas duas EFDs"].map(lambda x: ROTULO_PAREAMENTO.get(x, x))
         fmt = {c: br for c in det.columns if c.startswith("VL_")}
         fmt.update({c: (lambda x: br(x, 4)) for c in det.columns if c.startswith(("ALIQ_", "QTD"))})
-        tabela(det.style.format(fmt, na_rep=""), hide_index=True, width="stretch",
-               height=min(420, 40 + 35 * max(len(det), 1)))
+
+        def abrir(ref):
+            if ref["_doc_id"] is not None and ref["_doc_id"] == ref["_doc_id"]:
+                popup_documento(ref["_empresa_raiz"], ref["_doc_id"])
+            else:
+                popup_linha(ref["_arquivo_id"], ref["Linha no arquivo"],
+                            "Registro sem documento (F100 ou consolidação C191/C195).")
+
+        tabela_com_popup(det.style.format(fmt, na_rep=""), det, "tabela_detalhe", abrir,
+                         height=min(420, 40 + 35 * max(len(det), 1)))
         if len(det) >= 5000:
             st.caption("Mostrando as 5.000 primeiras linhas do grupo.")
-        baixar("Baixar o detalhe (CSV)", lambda: csv_bytes(det), "detalhe_grupo.csv", "text/csv", "dl_det")
+        baixar("Baixar o detalhe (CSV)",
+               lambda: csv_bytes(det[[c for c in det.columns if not c.startswith("_")]]),
+               "detalhe_grupo.csv", "text/csv", "dl_det")
 
 
 # ============================================================================
 # Página: Conferências
 # ============================================================================
 
+REF = {"empresa_raiz": "_empresa_raiz", "doc_id": "_doc_id", "arquivo_id": "_arquivo_id",
+       "linha_doc": "_linha_doc"}
+
+
+def _abrir_doc(mensagem=""):
+    def abrir(ref):
+        popup_documento(ref["_empresa_raiz"], ref["_doc_id"], mensagem=mensagem)
+    return abrir
+
+
 def pagina_conferencias():
     con = conexao()
-    st.title("Conferências")
     if base_vazia():
+        st.title("Conferências")
         st.info("A base está vazia.")
         return
+    restaurar_estado()
+    st.title("Conferências")
+    escopo = seletor_escopo(con, versao())
+    guardar_estado()
     a1, a2, a3, a4, a5 = st.tabs(["Fiscal × Contribuições", "C190 × C170 (Fiscal)",
                                   "Cabeçalho × detalhes", "Documentos repetidos",
                                   "Linhas idênticas sem documento"])
@@ -623,27 +1109,48 @@ def pagina_conferencias():
         st.write("Cada documento de entrada é procurado nas duas escriturações pela chave "
                  "eletrônica; sem chave, por estabelecimento, modelo, série, número, data e "
                  "participante. Os valores abaixo já excluem documentos repetidos.")
-        par = base.conf_pareamento(con)
+        par = base.conf_pareamento(con, escopo=escopo)
         par["fonte"] = par["fonte"].map(NOME_FONTE)
         par["pareamento"] = par["pareamento"].map(lambda x: ROTULO_PAREAMENTO.get(x, x))
         par.columns = ["Escrituração", "Situação", "Documentos", "Linhas", "VL_ITEM", "VL_OPR",
                        "VL_ICMS", "VL_PIS", "VL_COFINS"]
         tabela(par.style.format({c: br for c in par.columns[4:]}, na_rep=""),
-                     hide_index=True, width="stretch")
+               hide_index=True, width="stretch")
+
         st.subheader("Itens com conteúdo diferente nas duas EFDs")
         st.caption("Mesmo documento e mesmo NUM_ITEM (registro C170 nos dois lados), com CFOP, "
                    "código do item ou valores diferentes. Ordenado pela maior diferença de ICMS.")
-        div = titulos(base.divergencias_itens(con))
+        div = base.divergencias_itens(con, escopo=escopo).rename(columns=REF)
         if div.empty:
             st.success("Nenhum item divergente entre as duas escriturações.")
         else:
-            tabela(div.style.format(dinheiro(div), na_rep=""), hide_index=True, width="stretch")
-            baixar("Baixar divergências (CSV)", csv_bytes(div), "divergencias_itens.csv", "text/csv", "dl_div")
+            div = titulos(div)
+            tabela_com_popup(div.style.format(dinheiro(div), na_rep=""), div, "tb_div",
+                             _abrir_doc("Item com conteúdo diferente nas duas escriturações."))
+            baixar("Baixar divergências (CSV)",
+                   lambda: csv_bytes(div[[c for c in div.columns if not c.startswith("_")]]),
+                   "divergencias_itens.csv", "text/csv", "dl_div")
+
+        st.subheader("Documentos que estão em só uma das EFDs")
+        st.caption("Com as duas escriturações do período carregadas, o documento foi encontrado "
+                   "em apenas uma delas.")
+        um = base.documentos_so_um_lado(con, escopo=escopo).rename(columns=REF)
+        if um.empty:
+            st.success("Nenhum documento em só uma das escriturações.")
+        else:
+            um["fonte"] = um["fonte"].map(NOME_FONTE)
+            um["pareamento"] = um["pareamento"].map(lambda x: ROTULO_PAREAMENTO.get(x, x))
+            um["dt_doc"] = um["dt_doc"].map(data_br)
+            um = titulos(um).rename(columns={"pareamento": "Situação", "linhas": "Linhas",
+                                             "vl_opr": "VL_OPR", "vl_icms": "VL_ICMS"})
+            tabela_com_popup(um.style.format(dinheiro(um), na_rep=""), um, "tb_um",
+                             _abrir_doc("Documento encontrado em só uma escrituração."))
+
     with a2:
         st.write("Na EFD Fiscal, o registro analítico **C190** deve fechar com a soma dos itens "
                  "**C170** do mesmo documento e CFOP. O C190 nunca é somado aos itens: serve só "
                  "para esta conferência (e como fonte quando o documento não tem C170).")
-        resumo, difs = base.conf_c190(con)
+        resumo, difs = base.conf_c190(con, escopo=escopo)
         if resumo["grupos"]:
             m1, m2, m3 = st.columns(3)
             m1.metric("Grupos documento/CFOP conferidos", inteiro(resumo["grupos"]))
@@ -652,16 +1159,27 @@ def pagina_conferencias():
             if difs.empty:
                 st.success("Todos os C190 fecham com a soma dos C170.")
             else:
-                difs = titulos(difs)
-                tabela(difs.style.format(dinheiro(difs), na_rep=""), hide_index=True, width="stretch")
-                baixar("Baixar (CSV)", csv_bytes(difs), "c190_x_c170.csv", "text/csv", "dl_c190")
+                difs = titulos(difs.rename(columns=REF))
+
+                def abrir_c190(ref):
+                    popup_documento(ref["_empresa_raiz"], ref["_doc_id"], destaque_cfop=ref["CFOP"],
+                                    mensagem=f"C190 x soma dos C170 do CFOP {ref['CFOP']}: "
+                                             f"VL_ICMS {br(ref['VL_ICMS · C190'])} no C190 e "
+                                             f"{br(ref['VL_ICMS · soma dos C170'])} na soma dos C170.")
+
+                tabela_com_popup(difs.style.format(dinheiro(difs), na_rep=""), difs, "tb_c190",
+                                 abrir_c190)
+                baixar("Baixar (CSV)",
+                       lambda: csv_bytes(difs[[c for c in difs.columns if not c.startswith("_")]]),
+                       "c190_x_c170.csv", "text/csv", "dl_c190")
         else:
             st.info("Não há documentos da EFD Fiscal com C170 na base.")
+
     with a3:
         st.write("Total informado no cabeçalho do documento comparado com a soma dos registros "
                  "de detalhe lidos. Esta conferência também prova que os campos estão sendo "
                  "lidos nas posições certas: se uma posição estivesse errada, quase nada fecharia.")
-        cab = base.conf_cabecalho(con)
+        cab = base.conf_cabecalho(con, escopo=escopo)
         if not cab.empty:
             total, dif = int(cab["documentos"].sum()), int(cab["diferentes"].sum())
             if dif == 0:
@@ -676,12 +1194,24 @@ def pagina_conferencias():
             cab.columns = ["Escrituração", "Cabeçalho", "Campo", "Documentos", "Iguais",
                            "Diferentes", "Total no cabeçalho", "Total nos detalhes"]
             tabela(cab.style.format({"Total no cabeçalho": br, "Total nos detalhes": br}),
-                         hide_index=True, width="stretch")
+                   hide_index=True, width="stretch")
+            if dif:
+                st.markdown("**Documentos que não fecham**")
+                docs = base.conf_cabecalho_docs(con, escopo=escopo).rename(columns=REF)
+                docs["fonte"] = docs["fonte"].map(NOME_FONTE)
+                docs = titulos(docs).rename(columns={"campo": "Campo",
+                                                     "total_cabecalho": "Total no cabeçalho",
+                                                     "total_detalhes": "Total nos detalhes",
+                                                     "diferenca": "Diferença"})
+                fmt = {c: br for c in ("Total no cabeçalho", "Total nos detalhes", "Diferença")}
+                tabela_com_popup(docs.style.format(fmt, na_rep=""), docs, "tb_cab",
+                                 _abrir_doc("Cabeçalho do documento x soma dos registros de detalhe."))
+
     with a4:
         st.write("Documentos que aparecem mais de uma vez na mesma escrituração (por exemplo, "
                  "a mesma nota em dois períodos). **Só a primeira ocorrência entra nos totais**; "
                  "a preferência é do arquivo cujo período contém a data de entrada.")
-        rep = base.repeticoes(con)
+        rep = base.repeticoes(con, escopo=escopo).rename(columns=REF)
         if rep.empty:
             st.success("Nenhum documento repetido.")
         else:
@@ -689,20 +1219,28 @@ def pagina_conferencias():
             rep["periodo"] = rep["periodo"].map(mes)
             rep["dt_doc"] = rep["dt_doc"].map(data_br)
             rep = titulos(rep)
-            tabela(rep.style.format(dinheiro(rep), na_rep=""), hide_index=True, width="stretch")
-            baixar("Baixar (CSV)", csv_bytes(rep), "documentos_repetidos.csv", "text/csv", "dl_rep")
+            tabela_com_popup(rep.style.format(dinheiro(rep), na_rep=""), rep, "tb_rep",
+                             _abrir_doc("O mesmo documento escriturado mais de uma vez: à esquerda a "
+                                        "ocorrência que conta nos totais, à direita a repetida."))
+            baixar("Baixar (CSV)",
+                   lambda: csv_bytes(rep[[c for c in rep.columns if not c.startswith("_")]]),
+                   "documentos_repetidos.csv", "text/csv", "dl_rep")
+
     with a5:
         st.write("Registros que não têm identificação de documento (F100 e a consolidação "
                  "C191/C195) e aparecem com conteúdo idêntico no mesmo arquivo. **Eles não são "
                  "excluídos**: o arquivo não permite saber se é um lançamento repetido ou dois "
                  "lançamentos legítimos iguais. A decisão é sua.")
-        ident = base.linhas_identicas(con)
+        ident = base.linhas_identicas(con, escopo=escopo).rename(columns={"arquivo_id": "_arquivo_id"})
         if ident.empty:
             st.success("Nenhuma linha idêntica.")
         else:
             ident["dt_doc"] = ident["dt_doc"].map(data_br)
-            ident = titulos(ident)
-            tabela(ident.style.format(dinheiro(ident), na_rep=""), hide_index=True, width="stretch")
+            ident = titulos(ident).rename(columns={"primeira_linha": "Primeira linha"})
+            tabela_com_popup(ident.style.format(dinheiro(ident), na_rep=""), ident, "tb_ident",
+                             lambda ref: popup_linha(ref["_arquivo_id"], ref["Primeira linha"],
+                                                     f"Aparece {ref['Vezes']} vezes no arquivo "
+                                                     f"{ref['Arquivo']}."))
 
 
 # ============================================================================

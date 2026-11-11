@@ -29,6 +29,11 @@ def main():
     if modo == "pasta":
         escolhido = filedialog.askdirectory(title="Selecione a pasta com as EFDs")
         caminhos = [escolhido] if escolhido else []
+    elif modo == "backup":
+        escolhido = filedialog.askopenfilename(
+            title="Selecione o arquivo de backup",
+            filetypes=[("Backup do Consolidador EFD", "*.duckdb"), ("Todos", "*.*")])
+        caminhos = [escolhido] if escolhido else []
     elif modo == "planilha":
         escolhido = filedialog.askopenfilename(
             title="Selecione a planilha",

@@ -355,6 +355,80 @@ def main():
     check("verificações continuam passando depois das tabelas auxiliares",
           all(v["ok"] for v in base.ultimas_verificacoes(con)))
 
+    print("\n== 14. Linhas do TXT e comparação lado a lado (pop-up) ==")
+    from efd import comparacao
+    igual("texto original guardado para cada linha usada (controle por arquivo)",
+          con.execute("SELECT count(*) FROM txt_base WHERE texto NOT LIKE '|%|'").fetchone()[0], 0)
+    div = base.divergencias_itens(con)
+    b = div[div["num_doc"] == "1002"].iloc[0]
+    oc = base.ocorrencias_documento(con, b["empresa_raiz"], b["doc_id"])
+    igual("a NF 1002 é encontrada nas duas EFDs", sorted(o[0] for o in oc), [CONTRIB, FISCAL])
+    lados = {o[0]: {"fonte": o[0], "linhas": base.linhas_documento(con, o[1], o[2])} for o in oc}
+    igual("linhas do TXT da NF 1002 na Fiscal: C100, C170 e C190",
+          [r for _, r, _ in lados[FISCAL]["linhas"]], ["C100", "C170", "C190"])
+    check("as linhas guardadas são exatamente as do arquivo",
+          all(t in open(arq["fiscal_matriz_jan"], encoding="latin-1").read()
+              for _, _, t in lados[FISCAL]["linhas"]))
+    comp, div_a, div_b = comparacao.comparar(lados[CONTRIB], lados[FISCAL])
+    difs = sorted({(c["registro"], c["campo"]) for c in comp if c["situacao"] == comparacao.DIFERENTE})
+    igual("diferenças apontadas: CFOP e VL_ICMS no C170, VL_ICMS no C100",
+          difs, [("C100", "VL_ICMS"), ("C170", "CFOP"), ("C170", "VL_ICMS")])
+    check("COD_PART diferente nas duas EFDs é marcado como código interno",
+          any(c["campo"] == "COD_PART" and c["situacao"] == comparacao.CODIGO for c in comp))
+    check("campo vazio de um lado não conta como divergência",
+          any(c["situacao"] == comparacao.UM_LADO for c in comp))
+    igual("linhas destacadas: C100 e C170 de cada lado", (len(div_a), len(div_b)), (2, 2))
+    check("um documento comparado com ele mesmo não tem diferença",
+          all(c["situacao"] == comparacao.IGUAL for c in comparacao.comparar(lados[FISCAL], lados[FISCAL])[0]))
+    resumo_c190, difs_c190 = base.conf_c190(con)
+    igual("conferência C190 traz a referência do documento para abrir o pop-up",
+          len(base.linhas_documento(con, difs_c190["arquivo_id"].iloc[0], difs_c190["linha_doc"].iloc[0])) > 0, True)
+    rep = base.repeticoes(con)
+    igual("repetição: as duas ocorrências têm o texto do TXT",
+          [len(base.linhas_documento(con, a_, l_)) for a_, l_ in zip(rep["arquivo_id"], rep["linha_doc"])], [4, 4])
+
+    print("\n== 15. Empresa / estabelecimento ==")
+    igual("nome do estabelecimento vem do 0140",
+          con.execute("SELECT DISTINCT estab_nome FROM itens WHERE estab_cnpj = ?", [gs.FILIAL]).fetchall(),
+          [("INDÚSTRIA EXEMPLO S.A. - FILIAL",)])
+    opcoes = base.empresas_e_estabelecimentos(con)
+    igual("seletor: 1 empresa e 2 estabelecimentos", sorted(o[0] for o in opcoes), ["E", "S", "S"])
+    filial = [[{"campo": "estab", "operador": "em", "valor": [gs.FILIAL]}]]
+    x = consulta.consolidar(con, ["fornecedor", "cfop"], M, filtros=filial)
+    igual("visão só da filial", (x["totais"]["vl_item__fiscal"], x["totais"]["vl_item__contrib"]),
+          (D("1200.00"), D("2250.00")))
+    par = base.conf_pareamento(con, escopo=([], [gs.FILIAL]))
+    igual("conferência só da filial", int(par["linhas"].sum()), 4)
+    igual("conferência pela raiz da empresa = conferência sem recorte",
+          int(base.conf_pareamento(con, escopo=(["11222333"], []))["linhas"].sum()),
+          int(base.conf_pareamento(con)["linhas"].sum()))
+    x = consulta.consolidar(con, ["estab"], M, filtros=[[{"campo": "estab_nome", "operador": "contem", "valor": "filial"}]])
+    igual("filtro pelo nome do estabelecimento", list(x["dados"]["estab"]), [gs.FILIAL])
+
+    print("\n== 16. Filtros sobre a tabela consolidada ==")
+    base_r = consulta.consolidar(con, ["fornecedor", "cfop"], M)
+    fr = [{"coluna": "vl_icms__fiscal", "operador": "maior", "valor": "500"}]
+    x = consulta.consolidar(con, ["fornecedor", "cfop"], M, filtros_resultado=fr)
+    esperado = base_r["dados"][base_r["dados"]["vl_icms__fiscal"] > 500]
+    igual("só as linhas com VL_ICMS · Fiscal > 500", len(x["dados"]), len(esperado))
+    igual("os totais acompanham o filtro da tabela",
+          float(x["totais"]["vl_icms__fiscal"]), round(float(esperado["vl_icms__fiscal"].sum()), 2))
+    x = consulta.consolidar(con, ["fornecedor", "cfop"], M,
+                            filtros_resultado=[{"coluna": "*", "operador": "contem", "valor": "telecom"}])
+    igual("busca em todas as colunas", set(x["dados"]["part_nome"]), {"TELECOM BRASIL S.A."})
+    x = consulta.consolidar(con, ["cfop"], M, calculados={"S": "VL_PIS_CONTRIB + VL_COFINS_CONTRIB"},
+                            filtros_resultado=[{"coluna": "calc_0", "operador": "maior", "valor": "100"}])
+    check("filtro por campo calculado", len(x["dados"]) > 0 and (x["dados"]["calc_0"] > 100).all())
+    try:
+        consulta.consolidar(con, ["cfop"], M, filtros_resultado=[{"coluna": "x; DROP", "operador": "igual", "valor": "1"}])
+        check("coluna inexistente é recusada", False)
+    except consulta.FiltroInvalido:
+        check("coluna inexistente é recusada", True)
+
+    print("\n== 17. Backup ==")
+    destino = base.fazer_backup(con, os.path.join(raiz, "backup"), [])
+    igual("backup contém as 5 escriturações", base.validar_backup(destino), 5)
+
     print("\n== 13. Remoção de arquivo ==")
     aid = con.execute("SELECT arquivo_id FROM arquivos WHERE nome_arquivo = ?", [nome("fiscal_matriz_fev")]).fetchone()[0]
     base.remover_arquivo(con, aid)

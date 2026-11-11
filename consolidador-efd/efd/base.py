@@ -42,6 +42,7 @@ from .leiautes import (COLUNAS_ANA, COLUNAS_DOCS, COLUNAS_ITENS, CONTRIB, FISCAL
                        INTEIRO_ANA, MEDIDAS, MEDIDAS_ANA, MEDIDAS_DOCS,
                        TEXTO_ANA, TEXTO_DOCS, TEXTO_ITENS)
 from .leitor import identidade, inspecionar, processar_arquivo
+from . import comando_modulo
 
 _DATAS = ("periodo", "dt_doc", "dt_e_s")
 _C2 = "0.01::DECIMAL(3,2)"
@@ -49,9 +50,12 @@ _C2 = "0.01::DECIMAL(3,2)"
 # Colunas da visão pré-agregada (tudo que não depende do documento).
 DIMENSOES_VISAO = [
     "fonte", "registro", "empresa_raiz", "empresa_nome", "estab_cnpj", "periodo",
-    "part_doc", "cfop", "cfop_conc", "cod_item", "ncm", "cst_icms", "cst_pis",
+    "estab_nome", "part_doc", "cfop", "cfop_conc", "cod_item", "ncm", "cst_icms", "cst_pis",
     "cst_cofins", "cod_mod", "pareamento", "nat_bc_cred", "regime",
 ]
+
+
+TABELAS_POR_ARQUIVO = ("itens_base", "docs_base", "analitico_base", "txt_base", "arquivos")
 
 
 class ErroDeCarga(Exception):
@@ -124,6 +128,8 @@ def abrir(caminho_db: str):
     con.execute(_ddl("itens_base", COLUNAS_ITENS))
     con.execute(_ddl("docs_base", COLUNAS_DOCS))
     con.execute(_ddl("analitico_base", COLUNAS_ANA))
+    con.execute("""CREATE TABLE IF NOT EXISTS txt_base (arquivo_id INTEGER, registro VARCHAR,
+                   texto VARCHAR, linha_doc BIGINT, linha BIGINT)""")
     con.execute("CREATE TABLE IF NOT EXISTS cfop (cfop VARCHAR PRIMARY KEY, descricao VARCHAR)")
     con.execute("CREATE TABLE IF NOT EXISTS regimes (raiz VARCHAR PRIMARY KEY, regime VARCHAR, ano INTEGER)")
     con.execute("CREATE TABLE IF NOT EXISTS estado (chave VARCHAR PRIMARY KEY, valor VARCHAR)")
@@ -227,9 +233,9 @@ def planejar(con, caminhos) -> list[dict]:
 # ============================================================================
 
 def _conferir(cur, tabela, aid, medidas, chave, controle, nome):
-    somas = ", ".join(f"coalesce(CAST(sum({m}) * 100 AS HUGEINT), 0)" for m in medidas)
+    somas = "".join(f", coalesce(CAST(sum({m}) * 100 AS HUGEINT), 0)" for m in medidas)
     r = cur.execute(
-        f"SELECT count(*), count(DISTINCT {chave}), {somas} FROM {tabela} "
+        f"SELECT count(*), count(DISTINCT {chave}){somas} FROM {tabela} "
         f"WHERE arquivo_id = ?", [aid]).fetchone()
     if r[0] != controle["n"]:
         raise ErroDeCarga(f"{nome}: {r[0]} linhas no banco, {controle['n']} lidas do arquivo.")
@@ -255,7 +261,7 @@ def _carregar_um(con, meta: dict, substitui) -> int:
     cur.execute("BEGIN TRANSACTION")
     try:
         for antigo in substitui:
-            for t in ("itens_base", "docs_base", "analitico_base", "arquivos"):
+            for t in TABELAS_POR_ARQUIVO:
                 cur.execute(f"DELETE FROM {t} WHERE arquivo_id = ?", [antigo])
         for tabela, arquivo, colunas, textos in (
                 ("itens_base", "itens.parquet", COLUNAS_ITENS, TEXTO_ITENS),
@@ -264,6 +270,8 @@ def _carregar_um(con, meta: dict, substitui) -> int:
             sel = ", ".join(_expr_carga(c, textos) for c in colunas)
             cur.execute(f"INSERT INTO {tabela} SELECT {aid}, {sel} FROM read_parquet(?)",
                         [os.path.join(pasta, arquivo)])
+        cur.execute("INSERT INTO txt_base SELECT ?, registro, texto, linha_doc, linha "
+                    "FROM read_parquet(?)", [aid, os.path.join(pasta, "txt.parquet")])
         datas_invalidas = cur.execute(
             "SELECT count(*) FROM read_parquet(?) WHERE dt_doc IS NOT NULL "
             "AND TRY_CAST(dt_doc AS DATE) IS NULL",
@@ -275,6 +283,7 @@ def _carregar_um(con, meta: dict, substitui) -> int:
         _conferir(cur, "itens_base", aid, MEDIDAS, "linha", c["itens"], "Itens")
         _conferir(cur, "docs_base", aid, MEDIDAS_DOCS, "linha_doc", c["docs"], "Documentos")
         _conferir(cur, "analitico_base", aid, MEDIDAS_ANA, "linha", c["analitico"], "Analítico")
+        _conferir(cur, "txt_base", aid, [], "linha", c["txt"], "Texto original")
         cur.execute(
             "INSERT INTO arquivos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,now(),?,?)",
             [aid, meta["tipo"], meta["cnpj"], meta.get("ie", ""), meta["empresa_raiz"],
@@ -306,7 +315,7 @@ def _ler_em_processos(tarefas, destinos, n_proc, avisar) -> dict:
                 json.dump(p["info"], f, ensure_ascii=False)
             log = open(os.path.join(pasta, "erro.log"), "w", encoding="utf-8")
             proc = subprocess.Popen(
-                [sys.executable, "-m", "efd.trabalhador", pasta], cwd=raiz_pacote,
+                comando_modulo("efd.trabalhador", pasta), cwd=raiz_pacote,
                 stdout=subprocess.DEVNULL, stderr=log, creationflags=sem_janela)
             ativos.append((proc, log, p, pasta))
         time.sleep(0.05)
@@ -393,7 +402,7 @@ def carregar(con, plano, pasta_base: str, progresso=None, processos=None) -> lis
 def remover_arquivo(con, arquivo_id: int):
     cur = con.cursor()
     cur.execute("BEGIN TRANSACTION")
-    for t in ("itens_base", "docs_base", "analitico_base", "arquivos"):
+    for t in TABELAS_POR_ARQUIVO:
         cur.execute(f"DELETE FROM {t} WHERE arquivo_id = ?", [arquivo_id])
     cur.execute("COMMIT")
     reconstruir(con)
@@ -401,7 +410,7 @@ def remover_arquivo(con, arquivo_id: int):
 
 def limpar(con):
     cur = con.cursor()
-    for t in ("itens_base", "docs_base", "analitico_base", "arquivos"):
+    for t in TABELAS_POR_ARQUIVO:
         cur.execute(f"DELETE FROM {t}")
     reconstruir(con)
 
@@ -420,6 +429,19 @@ def reconstruir(con) -> list[dict]:
         SELECT empresa_raiz,
                coalesce(max(nome) FILTER (WHERE tipo = 'CONTRIB'), max(nome)) AS empresa_nome
         FROM arquivos GROUP BY empresa_raiz""")
+    # Nome de cada estabelecimento: 0140 da EFD-Contribuições e, na falta dele,
+    # 0000 da EFD Fiscal (que é por estabelecimento).
+    nomes = {}
+    for cnpj, nome, tipo, meta in cur.execute(
+            "SELECT cnpj, nome, tipo, meta FROM arquivos ORDER BY tipo, periodo DESC").fetchall():
+        if tipo == "FISCAL":
+            nomes.setdefault(cnpj, nome)
+        else:
+            for c, n in (json.loads(meta).get("estabelecimentos") or {}).items():
+                nomes.setdefault(c, n)
+    cur.execute("CREATE OR REPLACE TABLE dim_estab (estab_cnpj VARCHAR PRIMARY KEY, estab_nome VARCHAR)")
+    if nomes:
+        cur.executemany("INSERT INTO dim_estab VALUES (?, ?)", list(nomes.items()))
     cur.execute("""
         CREATE OR REPLACE TABLE cob_fiscal AS
         SELECT DISTINCT cnpj AS estab_cnpj, periodo FROM arquivos WHERE tipo = 'FISCAL'""")
@@ -460,6 +482,7 @@ def reconstruir(con) -> list[dict]:
         CREATE OR REPLACE TABLE itens AS
         SELECT b.*,
                coalesce(e.empresa_nome, '') AS empresa_nome,
+               coalesce(de.estab_nome, '') AS estab_nome,
                coalesce(d.ocorrencia > 1, false) AS repetido,
                CASE
                    WHEN b.doc_id IS NULL OR b.registro = 'A170' THEN 'NAO_SE_APLICA'
@@ -473,6 +496,7 @@ def reconstruir(con) -> list[dict]:
                coalesce(r.regime, '') AS regime
         FROM itens_base b
         LEFT JOIN dim_empresa e ON e.empresa_raiz = b.empresa_raiz
+        LEFT JOIN dim_estab de ON de.estab_cnpj = b.estab_cnpj
         LEFT JOIN docs d ON d.arquivo_id = b.arquivo_id AND d.linha_doc = b.linha_doc
                         AND b.doc_id IS NOT NULL
         LEFT JOIN doc_fontes f ON f.empresa_raiz = b.empresa_raiz AND f.doc_id = b.doc_id
@@ -678,10 +702,57 @@ def metas(con) -> list[dict]:
     return saida
 
 
-def conf_cabecalho(con):
+def _escopo(escopo, raiz="empresa_raiz", estab="estab_cnpj"):
+    """Recorte por empresa (raiz do CNPJ) e/ou estabelecimento: (sql, parâmetros).
+    escopo = (lista de raízes, lista de CNPJs de estabelecimento) ou None."""
+    if not escopo or not (escopo[0] or escopo[1]):
+        return "TRUE", []
+    partes, params = [], []
+    for col, valores in ((raiz, escopo[0]), (estab, escopo[1])):
+        if valores:
+            partes.append(f"{col} IN ({', '.join('?' for _ in valores)})")
+            params += list(valores)
+    return "(" + " OR ".join(partes) + ")", params
+
+
+def empresas_e_estabelecimentos(con):
+    """Opções do seletor de empresa: [(tipo 'E' ou 'S', código, nome)]."""
+    cur = con.cursor()
+    emp = cur.execute("SELECT empresa_raiz, empresa_nome FROM dim_empresa ORDER BY 2, 1").fetchall()
+    est = cur.execute("""
+        SELECT DISTINCT i.estab_cnpj, coalesce(d.estab_nome, '') FROM itens_base i
+        LEFT JOIN dim_estab d USING (estab_cnpj) WHERE i.estab_cnpj <> '' ORDER BY 1""").fetchall()
+    return [("E", r, n) for r, n in emp] + [("S", c, n) for c, n in est]
+
+
+def conf_cabecalho(con, escopo=None):
     """Cabeçalho do documento x soma dos detalhes. Serve de prova do leiaute:
     se as posições de campo estivessem erradas, quase nada bateria."""
-    return con.cursor().execute("""
+    sql, params = _cabecalho_sql(escopo)
+    return con.cursor().execute(f"""{sql}
+        SELECT fonte, registro AS cabecalho, campo,
+               count(*) AS documentos,
+               count(*) FILTER (WHERE cab = soma) AS iguais,
+               count(*) FILTER (WHERE cab <> soma) AS diferentes,
+               sum(cab) AS total_cabecalho, sum(soma) AS total_detalhes
+        FROM comp GROUP BY fonte, registro, campo ORDER BY fonte, registro, campo""", params).df()
+
+
+def conf_cabecalho_docs(con, escopo=None, limite: int = 1000):
+    """Documentos cujo cabeçalho não fecha com os detalhes (um por linha e campo)."""
+    sql, params = _cabecalho_sql(escopo)
+    return con.cursor().execute(f"""{sql}
+        SELECT c.fonte, c.registro, a.nome_arquivo, d.num_doc, d.part_nome, c.campo,
+               c.cab AS total_cabecalho, c.soma AS total_detalhes,
+               c.cab - c.soma AS diferenca, d.empresa_raiz, d.doc_id, c.arquivo_id, c.linha_doc
+        FROM comp c JOIN docs d USING (arquivo_id, linha_doc) JOIN arquivos a USING (arquivo_id)
+        WHERE c.cab <> c.soma
+        ORDER BY abs(c.cab - c.soma) DESC LIMIT {int(limite)}""", params).df()
+
+
+def _cabecalho_sql(escopo):
+    filtro, params = _escopo(escopo, "d.empresa_raiz", "d.estab_cnpj")
+    sql = f"""
         WITH det AS (
             SELECT arquivo_id, linha_doc,
                    sum(coalesce(vl_pis, 0)) AS pis, sum(coalesce(vl_cofins, 0)) AS cofins
@@ -692,45 +763,48 @@ def conf_cabecalho(con):
                    sum(coalesce(vl_bc_icms, 0)) AS bc, sum(coalesce(vl_icms, 0)) AS icms,
                    sum(coalesce(vl_icms_st, 0)) AS st, sum(coalesce(vl_ipi, 0)) AS ipi
             FROM analitico_base GROUP BY arquivo_id, linha_doc),
+        d AS (SELECT * FROM docs d WHERE {filtro}),
         comp AS (
-            SELECT d.fonte, d.registro, 'VL_PIS' AS campo, coalesce(d.vl_pis, 0) AS cab, coalesce(det.pis, 0) AS soma
-            FROM docs d LEFT JOIN det USING (arquivo_id, linha_doc)
+            SELECT d.arquivo_id, d.linha_doc, d.fonte, d.registro, 'VL_PIS' AS campo,
+                   coalesce(d.vl_pis, 0) AS cab, coalesce(det.pis, 0) AS soma
+            FROM d LEFT JOIN det USING (arquivo_id, linha_doc)
             WHERE d.fonte = 'CONTRIB' AND d.registro IN ('C100', 'A100', 'C500', 'D500')
             UNION ALL
-            SELECT d.fonte, d.registro, 'VL_COFINS', coalesce(d.vl_cofins, 0), coalesce(det.cofins, 0)
-            FROM docs d LEFT JOIN det USING (arquivo_id, linha_doc)
+            SELECT d.arquivo_id, d.linha_doc, d.fonte, d.registro, 'VL_COFINS',
+                   coalesce(d.vl_cofins, 0), coalesce(det.cofins, 0)
+            FROM d LEFT JOIN det USING (arquivo_id, linha_doc)
             WHERE d.fonte = 'CONTRIB' AND d.registro IN ('C100', 'A100', 'C500', 'D500')
             UNION ALL
-            SELECT d.fonte, d.registro, 'VL_BC_ICMS', coalesce(d.vl_bc_icms, 0), coalesce(ana.bc, 0)
-            FROM docs d LEFT JOIN ana USING (arquivo_id, linha_doc) WHERE d.fonte = 'FISCAL'
+            SELECT d.arquivo_id, d.linha_doc, d.fonte, d.registro, 'VL_BC_ICMS',
+                   coalesce(d.vl_bc_icms, 0), coalesce(ana.bc, 0)
+            FROM d LEFT JOIN ana USING (arquivo_id, linha_doc) WHERE d.fonte = 'FISCAL'
             UNION ALL
-            SELECT d.fonte, d.registro, 'VL_ICMS', coalesce(d.vl_icms, 0), coalesce(ana.icms, 0)
-            FROM docs d LEFT JOIN ana USING (arquivo_id, linha_doc) WHERE d.fonte = 'FISCAL'
+            SELECT d.arquivo_id, d.linha_doc, d.fonte, d.registro, 'VL_ICMS',
+                   coalesce(d.vl_icms, 0), coalesce(ana.icms, 0)
+            FROM d LEFT JOIN ana USING (arquivo_id, linha_doc) WHERE d.fonte = 'FISCAL'
             UNION ALL
-            SELECT d.fonte, d.registro, 'VL_ICMS_ST', coalesce(d.vl_icms_st, 0), coalesce(ana.st, 0)
-            FROM docs d LEFT JOIN ana USING (arquivo_id, linha_doc)
+            SELECT d.arquivo_id, d.linha_doc, d.fonte, d.registro, 'VL_ICMS_ST',
+                   coalesce(d.vl_icms_st, 0), coalesce(ana.st, 0)
+            FROM d LEFT JOIN ana USING (arquivo_id, linha_doc)
             WHERE d.fonte = 'FISCAL' AND d.registro IN ('C100', 'C500')
             UNION ALL
-            SELECT d.fonte, d.registro, 'VL_IPI', coalesce(d.vl_ipi, 0), coalesce(ana.ipi, 0)
-            FROM docs d LEFT JOIN ana USING (arquivo_id, linha_doc)
-            WHERE d.fonte = 'FISCAL' AND d.registro = 'C100')
-        SELECT fonte, registro AS cabecalho, campo,
-               count(*) AS documentos,
-               count(*) FILTER (WHERE cab = soma) AS iguais,
-               count(*) FILTER (WHERE cab <> soma) AS diferentes,
-               sum(cab) AS total_cabecalho, sum(soma) AS total_detalhes
-        FROM comp GROUP BY fonte, registro, campo ORDER BY fonte, registro, campo""").df()
+            SELECT d.arquivo_id, d.linha_doc, d.fonte, d.registro, 'VL_IPI',
+                   coalesce(d.vl_ipi, 0), coalesce(ana.ipi, 0)
+            FROM d LEFT JOIN ana USING (arquivo_id, linha_doc)
+            WHERE d.fonte = 'FISCAL' AND d.registro = 'C100')"""
+    return sql, params
 
 
-def conf_c190(con, limite: int = 500):
+def conf_c190(con, limite: int = 500, escopo=None):
     """EFD Fiscal: analítico C190 x soma dos itens C170, por documento e CFOP."""
     cur = con.cursor()
-    base = """
+    filtro, params = _escopo(escopo)
+    base_sql = f"""
         WITH i AS (
             SELECT arquivo_id, linha_doc, cfop,
                    sum(coalesce(vl_bc_icms, 0)) bc, sum(coalesce(vl_icms, 0)) icms,
                    sum(coalesce(vl_icms_st, 0)) st, sum(coalesce(vl_ipi, 0)) ipi
-            FROM itens_base WHERE fonte = 'FISCAL' AND registro = 'C170'
+            FROM itens_base WHERE fonte = 'FISCAL' AND registro = 'C170' AND {filtro}
             GROUP BY arquivo_id, linha_doc, cfop),
         a AS (
             SELECT arquivo_id, linha_doc, cfop,
@@ -749,38 +823,54 @@ def conf_c190(con, limite: int = 500):
                    coalesce(i.ipi, 0) ipi_c170, coalesce(a.ipi, 0) ipi_c190
             FROM i FULL JOIN a ON i.arquivo_id = a.arquivo_id
                               AND i.linha_doc = a.linha_doc AND i.cfop = a.cfop)"""
-    resumo = cur.execute(base + """
+    resumo = cur.execute(base_sql + """
         SELECT count(*) AS grupos,
                count(*) FILTER (WHERE bc_c170 = bc_c190 AND icms_c170 = icms_c190
                                   AND st_c170 = st_c190 AND ipi_c170 = ipi_c190) AS iguais,
                sum(icms_c170) AS icms_c170, sum(icms_c190) AS icms_c190
-        FROM c""").fetchone()
-    difs = cur.execute(base + f"""
+        FROM c""", params).fetchone()
+    difs = cur.execute(base_sql + f"""
         SELECT ar.nome_arquivo, d.num_doc, d.chave, d.part_nome, c.cfop,
                c.bc_c170, c.bc_c190, c.icms_c170, c.icms_c190,
-               c.st_c170, c.st_c190, c.ipi_c170, c.ipi_c190
+               c.st_c170, c.st_c190, c.ipi_c170, c.ipi_c190,
+               d.empresa_raiz, d.doc_id, c.arquivo_id, c.linha_doc
         FROM c JOIN docs d USING (arquivo_id, linha_doc)
                JOIN arquivos ar USING (arquivo_id)
         WHERE NOT (bc_c170 = bc_c190 AND icms_c170 = icms_c190
                    AND st_c170 = st_c190 AND ipi_c170 = ipi_c190)
-        ORDER BY abs(c.icms_c170 - c.icms_c190) DESC LIMIT {int(limite)}""").df()
+        ORDER BY abs(c.icms_c170 - c.icms_c190) DESC LIMIT {int(limite)}""", params).df()
     return {"grupos": resumo[0], "iguais": resumo[1], "icms_c170": resumo[2],
             "icms_c190": resumo[3]}, difs
 
 
-def conf_pareamento(con):
-    return con.cursor().execute("""
+def conf_pareamento(con, escopo=None):
+    filtro, params = _escopo(escopo)
+    return con.cursor().execute(f"""
         SELECT fonte, pareamento, count(DISTINCT (arquivo_id, linha_doc)) AS documentos,
                count(*) AS linhas, sum(vl_item) AS vl_item, sum(vl_opr) AS vl_opr,
                sum(vl_icms) AS vl_icms, sum(vl_pis) AS vl_pis, sum(vl_cofins) AS vl_cofins
-        FROM itens WHERE NOT repetido
-        GROUP BY fonte, pareamento ORDER BY fonte, pareamento""").df()
+        FROM itens WHERE NOT repetido AND {filtro}
+        GROUP BY fonte, pareamento ORDER BY fonte, pareamento""", params).df()
 
 
-def divergencias_itens(con, limite: int = 1000):
+def documentos_so_um_lado(con, escopo=None, limite: int = 1000):
+    """Documentos que estão em uma EFD e não na outra (com as duas carregadas)."""
+    filtro, params = _escopo(escopo)
+    return con.cursor().execute(f"""
+        SELECT fonte, pareamento, num_doc, any_value(chave) chave, any_value(part_nome) part_nome,
+               any_value(dt_doc) dt_doc, count(*) linhas, sum(vl_item) vl_item, sum(vl_opr) vl_opr,
+               sum(vl_icms) vl_icms, sum(vl_pis) vl_pis, sum(vl_cofins) vl_cofins,
+               empresa_raiz, doc_id, arquivo_id, linha_doc
+        FROM itens WHERE NOT repetido AND pareamento IN ('SO_FISCAL', 'SO_CONTRIB') AND {filtro}
+        GROUP BY fonte, pareamento, num_doc, empresa_raiz, doc_id, arquivo_id, linha_doc
+        ORDER BY coalesce(sum(vl_item), sum(vl_opr)) DESC NULLS LAST LIMIT {int(limite)}""", params).df()
+
+
+def divergencias_itens(con, limite: int = 1000, escopo=None):
     """Itens C170 presentes nas duas EFDs (mesmo documento e NUM_ITEM) com
     conteúdo diferente. Cada lado é reduzido a uma linha por chave antes da
     junção; chaves ambíguas ficam de fora."""
+    filtro, params = _escopo(escopo)
     return con.cursor().execute(f"""
         WITH lado AS (
             SELECT fonte, empresa_raiz, doc_id, num_item,
@@ -791,7 +881,7 @@ def divergencias_itens(con, limite: int = 1000):
                    any_value(coalesce(vl_ipi, 0)) vl_ipi,
                    any_value(num_doc) num_doc, any_value(part_nome) part_nome
             FROM itens
-            WHERE registro = 'C170' AND NOT repetido AND doc_id IS NOT NULL
+            WHERE registro = 'C170' AND NOT repetido AND doc_id IS NOT NULL AND {filtro}
             GROUP BY fonte, empresa_raiz, doc_id, num_item HAVING count(*) = 1)
         SELECT f.num_doc, f.part_nome, f.num_item,
                f.cod_item AS cod_item_fiscal, c.cod_item AS cod_item_contrib,
@@ -801,37 +891,45 @@ def divergencias_itens(con, limite: int = 1000):
                f.vl_icms AS vl_icms_fiscal, c.vl_icms AS vl_icms_contrib,
                f.vl_icms_st AS vl_icms_st_fiscal, c.vl_icms_st AS vl_icms_st_contrib,
                f.vl_ipi AS vl_ipi_fiscal, c.vl_ipi AS vl_ipi_contrib,
-               CASE WHEN f.doc_id LIKE 'K%' THEN substr(f.doc_id, 2) ELSE f.doc_id END AS documento
+               CASE WHEN f.doc_id LIKE 'K%' THEN substr(f.doc_id, 2) ELSE f.doc_id END AS documento,
+               f.empresa_raiz, f.doc_id
         FROM (SELECT * FROM lado WHERE fonte = 'FISCAL') f
         JOIN (SELECT * FROM lado WHERE fonte = 'CONTRIB') c
           ON c.empresa_raiz = f.empresa_raiz AND c.doc_id = f.doc_id AND c.num_item = f.num_item
         WHERE f.cfop <> c.cfop OR f.cod_item <> c.cod_item OR f.vl_item <> c.vl_item
            OR f.vl_bc_icms <> c.vl_bc_icms OR f.vl_icms <> c.vl_icms
            OR f.vl_icms_st <> c.vl_icms_st OR f.vl_ipi <> c.vl_ipi
-        ORDER BY abs(f.vl_icms - c.vl_icms) DESC, f.num_doc LIMIT {int(limite)}""").df()
+        ORDER BY abs(f.vl_icms - c.vl_icms) DESC, f.num_doc LIMIT {int(limite)}""", params).df()
 
 
-def repeticoes(con):
-    return con.cursor().execute("""
+def repeticoes(con, escopo=None):
+    filtro, params = _escopo(escopo, "d.empresa_raiz", "d.estab_cnpj")
+    return con.cursor().execute(f"""
         SELECT d.fonte, d.registro, d.num_doc, d.chave, d.part_nome, d.dt_doc,
                d.vl_doc, d.ocorrencia, d.n_ocorrencias, a.nome_arquivo, d.periodo,
                d.linha_doc AS linha_no_arquivo,
-               CASE WHEN d.ocorrencia = 1 THEN 'Conta nos totais' ELSE 'Repetida: fora dos totais' END AS situacao
+               CASE WHEN d.ocorrencia = 1 THEN 'Conta nos totais' ELSE 'Repetida: fora dos totais' END AS situacao,
+               d.empresa_raiz, d.doc_id, d.arquivo_id, d.linha_doc
         FROM docs d JOIN arquivos a USING (arquivo_id)
-        WHERE d.n_ocorrencias > 1
-        ORDER BY d.fonte, d.doc_id, d.ocorrencia""").df()
+        WHERE d.n_ocorrencias > 1 AND {filtro}
+        ORDER BY d.fonte, d.doc_id, d.ocorrencia""", params).df()
 
 
-def linhas_identicas(con, limite: int = 500):
+def linhas_identicas(con, limite: int = 500, escopo=None):
     """Registros sem identidade de documento (F100, consolidado C191/C195) que
     aparecem com conteúdo idêntico no mesmo arquivo. Não são excluídos: o
     arquivo não permite dizer se é repetição ou lançamento legítimo."""
+    filtro, params = _escopo(escopo, "i.empresa_raiz", "i.estab_cnpj")
     return con.cursor().execute(f"""
         SELECT a.nome_arquivo, i.registro, i.part_nome, i.cod_item, i.descr_item,
-               i.cfop, i.dt_doc, i.vl_item, i.vl_pis, i.vl_cofins, count(*) AS vezes
+               i.cfop, i.dt_doc, i.vl_item, i.vl_pis, i.vl_cofins, count(*) AS vezes,
+               min(i.linha) AS primeira_linha, i.arquivo_id
         FROM itens i JOIN arquivos a USING (arquivo_id)
-        WHERE i.doc_id IS NULL
-        GROUP BY ALL HAVING count(*) > 1 ORDER BY vezes DESC LIMIT {int(limite)}""").df()
+        WHERE i.doc_id IS NULL AND {filtro}
+        GROUP BY a.nome_arquivo, i.registro, i.part_nome, i.cod_item, i.descr_item, i.cfop,
+                 i.dt_doc, i.vl_item, i.vl_pis, i.vl_cofins, i.arquivo_id, i.vl_bc_pis,
+                 i.vl_bc_cofins, i.cst_pis, i.cst_cofins, i.cod_cta, i.estab_cnpj
+        HAVING count(*) > 1 ORDER BY vezes DESC LIMIT {int(limite)}""", params).df()
 
 
 def cobertura(con):
@@ -846,3 +944,68 @@ def cobertura(con):
                EXISTS (SELECT 1 FROM cob_contrib k WHERE k.empresa_raiz = t.empresa_raiz
                                                     AND k.periodo = t.periodo) AS efd_contribuicoes
         FROM t ORDER BY 1, 2, 3""").df()
+
+
+# ============================================================================
+# Linhas originais do TXT (pop-up de comparação)
+# ============================================================================
+
+def ocorrencias_documento(con, empresa_raiz: str, doc_id: str):
+    """Todas as ocorrências de um documento na base (as duas EFDs e repetições)."""
+    return con.cursor().execute("""
+        SELECT d.fonte, d.arquivo_id, d.linha_doc, d.ocorrencia, d.n_ocorrencias, d.num_doc,
+               d.periodo, a.nome_arquivo, a.cnpj
+        FROM docs d JOIN arquivos a USING (arquivo_id)
+        WHERE d.empresa_raiz = ? AND d.doc_id = ?
+        ORDER BY d.fonte DESC, d.ocorrencia""", [empresa_raiz, doc_id]).fetchall()
+
+
+def linhas_documento(con, arquivo_id: int, linha_doc: int):
+    """Linhas do TXT de um documento (cabeçalho e registros filhos), em ordem."""
+    return con.cursor().execute(
+        "SELECT linha, registro, texto FROM txt_base WHERE arquivo_id = ? AND linha_doc = ? "
+        "ORDER BY linha", [int(arquivo_id), int(linha_doc)]).fetchall()
+
+
+def linha_txt(con, arquivo_id: int, linha: int):
+    r = con.cursor().execute("SELECT linha, registro, texto FROM txt_base WHERE arquivo_id = ? "
+                             "AND linha = ?", [int(arquivo_id), int(linha)]).fetchone()
+    return [r] if r else []
+
+
+def tem_texto(con, arquivo_id: int) -> bool:
+    return con.cursor().execute("SELECT count(*) FROM txt_base WHERE arquivo_id = ?",
+                                [int(arquivo_id)]).fetchone()[0] > 0
+
+
+# ============================================================================
+# Backup e restauração
+# ============================================================================
+
+def fazer_backup(con, destino_pasta: str, arquivos_extras=()) -> str:
+    """Copia a base inteira para um novo arquivo .duckdb na pasta indicada
+    (e os arquivos de configuração junto). Devolve o caminho do backup."""
+    os.makedirs(destino_pasta, exist_ok=True)
+    carimbo = time.strftime("%Y-%m-%d_%H%M%S")
+    destino = os.path.join(destino_pasta, f"consolidador_efd_backup_{carimbo}.duckdb")
+    cur = con.cursor()          # a cópia lê um retrato consistente da base
+    origem = cur.execute("SELECT current_database()").fetchone()[0]
+    cur.execute(f"ATTACH ? AS bkp", [destino])
+    try:
+        cur.execute(f'COPY FROM DATABASE "{origem}" TO bkp')
+    finally:
+        cur.execute("DETACH bkp")
+    for extra in arquivos_extras:
+        if os.path.isfile(extra):
+            nome, ext = os.path.splitext(os.path.basename(extra))
+            shutil.copy2(extra, os.path.join(destino_pasta, f"{nome}_{carimbo}{ext}"))
+    return destino
+
+
+def validar_backup(caminho: str) -> int:
+    """Abre um backup só para leitura e devolve quantas escriturações ele tem."""
+    c = duckdb.connect(caminho, read_only=True)
+    try:
+        return c.execute("SELECT count(*) FROM arquivos").fetchone()[0]
+    finally:
+        c.close()

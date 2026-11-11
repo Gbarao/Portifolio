@@ -46,8 +46,10 @@ CAMPOS = {
     "empresa": dict(sql="empresa_raiz", tipo="texto", visao=True, dim=True, digitos=True,
                     junto=["empresa_nome"],
                     rotulo="Empresa (raiz do CNPJ · Reg. 0000)"),
+    "estab_nome": dict(sql="estab_nome", tipo="texto", visao=True, dim=False,
+                       rotulo="Nome do estabelecimento (NOME · Reg. 0000 da EFD Fiscal; 0140 da EFD Contribuições)"),
     "estab": dict(sql="estab_cnpj", tipo="texto", visao=True, dim=True, digitos=True,
-                  rotulo="Estabelecimento (CNPJ · Reg. 0000 da EFD Fiscal; A010/C010/D010/F010 da EFD Contribuições)"),
+                  junto=["estab_nome"], rotulo="Estabelecimento (CNPJ · Reg. 0000 da EFD Fiscal; A010/C010/D010/F010 da EFD Contribuições)"),
     "periodo": dict(sql="periodo", tipo="data", visao=True, dim=True,
                     rotulo="Período de apuração (DT_INI · Reg. 0000)"),
     "fornecedor": dict(sql="part_doc", tipo="texto", visao=True, dim=True, digitos=True,
@@ -114,6 +116,7 @@ for _m in MEDIDAS:
 
 ROTULO_JUNTO = {
     "empresa_nome": "Nome da empresa (NOME · Reg. 0000)",
+    "estab_nome": "Nome do estabelecimento (NOME · Reg. 0000 da EFD Fiscal; 0140 da EFD Contribuições)",
     "part_nome": "Nome do fornecedor (NOME · Reg. 0150)",
     "descr_item": "Descrição do item (DESCR_ITEM · Reg. 0200; no F100 sem item, DESC_DOC_OPER)",
     "cfop_descricao": "Descrição do CFOP (tabela de CFOP carregada pelo usuário)",
@@ -218,11 +221,14 @@ def _condicao(cond: dict):
     campo_id, op = cond.get("campo"), cond.get("operador")
     if campo_id not in CAMPOS:
         raise FiltroInvalido(f"Campo desconhecido: {campo_id}")
+    return _condicao_campo(CAMPOS[campo_id], op, cond.get("valor"))
+
+
+def _condicao_campo(campo: dict, op: str, bruto):
+    """Condição SQL parametrizada sobre um campo descrito por {sql, tipo, rotulo, digitos}."""
     if op not in OPERADORES:
         raise FiltroInvalido(f"Operador desconhecido: {op}")
-    campo = CAMPOS[campo_id]
     sql = campo["sql"]
-    bruto = cond.get("valor")
     if op in ("vazio", "nao_vazio"):
         vazio = f"({sql} IS NULL)" if campo["tipo"] != "texto" else f"(coalesce({sql}, '') = '')"
         return (vazio if op == "vazio" else f"(NOT {vazio})"), []
@@ -362,14 +368,62 @@ def _fonte_dados(dims, so_visao_filtros):
     return "itens", "count(*)", "NOT repetido"
 
 
+def colunas_resultado(dims, medidas, calculados=None) -> dict:
+    """Colunas que a visão devolve e que aceitam filtro sobre o resultado:
+    {nome da coluna: {sql, tipo, rotulo, digitos}}."""
+    cols = {}
+    for d in dims:
+        campo = CAMPOS[d]
+        cols[d] = dict(sql=f'r."{d}"', tipo=campo["tipo"], digitos=campo.get("digitos"),
+                       rotulo=campo["rotulo"])
+        for j in campo.get("junto", []):
+            cols[j] = dict(sql=f'r."{j}"', tipo="texto", rotulo=ROTULO_JUNTO.get(j, j))
+    cols["n_linhas"] = dict(sql='r."n_linhas"', tipo="numero", rotulo="Linhas somadas")
+    for m, f in medidas:
+        c = col_medida(m, f)
+        cols[c] = dict(sql=f'r."{c}"', tipo="numero", rotulo=ROTULO_MEDIDA[m][f])
+    for i, nome in enumerate(calculados or {}):
+        cols[f"calc_{i}"] = dict(sql=f'r."calc_{i}"', tipo="numero", rotulo=nome)
+    return cols
+
+
+def _where_resultado(filtros_resultado, cols) -> tuple[str, list]:
+    """Filtros sobre as linhas já consolidadas (como o filtro de coluna do Excel).
+    Coluna "*" com operador "contem" procura o texto em todas as colunas de texto."""
+    partes, params = [], []
+    for f in filtros_resultado or []:
+        coluna, op, valor = f.get("coluna"), f.get("operador"), f.get("valor")
+        if coluna == "*":
+            texto = str(valor or "").strip()
+            if not texto:
+                continue
+            textos = [c for c, x in cols.items() if x["tipo"] == "texto"]
+            if not textos:
+                continue
+            ors = []
+            for c in textos:
+                sql, p = _condicao_campo(cols[c], "contem", texto)
+                ors.append(sql)
+                params.extend(p)
+            partes.append("(" + " OR ".join(ors) + ")")
+            continue
+        if coluna not in cols:
+            raise FiltroInvalido(f"A coluna '{coluna}' não está na tabela.")
+        sql, p = _condicao_campo(cols[coluna], op, valor)
+        partes.append(sql)
+        params.extend(p)
+    return " AND ".join(partes), params
+
+
 def consolidar(con, dims, medidas, filtros=(), calculados=None, ordem=None,
-               decrescente=True, limite=5000):
+               decrescente=True, limite=5000, filtros_resultado=None):
     """Executa a visão consolidada.
 
-    dims        níveis de agrupamento (ids de CAMPOS), na ordem desejada
-    medidas     [(medida, fonte)] a exibir
-    filtros     listas de condições (ligadas por E entre si)
-    calculados  {nome: fórmula}
+    dims               níveis de agrupamento (ids de CAMPOS), na ordem desejada
+    medidas            [(medida, fonte)] a exibir
+    filtros            listas de condições sobre a base (ligadas por E entre si)
+    calculados         {nome: fórmula}
+    filtros_resultado  condições sobre as linhas consolidadas [{coluna, operador, valor}]
     Devolve dict com: dados (DataFrame), total_grupos, totais (dict),
     colunas (ordem), tabela (visao|itens), segundos.
     """
@@ -394,41 +448,55 @@ def consolidar(con, dims, medidas, filtros=(), calculados=None, ordem=None,
     somas = [soma(m, f) for m, f in list(medidas) + extras]
     campos = ", ".join(selecao + [f"{contagem} AS n_linhas"] + somas)
     group_by = ("GROUP BY " + ", ".join(grupo)) if grupo else ""
-    cte = f"WITH g AS (SELECT {campos} FROM {tabela} {where_sql} {group_by})"
 
-    cols_calc = [f"{sql} AS \"calc_{i}\"" for i, sql in enumerate(formulas.values())]
     nomes_calc = {f"calc_{i}": nome for i, nome in enumerate(formulas)}
+    cols_calc = [f"{sql} AS \"calc_{i}\"" for i, sql in enumerate(formulas.values())]
     juncoes, cols_extra = "", []
     for d, apelido in (("cfop", "cfop_descricao"), ("cfop_conc", "cfop_conc_descricao")):
         if d in dims:
             juncoes += f" LEFT JOIN cfop t_{d} ON t_{d}.cfop = g.{d}"
             cols_extra.append(f"coalesce(t_{d}.descricao, '') AS {apelido}")
     cols_med = [col_medida(m, f) for m, f in medidas]
+    cols_ext = [col_medida(m, f) for m, f in extras]
+    saida = ", ".join([f"g.{c}" for c in cols_dim] + cols_extra + ["g.n_linhas"]
+                      + [f"g.{c}" for c in cols_med + cols_ext] + cols_calc)
+    # g: agrupamento sobre a base; r: linhas consolidadas (com descrições e cálculos)
+    cte = (f"WITH g AS (SELECT {campos} FROM {tabela} {where_sql} {group_by}), "
+           f"r AS (SELECT {saida} FROM g{juncoes})")
+
+    cols_filtraveis = colunas_resultado(dims, medidas, calculados)
+    where_r, params_r = _where_resultado(filtros_resultado, cols_filtraveis)
+    filtro_r = f"WHERE {where_r}" if where_r else ""
+    todos = params + params_r
+
     ordem_col = ordem if ordem in cols_dim + cols_med + ["n_linhas"] + list(nomes_calc) else None
     if ordem_col is None:
         ordem_col = cols_med[0] if cols_med else (cols_dim[0] if cols_dim else "n_linhas")
     direcao = "DESC NULLS LAST" if decrescente else "ASC NULLS LAST"
-    desempate = (", " + ", ".join(f"g.{c}" for c in dims)) if dims else ""
-    saida = ", ".join([f"g.{c}" for c in cols_dim] + cols_extra + ["g.n_linhas"]
-                      + [f"g.{c}" for c in cols_med] + cols_calc)
+    desempate = (", " + ", ".join(f'r."{c}"' for c in dims)) if dims else ""
+    visiveis = ", ".join(f'r."{c}"' for c in
+                         cols_dim + [x.split(" AS ")[-1] for x in cols_extra] + ["n_linhas"]
+                         + cols_med + list(nomes_calc))
     cur = con.cursor()
     dados = cur.execute(
-        f"{cte} SELECT {saida} FROM g{juncoes} ORDER BY \"{ordem_col}\" {direcao}{desempate} "
-        f"LIMIT {int(limite)}", params).df()
-    total_grupos = cur.execute(f"{cte} SELECT count(*) FROM g", params).fetchone()[0]
+        f'{cte} SELECT {visiveis} FROM r {filtro_r} ORDER BY r."{ordem_col}" {direcao}{desempate} '
+        f"LIMIT {int(limite)}", todos).df()
 
-    # totais gerais (uma única linha, mesmos filtros)
-    campos_tot = ", ".join([f"{contagem} AS n_linhas"] + somas)
-    cte_tot = f"WITH g AS (SELECT {campos_tot} FROM {tabela} {where_sql})"
+    # totais: soma dos grupos que passam nos filtros (os cálculos são refeitos
+    # sobre os totais, não somados)
+    soma_r = ", ".join([f'sum(r."n_linhas") AS n_linhas']
+                       + [f'sum(r."{c}") AS {c}' for c in cols_med + cols_ext])
     linha = cur.execute(
-        f"{cte_tot} SELECT {', '.join(['n_linhas'] + cols_med + cols_calc)} FROM g",
-        params).fetchone()
+        f"{cte}, t AS (SELECT count(*) AS grupos, {soma_r} FROM r {filtro_r}) "
+        f"SELECT grupos, {', '.join(['n_linhas'] + cols_med + cols_calc)} FROM t", todos).fetchone()
+    total_grupos = linha[0] if linha else 0
     nomes_tot = ["n_linhas"] + cols_med + list(nomes_calc)
-    totais = dict(zip(nomes_tot, linha)) if linha else {}
+    totais = dict(zip(nomes_tot, linha[1:])) if linha else {}
+    if totais.get("n_linhas") is None:
+        totais["n_linhas"] = 0
 
-    ordem_cols = list(dados.columns)
     return {"dados": dados, "total_grupos": total_grupos, "totais": totais,
-            "colunas": ordem_cols, "nomes_calc": nomes_calc, "tabela": tabela,
+            "colunas": list(dados.columns), "nomes_calc": nomes_calc, "tabela": tabela,
             "segundos": round(time.time() - t0, 3)}
 
 
@@ -472,6 +540,9 @@ COLUNAS_DETALHE = [
     ("vl_cofins", "VL_COFINS"), ("vl_iss", "VL_ISS"), ("cod_cta", "COD_CTA"),
     ("pareamento", "Situação nas duas EFDs"), ("nome_arquivo", "Arquivo"),
     ("linha", "Linha no arquivo"),
+    # referências internas (usadas para abrir as linhas do TXT; ocultas na tela)
+    ("empresa_raiz", "_empresa_raiz"), ("doc_id", "_doc_id"), ("arquivo_id", "_arquivo_id"),
+    ("linha_doc", "_linha_doc"),
 ]
 
 
@@ -599,16 +670,19 @@ EXEMPLOS = {
 
 
 def carregar_config(caminho: str) -> dict:
+    cfg = None
     if os.path.isfile(caminho):
         try:
             with open(caminho, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            cfg.setdefault("filtros", {})
-            cfg.setdefault("calculados", {})
-            return cfg
         except (OSError, ValueError):
-            pass
-    return json.loads(json.dumps(EXEMPLOS))
+            cfg = None
+    if not isinstance(cfg, dict):
+        cfg = json.loads(json.dumps(EXEMPLOS))
+    cfg.setdefault("filtros", {})
+    cfg.setdefault("calculados", {})
+    cfg.setdefault("visoes", {})
+    return cfg
 
 
 def salvar_config(caminho: str, cfg: dict):

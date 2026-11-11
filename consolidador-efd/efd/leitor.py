@@ -42,6 +42,13 @@ from .leiautes import (ATENCAO, COLUNAS_ANA, COLUNAS_DOCS, COLUNAS_ITENS,
                        TRATADOS)
 
 LOTE = 200_000
+
+# Registros cujo texto original é guardado (para mostrar a linha do TXT nas
+# conferências). Só são guardadas as linhas dos documentos que entram na base.
+REGISTROS_TEXTO = frozenset((
+    "A100", "A170", "C100", "C170", "C190", "C191", "C195", "C500", "C501", "C505",
+    "C590", "D100", "D101", "D105", "D190", "D500", "D501", "D505", "D590", "F100"))
+COLUNAS_TXT = ["registro", "texto", "linha_doc", "linha"]
 _POT = (1, 10, 100, 1000, 10_000, 100_000, 1_000_000)
 
 # Maior posição de campo lida em cada registro. Linhas mais curtas são
@@ -331,6 +338,9 @@ class Leitor:
                                 COLUNAS_ITENS, TEXTO_ITENS, MEDIDAS)
         self.w_docs = Escritor(os.path.join(pasta, "docs.parquet"),
                                COLUNAS_DOCS, TEXTO_DOCS, MEDIDAS_DOCS)
+        self.w_txt = Escritor(os.path.join(pasta, "txt.parquet"), COLUNAS_TXT,
+                              ("registro", "texto"), ())
+        self._f100_aceito = -1
         self.w_ana = Escritor(os.path.join(pasta, "analitico.parquet"),
                               COLUNAS_ANA, TEXTO_ANA, MEDIDAS_ANA)
 
@@ -453,7 +463,7 @@ class Leitor:
         for k, v in cab.items():
             linha_doc[_ID[k]] = cv(v)
         self.doc = {"reg": reg, "n": n, "base": base, "linha_doc": linha_doc,
-                    "itens": [], "ana": [], "pis": [], "cofins": []}
+                    "itens": [], "ana": [], "pis": [], "cofins": [], "txt": []}
 
     def _entrada_valida(self, ind_oper, cod_sit) -> bool:
         if ind_oper != "0":
@@ -664,7 +674,7 @@ class Leitor:
                      ("linha_doc", n)):
             base[_II[k]] = v
         self.doc = {"reg": "C190", "n": n, "base": base, "linha_doc": None,
-                    "itens": [], "ana": [], "pis": [], "cofins": []}
+                    "itens": [], "ana": [], "pis": [], "cofins": [], "txt": []}
 
     def _c19x(self, p, n, lado):
         """|C191/C195|CNPJ_CPF_PART[2]|CST[3]|CFOP[4]|VL_ITEM[5]|VL_DESC[6]|
@@ -751,6 +761,7 @@ class Leitor:
         if p[2] != "0":
             self.descartes["f100_nao_aquisicao"] += 1
             return
+        self._f100_aceito = n
         cv = self.cv.esc
         I = _II
         nome, pdoc = self.participante(p[3])
@@ -849,6 +860,8 @@ class Leitor:
         if d is None:
             return
         self.doc = None
+        for registro, texto, linha in d["txt"]:
+            self.w_txt.add([registro, texto, d["n"], linha])
         reg = d["reg"]
         I = _II
         if self.fonte == FISCAL:
@@ -930,6 +943,12 @@ class Leitor:
                                       f"leiaute (esperado ao menos {esperado})",
                                       f"linha {n}: {qtd} campos")
                 h(p, n)
+                if reg in REGISTROS_TEXTO:
+                    d = self.doc
+                    if d is not None:
+                        d["txt"].append((reg, linha, n))
+                    elif reg == "F100" and self._f100_aceito == n:
+                        self.w_txt.add([reg, linha, n, n])
         self.fechar_doc()
 
         if fora:
@@ -962,7 +981,8 @@ class Leitor:
             ind_escri=self.ind_escri,
             controle={"itens": self.w_itens.fechar(),
                       "docs": self.w_docs.fechar(),
-                      "analitico": self.w_ana.fechar()},
+                      "analitico": self.w_ana.fechar(),
+                      "txt": self.w_txt.fechar()},
             pasta=self.pasta,
             segundos=round(time.time() - t0, 2),
         )
