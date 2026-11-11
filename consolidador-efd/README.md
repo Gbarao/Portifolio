@@ -135,27 +135,31 @@ listados em Conferências e continuam nos totais.
 Os valores são guardados como decimais exatos (centavos inteiros na leitura,
 `DECIMAL(18,2)` no banco). Não há soma em ponto flutuante.
 
-## Leiautes: o que está e o que não está conferido
+## Leiautes conferidos com os Guias Práticos
 
-As posições de campo foram codificadas a partir dos leiautes da EFD ICMS/IPI e
-da EFD-Contribuições, mas **não foram conferidas contra os PDFs do Guia
-Prático** durante o desenvolvimento, porque o ambiente em que a ferramenta foi
-escrita não tinha acesso ao portal do SPED. Em compensação, a cada carga a
-ferramenta confere o que leu contra o próprio arquivo:
+Os leiautes de todos os registros que o programa lê foram conferidos campo a
+campo com o **Guia Prático EFD-ICMS/IPI versão 3.2.4** (30/07/2026) e o **Guia
+Prático da EFD Contribuições versão 1.35** (18/06/2021): 22 registros da Fiscal
+e 40 da Contribuições, 608 campos e 382 posições de leitura. A lista extraída
+dos guias está em `testes/leiautes_guias_praticos.json`, e o teste
+`testes/test_leiautes.py` refaz a conferência a cada alteração.
 
-- contagem de linhas de cada registro × registro 9900;
-- total do cabeçalho do documento × soma dos detalhes lidos;
-- analítico C190 × soma dos C170;
-- formato de CFOP (4 dígitos), datas e chaves eletrônicas;
-- quantidade de campos de cada registro.
+Além disso, a cada carga a ferramenta confere o que leu contra o próprio
+arquivo: contagem por registro × 9900, cabeçalho × detalhes, C190 × C170 e
+formato de CFOP, datas e chaves. A página **Conferências** mostra o resultado.
 
-Se uma posição estiver errada para o seu arquivo, essas conferências deixam de
-fechar e a página **Conferências** avisa. Antes de usar os números, veja se
-"Cabeçalho × detalhes" fecha nos seus arquivos reais.
+A tabela de CFOP não vem embutida: carregue o arquivo oficial em **Carregar
+EFDs > Tabelas de apoio**. Sem ela, o CFOP aparece só com o código.
 
-A tabela de CFOP não vem embutida: carregue o arquivo oficial (SPED ou CONFAZ)
-em **Carregar EFDs > Tabelas de apoio**. Sem ela, o CFOP aparece só com o
-código.
+## Versões anteriores e segurança
+
+- **Base de versão anterior**: é atualizada sozinha ao abrir, sem perder dados.
+  Escriturações carregadas antes não têm o texto original das linhas (usado no
+  pop-up). A página de carga avisa e oferece **Atualizar agora**, que lê de
+  novo os mesmos arquivos sem mudar os valores. Para levar ao executável a base
+  criada pela versão em Python, use **Restaurar um backup** e escolha o arquivo
+  `base/efd.duckdb` da versão anterior.
+- **TI e segurança**: veja `SEGURANCA.md`.
 
 ## Desempenho
 
@@ -178,7 +182,8 @@ por arquivo, e acontece uma vez: depois disso os filtros consultam a base
 ## Testes
 
 ```bash
-python testes/test_consolidador.py          # 123 verificações de ponta a ponta
+python testes/test_leiautes.py              # leiautes x Guias Práticos
+python testes/test_consolidador.py          # 130 verificações de ponta a ponta
 python testes/gerar_sinteticos.py pasta --docs 300000   # gera um par de volume
 ```
 

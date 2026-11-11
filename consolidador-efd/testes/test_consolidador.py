@@ -429,6 +429,33 @@ def main():
     destino = base.fazer_backup(con, os.path.join(raiz, "backup"), [])
     igual("backup contém as 5 escriturações", base.validar_backup(destino), 5)
 
+    print("\n== 18. Base criada por versão anterior ==")
+    pasta_v = os.path.join(raiz, "base_versao_anterior")
+    shutil.copytree(os.path.dirname(destino), pasta_v)
+    copia = os.path.join(pasta_v, os.path.basename(destino))
+    c3 = base.abrir(copia)
+    antes = c3.execute("SELECT sum(vl_item), sum(vl_pis), count(*) FROM itens").fetchone()
+    aid_v = c3.execute("SELECT arquivo_id FROM arquivos WHERE nome_arquivo = ?", [nome("contrib_jan")]).fetchone()[0]
+    c3.execute("DELETE FROM txt_base WHERE arquivo_id = ?", [aid_v])      # como na versão anterior
+    c3.execute("DROP TABLE dim_estab")
+    c3.execute("UPDATE estado SET valor = '1' WHERE chave = 'esquema'")
+    c3.close()
+    c3 = base.abrir(copia)
+    check("base antiga é atualizada ao abrir (seletor de estabelecimento funciona)",
+          len(base.empresas_e_estabelecimentos(c3)) == 3)
+    igual("valores da base antiga preservados", c3.execute("SELECT sum(vl_item), sum(vl_pis), count(*) FROM itens").fetchone(), antes)
+    igual("arquivo sem texto original é identificado",
+          [x["nome_arquivo"] for x in base.arquivos_sem_texto(c3)], [nome("contrib_jan")])
+    plano = base.planejar(c3, [arq["contrib_jan"]])
+    igual("selecionar de novo o arquivo antigo: será lido de novo", (plano[0]["acao"], plano[0]["substitui"]), ("CARREGAR", [aid_v]))
+    res = base.carregar(c3, plano, pasta_v, processos=0)
+    check("arquivo antigo atualizado", res[0]["ok"], res[0]["mensagem"])
+    igual("texto original passa a existir e os valores não mudam",
+          (base.arquivos_sem_texto(c3), c3.execute("SELECT sum(vl_item), sum(vl_pis), count(*) FROM itens").fetchone()),
+          ([], antes))
+    check("verificações passam na base atualizada", all(v["ok"] for v in base.ultimas_verificacoes(c3)))
+    c3.close()
+
     print("\n== 13. Remoção de arquivo ==")
     aid = con.execute("SELECT arquivo_id FROM arquivos WHERE nome_arquivo = ?", [nome("fiscal_matriz_fev")]).fetchone()[0]
     base.remover_arquivo(con, aid)

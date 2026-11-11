@@ -569,6 +569,28 @@ def pagina_carregar():
             st.session_state.pop("plano", None)
             st.rerun()
 
+    sem_texto = base.arquivos_sem_texto(con)
+    if sem_texto:
+        st.divider()
+        st.warning(f"{len(sem_texto)} escrituração(ões) foram carregadas por uma versão anterior do "
+                   "programa e não têm o texto original das linhas, que é usado no pop-up das "
+                   "conferências. Os valores estão corretos; só falta o texto. Para completar, o "
+                   "programa lê de novo os mesmos arquivos (nada é apagado se algo falhar).")
+        existem = [x for x in sem_texto if x["existe"]]
+        faltam = [x for x in sem_texto if not x["existe"]]
+        if faltam:
+            st.caption("Não encontrei no lugar original: "
+                       + "; ".join(x["nome_arquivo"] for x in faltam)
+                       + ". Selecione esses arquivos de novo acima e clique em Carregar.")
+        if existem and st.button(f"Atualizar agora ({len(existem)} arquivo(s))", key="bt_atualizar"):
+            barra = st.progress(0.0, text="Lendo os arquivos…")
+            plano = base.planejar(con, [x["caminho"] for x in existem])
+            res = base.carregar(con, plano, PASTA_BASE,
+                                progresso=lambda f, tot, n: barra.progress(f / tot, text=f"Lido {f} de {tot}: {n}"))
+            st.session_state["resultado_carga"] = {"res": res, "segundos": 0, "fora": []}
+            st.cache_data.clear()
+            st.rerun()
+
     st.divider()
     st.subheader("Escriturações na base")
     arqs = base.tabela_arquivos(con)
@@ -674,7 +696,7 @@ def _secao_dados_e_backup(con):
     aviso = st.session_state.pop("aviso_backup", None)
     if aviso:
         st.success(aviso)
-    b1, b2 = st.tabs(["Fazer backup", "Restaurar um backup"])
+    b1, b2 = st.tabs(["Fazer backup", "Restaurar um backup ou trazer a base de outra versão"])
     with b1:
         st.session_state.setdefault("pasta_backup", os.path.join(PASTA_BASE, "backups"))
         if "_pend_pasta_backup" in st.session_state:        # valor escolhido na janela
@@ -701,6 +723,9 @@ def _secao_dados_e_backup(con):
     with b2:
         st.write("Substitui a base atual pelo conteúdo de um backup. Antes de substituir, uma "
                  "cópia da base atual é guardada na pasta da base.")
+        st.caption("Para usar no executável a base criada pela versão em Python, escolha aqui o "
+                   "arquivo `efd.duckdb` que está na pasta `base` da versão anterior. A estrutura é "
+                   "atualizada automaticamente e os dados são mantidos.")
         if "_pend_arq_restaurar" in st.session_state:
             st.session_state["arq_restaurar"] = st.session_state.pop("_pend_arq_restaurar")
         c1, c2 = st.columns([4, 1.2])

@@ -32,7 +32,9 @@ jobs:
       - name: Testes de ponta a ponta (Python)
         env:
           PYTHONIOENCODING: utf-8
-        run: python testes/test_consolidador.py
+        run: |
+          python testes/test_leiautes.py
+          python testes/test_consolidador.py
 
       - name: Gerar o executável
         run: pyinstaller --noconfirm empacotar/consolidador_efd.spec
@@ -69,12 +71,18 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item README.md dist\ConsolidadorEFD\LEIA-ME.md
+          Copy-Item SEGURANCA.md dist\ConsolidadorEFD\SEGURANCA.md
           Compress-Archive -Path dist\ConsolidadorEFD -DestinationPath ConsolidadorEFD-windows.zip -Force
+          $h = (Get-FileHash ConsolidadorEFD-windows.zip -Algorithm SHA256).Hash
+          "$h  ConsolidadorEFD-windows.zip" | Out-File -Encoding ascii ConsolidadorEFD-windows.zip.sha256
+          Write-Output "SHA-256: $h"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ConsolidadorEFD-windows
-          path: consolidador-efd/ConsolidadorEFD-windows.zip
+          path: |
+            consolidador-efd/ConsolidadorEFD-windows.zip
+            consolidador-efd/ConsolidadorEFD-windows.zip.sha256
 
       - name: Publicar para download (GitHub Releases)
         shell: pwsh
@@ -88,4 +96,4 @@ jobs:
               --title "Consolidador EFD para Windows" `
               --notes "Baixe ConsolidadorEFD-windows.zip, extraia e dê duplo clique em ConsolidadorEFD.exe."
           }
-          gh release upload $tag ConsolidadorEFD-windows.zip --clobber
+          gh release upload $tag ConsolidadorEFD-windows.zip ConsolidadorEFD-windows.zip.sha256 --clobber

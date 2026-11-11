@@ -55,6 +55,10 @@ DIMENSOES_VISAO = [
 ]
 
 
+# Versão da estrutura das tabelas derivadas. Uma base criada por versão anterior
+# do programa é atualizada ao ser aberta (os dados carregados são mantidos).
+ESQUEMA = "2"
+
 TABELAS_POR_ARQUIVO = ("itens_base", "docs_base", "analitico_base", "txt_base", "arquivos")
 
 
@@ -133,8 +137,9 @@ def abrir(caminho_db: str):
     con.execute("CREATE TABLE IF NOT EXISTS cfop (cfop VARCHAR PRIMARY KEY, descricao VARCHAR)")
     con.execute("CREATE TABLE IF NOT EXISTS regimes (raiz VARCHAR PRIMARY KEY, regime VARCHAR, ano INTEGER)")
     con.execute("CREATE TABLE IF NOT EXISTS estado (chave VARCHAR PRIMARY KEY, valor VARCHAR)")
-    if not _existe(con, "itens"):
+    if not _existe(con, "itens") or estado(con, "esquema") != ESQUEMA:
         reconstruir(con)
+        gravar_estado(con, "esquema", ESQUEMA)
     return con
 
 
@@ -163,7 +168,8 @@ def planejar(con, caminhos) -> list[dict]:
     vistos, plano = set(), []
     existentes = con.cursor().execute(
         "SELECT arquivo_id, tipo, cnpj, ie, CAST(dt_ini AS VARCHAR), "
-        "CAST(dt_fin AS VARCHAR), retificadora, hash_conteudo, nome_arquivo "
+        "CAST(dt_fin AS VARCHAR), retificadora, hash_conteudo, nome_arquivo, "
+        "EXISTS (SELECT 1 FROM txt_base t WHERE t.arquivo_id = arquivos.arquivo_id) "
         "FROM arquivos").fetchall()
     por_hash = {e[7]: e for e in existentes}
     por_ident = {}
@@ -181,6 +187,11 @@ def planejar(con, caminhos) -> list[dict]:
         plano.append(item)
         if info.get("erro") or not info.get("tipo"):
             item.update(acao="INVALIDO", motivo=info.get("erro") or "Tipo não reconhecido.")
+        elif info["hash_conteudo"] in por_hash and not por_hash[info["hash_conteudo"]][9]:
+            # carregado por versão anterior, sem o texto original: lê de novo e substitui
+            item.update(acao="CARREGAR", substitui=[por_hash[info["hash_conteudo"]][0]], motivo=(
+                "Já está na base, carregado por uma versão anterior do programa. Será lido de "
+                "novo para guardar o texto original das linhas (os valores não mudam)."))
         elif info["hash_conteudo"] in por_hash:
             item.update(acao="JA_CARREGADO", motivo=(
                 f"Mesmo conteúdo de '{por_hash[info['hash_conteudo']][8]}', já na base "
@@ -379,9 +390,10 @@ def carregar(con, plano, pasta_base: str, progresso=None, processos=None) -> lis
         if meta.get("erro"):
             r["mensagem"] = meta["erro"]
             continue
+        substitui = p.get("substitui") or [0]
         igual = con.cursor().execute(
-            "SELECT nome_arquivo FROM arquivos WHERE hash_conteudo = ?",
-            [meta["hash_conteudo"]]).fetchone()
+            "SELECT nome_arquivo FROM arquivos WHERE hash_conteudo = ? AND arquivo_id NOT IN "
+            f"({', '.join('?' for _ in substitui)})", [meta["hash_conteudo"], *substitui]).fetchone()
         if igual:
             r["mensagem"] = (f"Ignorado: mesmo conteúdo de '{igual[0]}' (difere só "
                              "na codificação ou na quebra de linha).")
@@ -397,6 +409,16 @@ def carregar(con, plano, pasta_base: str, progresso=None, processos=None) -> lis
     shutil.rmtree(staging, ignore_errors=True)
     reconstruir(con)
     return resultados
+
+
+def arquivos_sem_texto(con) -> list[dict]:
+    """Escriturações carregadas por versão anterior (sem o texto original das linhas)."""
+    linhas = con.cursor().execute("""
+        SELECT arquivo_id, nome_arquivo, caminho FROM arquivos a
+        WHERE NOT EXISTS (SELECT 1 FROM txt_base t WHERE t.arquivo_id = a.arquivo_id)
+        ORDER BY nome_arquivo""").fetchall()
+    return [{"arquivo_id": a, "nome_arquivo": n, "caminho": c, "existe": os.path.isfile(c or "")}
+            for a, n, c in linhas]
 
 
 def remover_arquivo(con, arquivo_id: int):
