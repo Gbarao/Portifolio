@@ -1,0 +1,7 @@
+# Base local, dados de teste e configurações do usuário (não versionar)
+base/
+testes/dados/
+__pycache__/
+*.pyc
+*.duckdb
+*.duckdb.wal
