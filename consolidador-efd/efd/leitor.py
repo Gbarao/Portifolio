@@ -103,17 +103,35 @@ def _decimal_escalado(s: str, casas: int) -> int:
     return int(Decimal(t).scaleb(casas).to_integral_value(rounding=ROUND_HALF_UP))
 
 
-class Conversor:
-    """Texto numérico do SPED (vírgula decimal) -> inteiro escalado, exato."""
+_FALTA = object()
 
-    __slots__ = ("erros",)
+
+class Conversor:
+    """Texto numérico do SPED (vírgula decimal) -> inteiro escalado, exato.
+
+    Os mesmos textos se repetem muito dentro de um arquivo ("0,00", alíquotas),
+    então cada conversão é guardada em um dicionário de tamanho limitado."""
+
+    __slots__ = ("erros", "_cache")
+    _LIMITE = 300_000
 
     def __init__(self):
         self.erros = 0
+        self._cache = {2: {}, 4: {}, 5: {}}
 
     def esc(self, s: str, casas: int = 2):
         if not s:
             return None
+        cache = self._cache[casas]
+        v = cache.get(s, _FALTA)
+        if v is not _FALTA:
+            return v
+        v = self._converter(s, casas)
+        if len(cache) < self._LIMITE:
+            cache[s] = v
+        return v
+
+    def _converter(self, s: str, casas: int):
         try:
             i = s.find(",")
             if i < 0:

@@ -493,7 +493,10 @@ def gerar_volume(pasta: str, docs: int, itens_por_doc: int = 4) -> dict:
             a.add("C010", CNPJ=MATRIZ, IND_ESCRI="2")
         fornecedores = (ACO, TRANSP, ENERGIA, TELECOM)
         for n in range(docs):
-            its = [item("ITEM001" if k % 2 else "ITEM002", 100.00 + k, "1101" if k < 2 else "2101")
+            # valores variados (como em um arquivo real), mas reproduzíveis
+            its = [item("ITEM001" if k % 2 else "ITEM002",
+                        100 + (n * 7 + k * 13) % 9000 + ((n * 31 + k) % 100) / 100,
+                        "1101" if k < 2 else "2101")
                    for k in range(itens_por_doc)]
             nf(a, tipo, fornecedores[n % 4], str(100000 + n), 1_000_000 + n, "05032026",
                "06032026", its)

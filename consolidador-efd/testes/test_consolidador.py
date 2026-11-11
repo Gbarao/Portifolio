@@ -71,6 +71,8 @@ def main():
     res = base.carregar(con, plano, pasta_base, processos=2)
     check("5 arquivos carregados e conferidos", all(r["ok"] for r in res) and len(res) == 5,
           str([r["mensagem"] for r in res if not r["ok"]]))
+    igual("cada arquivo foi lido em um processo próprio",
+          {r.get("modo_leitura") for r in res}, {"processo próprio"})
     ver = base.ultimas_verificacoes(con)
     check("todas as verificações de integridade passam", all(v["ok"] for v in ver),
           str([v for v in ver if not v["ok"]]))
@@ -115,14 +117,14 @@ def main():
     plano = base.planejar(con, [arq["copia_bytes"], arq["copia_utf8"]])
     igual("cópia de bytes e cópia UTF-8/LF reconhecidas como já carregadas",
           set(acoes(plano).values()), {"JA_CARREGADO"})
-    base.carregar(con, plano, pasta_base)
+    base.carregar(con, plano, pasta_base, processos=0)
     igual("nada mudou na base", totais(con, FISCAL)["vl_item"], D("5700.00"))
 
     print("\n== 4. Retificadora ==")
     plano = base.planejar(con, [arq["fiscal_filial_jan_retif"]])
     igual("retificadora entra no lugar do original", acoes(plano)[nome("fiscal_filial_jan_retif")], "CARREGAR")
     igual("o original está marcado para sair", len(plano[0]["substitui"]), 1)
-    res = base.carregar(con, plano, pasta_base)
+    res = base.carregar(con, plano, pasta_base, processos=0)     # leitura no mesmo processo
     check("retificadora carregada", res[0]["ok"], res[0]["mensagem"])
     igual("continua havendo 5 escriturações", con.execute("SELECT count(*) FROM arquivos").fetchone()[0], 5)
     igual("o original saiu da base",

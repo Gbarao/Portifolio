@@ -28,13 +28,13 @@ Como a duplicidade é evitada
 from __future__ import annotations
 
 import json
-import multiprocessing
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 import unicodedata
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import duckdb
 
@@ -291,8 +291,50 @@ def _carregar_um(con, meta: dict, substitui) -> int:
     return aid
 
 
+def _ler_em_processos(tarefas, destinos, n_proc, avisar) -> dict:
+    """Lê cada arquivo em um processo próprio (python -m efd.trabalhador),
+    até `n_proc` ao mesmo tempo. Devolve {hash do conteúdo: metadados}."""
+    raiz_pacote = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sem_janela = getattr(subprocess, "CREATE_NO_WINDOW", 0)     # só existe no Windows
+    pendentes, ativos, metas, feitos = list(tarefas), [], {}, 0
+    while pendentes or ativos:
+        while pendentes and len(ativos) < n_proc:
+            p = pendentes.pop(0)
+            pasta = destinos[p["info"]["hash_conteudo"]]
+            os.makedirs(pasta, exist_ok=True)
+            with open(os.path.join(pasta, "info.json"), "w", encoding="utf-8") as f:
+                json.dump(p["info"], f, ensure_ascii=False)
+            log = open(os.path.join(pasta, "erro.log"), "w", encoding="utf-8")
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "efd.trabalhador", pasta], cwd=raiz_pacote,
+                stdout=subprocess.DEVNULL, stderr=log, creationflags=sem_janela)
+            ativos.append((proc, log, p, pasta))
+        time.sleep(0.05)
+        for ativo in list(ativos):
+            proc, log, p, pasta = ativo
+            if proc.poll() is None:
+                continue
+            ativos.remove(ativo)
+            log.close()
+            try:
+                with open(os.path.join(pasta, "meta.json"), "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except (OSError, ValueError):
+                meta = None      # o processo não terminou a leitura: tenta aqui mesmo
+            if meta is not None:
+                meta["modo_leitura"] = "processo próprio"
+                metas[p["info"]["hash_conteudo"]] = meta
+            feitos += 1
+            avisar(feitos, p["info"]["nome_arquivo"])
+    return metas
+
+
 def carregar(con, plano, pasta_base: str, progresso=None, processos=None) -> list[dict]:
-    """Lê os arquivos marcados como CARREGAR (em paralelo) e grava na base."""
+    """Lê os arquivos marcados como CARREGAR e grava na base.
+
+    processos=None  um processo de leitura por arquivo, até o número de núcleos
+    processos=0     lê neste mesmo processo, um arquivo por vez
+    """
     tarefas = [p for p in plano if p["acao"] == "CARREGAR"]
     staging = os.path.join(pasta_base, "staging")
     resultados = []
@@ -306,28 +348,19 @@ def carregar(con, plano, pasta_base: str, progresso=None, processos=None) -> lis
             progresso(feitos, len(tarefas), nome)
 
     metas = {}
-    n_proc = processos or min(len(tarefas), os.cpu_count() or 1)
-    feitos = 0
-    if n_proc > 1:
+    if processos != 0:
+        n_proc = max(1, min(len(tarefas), processos or os.cpu_count() or 1))
         try:
-            # 'spawn' evita herdar as threads do servidor da interface
-            contexto = multiprocessing.get_context("spawn")
-            with ProcessPoolExecutor(max_workers=n_proc, mp_context=contexto) as pool:
-                futuros = {pool.submit(processar_arquivo, p["info"],
-                                       destinos[p["info"]["hash_conteudo"]]): p for p in tarefas}
-                for fut in as_completed(futuros):
-                    p = futuros[fut]
-                    metas[p["info"]["hash_conteudo"]] = fut.result()
-                    feitos += 1
-                    avisar(feitos, p["info"]["nome_arquivo"])
-        except Exception:
-            metas, feitos = {}, 0     # sem paralelismo neste ambiente: lê em sequência
+            metas = _ler_em_processos(tarefas, destinos, n_proc, avisar)
+        except OSError:
+            metas = {}           # não foi possível criar processos: lê em sequência
+    feitos = len(metas)
     for p in tarefas:
         h = p["info"]["hash_conteudo"]
         if h not in metas:
             metas[h] = processar_arquivo(p["info"], destinos[h])
             feitos += 1
-            avisar(feitos, p["info"]["nome_arquivo"])
+            avisar(min(feitos, len(tarefas)), p["info"]["nome_arquivo"])
 
     for p in tarefas:
         meta = metas[p["info"]["hash_conteudo"]]
@@ -348,6 +381,7 @@ def carregar(con, plano, pasta_base: str, progresso=None, processos=None) -> lis
             _carregar_um(con, meta, p.get("substitui") or [])
             r.update(ok=True, linhas=meta["linhas"], itens=meta["controle"]["itens"]["n"],
                      segundos=meta["segundos"],
+                     modo_leitura=meta.get("modo_leitura", "mesmo processo"),
                      mensagem=p.get("motivo") or "Carregado e conferido.")
         except Exception as e:
             r["mensagem"] = f"Carga desfeita: {e}"

@@ -1,0 +1,14 @@
+[browser]
+gatherUsageStats = false
+
+[server]
+maxUploadSize = 500
+fileWatcherType = "none"
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "type"
+
+[theme]
+base = "light"
+primaryColor = "#1F4E5F"
