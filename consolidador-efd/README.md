@@ -13,25 +13,55 @@ por exemplo `VL_ICMS (Reg. C170/C190/C590/D190/D590 · EFD Fiscal)`.
 
 ## Como usar
 
+### Windows, sem instalar nada (recomendado)
+
+1. Baixe `ConsolidadorEFD-windows.zip` na página de
+   [Releases do repositório](https://github.com/Gbarao/Portifolio/releases/tag/consolidador-efd-windows).
+2. Extraia o zip numa pasta comum (por exemplo, Documentos). Não abra direto
+   de dentro do zip.
+3. Dê duplo clique em `ConsolidadorEFD.exe`. Uma janela preta se abre e, em
+   seguida, o navegador mostra o programa. Mantenha a janela preta aberta
+   enquanto usa; para encerrar, feche-a.
+
+O executável é gerado e testado automaticamente no Windows a cada alteração
+(fluxo `.github/workflows/consolidador-efd-windows.yml`).
+
+### Com Python instalado
+
 ```bash
 pip install -r requirements.txt
 python iniciar.py            # no Windows também serve o duplo clique em iniciar.bat
 ```
 
-A aplicação abre no navegador, em `localhost`. Tudo roda neste computador: os
-arquivos são lidos do disco e a base fica na pasta `base/`. Nenhum dado sai da
-máquina.
+Em qualquer dos dois casos, tudo roda neste computador, no endereço
+`localhost`. Nenhum dado sai da máquina.
+
+### Onde os dados ficam
+
+A base fica em `Documentos/Consolidador EFD` e é gravada em disco a cada
+carga. Fechar o programa ou desligar o computador não apaga nada: ao abrir de
+novo, as escriturações, os filtros salvos e a última visão (empresa,
+agrupamento, colunas, filtros e busca) continuam lá. Os `.txt` podem ser
+movidos ou apagados depois da carga, porque o conteúdo usado, inclusive o
+texto original das linhas, fica na base. A página **Carregar EFDs** tem
+**backup** (copiar a base para outra pasta, pen drive ou nuvem) e
+**restauração**.
+
+### Páginas
 
 1. **Carregar EFDs**: selecione os arquivos (ou uma pasta). O tipo de cada um
    é reconhecido pelo registro 0000. A tela mostra o que será feito com cada
    arquivo antes de carregar.
-2. **Visão consolidada**: escolha os níveis em "Agrupar por", as colunas de
-   valor e os filtros da barra lateral. Clique em uma linha para ver os
-   documentos e itens que a compõem. Exporta para Excel e CSV.
-3. **Conferências**: situação de cada documento nas duas EFDs, itens
-   divergentes, C190 × C170, cabeçalho × detalhes e documentos repetidos.
-4. **Meus filtros e cálculos**: crie filtros com nome e campos calculados, e
-   use-os na visão.
+2. **Visão consolidada**: escolha no topo a **empresa** (matriz e filiais) ou
+   **estabelecimentos**, por CNPJ ou nome. Depois escolha os níveis em
+   "Agrupar por", as colunas de valor e os filtros. Sobre a tabela pronta há
+   **busca** e **filtros por coluna** (como o filtro do Excel), e os totais
+   acompanham. Clique numa linha para ver os documentos; clique num
+   documento para ver as linhas do TXT. Visões podem ser **salvas com nome**.
+3. **Conferências**: selecionar um problema abre um **pop-up com as linhas do
+   TXT** da EFD Contribuições e da EFD Fiscal lado a lado, com as linhas
+   divergentes em vermelho e a comparação campo a campo.
+4. **Meus filtros e cálculos**: filtros com nome e campos calculados.
 5. **Auditoria da carga**: verificações de integridade e o que foi lido de
    cada arquivo.
 
@@ -148,7 +178,7 @@ por arquivo, e acontece uma vez: depois disso os filtros consultam a base
 ## Testes
 
 ```bash
-python testes/test_consolidador.py          # 100 verificações de ponta a ponta
+python testes/test_consolidador.py          # 123 verificações de ponta a ponta
 python testes/gerar_sinteticos.py pasta --docs 300000   # gera um par de volume
 ```
 
@@ -169,6 +199,9 @@ efd/base.py            DuckDB: carga, regras de duplicidade, tabelas derivadas, 
 efd/consulta.py        visão consolidada, filtros, campos calculados, exportação
 efd/leiautes.py        colunas, rótulos de origem e registros tratados
 efd/seletor.py         janela de seleção de arquivos (tkinter)
+efd/comparacao.py      comparação campo a campo das linhas do TXT (pop-up)
+consolidador_efd.py    ponto de entrada do executável
+empacotar/             receita do PyInstaller
 testes/                gerador de EFDs sintéticas e testes
 ```
 
