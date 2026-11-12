@@ -1,0 +1,6 @@
+# Cofre de dados local (nunca versionar dados fiscais)
+data/*
+!data/.gitkeep
+__pycache__/
+*.pyc
+.pytest_cache/
