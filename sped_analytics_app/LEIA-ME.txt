@@ -1,0 +1,36 @@
+CONSOLIDAÇÃO FISCAL SPED (SPED Fiscal x EFD-Contribuições) — GUIA RÁPIDO
+=========================================================================
+
+REQUISITO
+  Python 3.11 ou superior (testado com 3.13): https://www.python.org/downloads/
+  No Windows, durante a instalação do Python, marque "Add python.exe to PATH".
+
+WINDOWS
+  1. Extraia o .zip em uma pasta (ex.: C:\ConsolidacaoSPED). Não execute de dentro do .zip.
+  2. Dê dois cliques em  instalar.bat           (uma única vez; requer internet só nesta etapa)
+  3. Dê dois cliques em  iniciar.bat            (abre o programa)
+     Alternativas:
+       iniciar_demonstracao.bat  -> gera arquivos SPED de exemplo e abre o programa com eles
+       abrir_no_navegador.bat    -> abre no navegador (use se a janela nativa não abrir)
+
+macOS / LINUX
+  1. Extraia o .zip.  2. No terminal, dentro da pasta:  ./instalar.sh   3. ./iniciar.sh
+     (demonstração: ./iniciar.sh --demo  |  navegador: ./iniciar.sh --browser)
+
+USO
+  1. Aba "Central de Arquivos": informe a pasta com os TXT do SPED Fiscal e da EFD-Contribuições
+     (subpastas incluídas) e clique em Importar. O tipo de cada arquivo é detectado automaticamente.
+  2. Aba "Análise Consolidada": filtros globais, grade Empresa > Fornecedor > CFOP > Item
+     (duplo clique desce um nível; clique simples lista as notas fiscais no painel inferior).
+  3. Aba "Filtros & Biblioteca": regras sob demanda, filtros salvos e análises congeladas.
+  4. Aba "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições.
+
+DADOS
+  Tudo fica na subpasta "data" (banco sped_master.duckdb, cache Parquet, filtros, snapshots, exportações).
+  Nada é enviado à internet; a interface roda apenas em 127.0.0.1 (porta 8765).
+  Faça backup pela própria Central de Arquivos ou copiando a pasta "data" com o programa fechado.
+
+IMPORTAÇÃO PELA LINHA DE COMANDO (opcional, Windows)
+  .venv\Scripts\python.exe -m app.main --importar "D:\SPED\2024"
+
+Documentação técnica completa: README.md

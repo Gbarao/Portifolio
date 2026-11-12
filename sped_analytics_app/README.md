@@ -6,9 +6,18 @@ Nota Fiscal. A execução é 100% local (DuckDB embarcado + Parquet) e nenhum da
 
 ## Instalação e execução
 
-```bash
-pip install -r requirements.txt
-```
+Requisito: Python 3.11 ou superior (testado com 3.13).
+
+| Sistema | Instalar (uma vez) | Abrir |
+|---|---|---|
+| Windows | `instalar.bat` | `iniciar.bat` (ou `iniciar_demonstracao.bat` / `abrir_no_navegador.bat`) |
+| macOS/Linux | `./instalar.sh` | `./iniciar.sh` |
+
+Os instaladores criam o ambiente isolado `.venv`, instalam `requirements.txt` (versões testadas) e tentam
+instalar `pywebview` (janela nativa; sem ele a interface abre no navegador em 127.0.0.1).
+Guia rápido: `LEIA-ME.txt`.
+
+Linha de comando (com o ambiente ativado ou via `.venv`):
 
 ```bash
 python -m app.main                 # abre a aplicação (janela nativa se pywebview estiver instalado)
@@ -17,8 +26,6 @@ python -m app.main --demo          # gera arquivos SPED de exemplo, importa e ab
 python -m app.main --importar D:\SPED\2024   # importação em lote pela linha de comando (sem interface)
 python -m app.main --reconsolidar  # reconstrói a tabela fato a partir dos dados brutos
 ```
-
-Atalhos de inicialização: `iniciar.bat` no Windows e `iniciar.sh` no Linux/macOS.
 
 Variáveis de ambiente opcionais:
 
@@ -125,6 +132,7 @@ Regras de proteção na importação:
 ## Testes e desempenho
 
 ```bash
+pip install -r requirements-opcional.txt
 python -m pytest -q tests
 ```
 

@@ -1,0 +1,4 @@
+# Janela desktop nativa (sem ele a interface abre no navegador, em 127.0.0.1)
+pywebview>=5.0
+# Testes automatizados
+pytest>=8

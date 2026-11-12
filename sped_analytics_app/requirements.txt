@@ -1,12 +1,6 @@
-# Núcleo (obrigatório)
-duckdb>=1.1
-pyarrow>=15
-polars>=1.0
-nicegui>=2.0
-xlsxwriter>=3.1
-
-# Janela desktop nativa (opcional; sem ele a interface abre no navegador local 127.0.0.1)
-pywebview>=5.0
-
-# Testes
-pytest>=8
+# Versões testadas
+duckdb==2.0.0
+pyarrow==26.0.1
+polars==2.1.0
+nicegui==4.0.0
+xlsxwriter==3.2.9

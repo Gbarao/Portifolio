@@ -1,2 +1,4 @@
 #!/usr/bin/env bash
-cd "$(dirname "$0")" && exec python3 -m app.main "$@"
+cd "$(dirname "$0")"
+[ -x .venv/bin/python ] || ./instalar.sh
+exec .venv/bin/python -m app.main "$@"
