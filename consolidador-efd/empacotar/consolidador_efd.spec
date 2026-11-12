@@ -4,7 +4,7 @@
 
 import os
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 RAIZ = os.path.abspath(os.path.join(SPECPATH, ".."))
 
@@ -16,7 +16,16 @@ for pacote in ("streamlit", "duckdb", "pyarrow", "altair"):
     hiddenimports += h
 for pacote in ("streamlit", "duckdb", "pandas", "pyarrow", "altair", "xlsxwriter", "openpyxl"):
     datas += copy_metadata(pacote)
-hiddenimports += collect_submodules("efd")
+# Os módulos do programa são listados pelos arquivos da pasta efd/ (a coleta
+# automática depende de onde o comando é chamado e pode voltar vazia).
+MODULOS_EFD = ["efd"] + sorted(
+    "efd." + os.path.splitext(n)[0] for n in os.listdir(os.path.join(RAIZ, "efd"))
+    if n.endswith(".py") and n != "__init__.py")
+for obrigatorio in ("efd.base", "efd.comparacao", "efd.consulta", "efd.leiautes", "efd.leitor",
+                    "efd.seletor", "efd.trabalhador"):
+    if obrigatorio not in MODULOS_EFD:
+        raise SystemExit(f"Módulo do programa não encontrado para empacotar: {obrigatorio}")
+hiddenimports += MODULOS_EFD
 hiddenimports += ["pandas", "xlsxwriter", "openpyxl", "tkinter", "tkinter.filedialog"]
 datas += [(os.path.join(RAIZ, "app.py"), ".")]
 

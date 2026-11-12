@@ -25,6 +25,38 @@ def _porta_livre() -> int:
         return s.getsockname()[1]
 
 
+def modulos_da_interface() -> list[str]:
+    """Módulos que a interface (app.py) importa, lidos do próprio app.py."""
+    import ast
+    with open(os.path.join(_pasta_programa(), "app.py"), encoding="utf-8") as f:
+        arvore = ast.parse(f.read())
+    nomes = []
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.Import):
+            nomes += [a.name for a in no.names]
+        elif isinstance(no, ast.ImportFrom) and no.module and not no.level:
+            nomes.append(no.module)
+            nomes += [f"{no.module}.{a.name}" for a in no.names]
+    return nomes
+
+
+def conferir_modulos() -> list[str]:
+    """Importa tudo o que a interface usa. Devolve os que faltam no pacote."""
+    import importlib
+    faltando = []
+    for nome in modulos_da_interface():
+        try:
+            importlib.import_module(nome)
+        except ImportError:
+            pai, _, attr = nome.rpartition(".")
+            try:                                   # "from pacote import objeto"
+                if not (pai and hasattr(importlib.import_module(pai), attr)):
+                    faltando.append(nome)
+            except ImportError:
+                faltando.append(nome)
+    return faltando
+
+
 def testar_carga(pasta_dados: str, pasta_base: str) -> int:
     """Carrega os .txt de uma pasta usando os processos de leitura do próprio
     executável e confere a integridade. Usado no teste do executável."""
@@ -40,9 +72,11 @@ def testar_carga(pasta_dados: str, pasta_base: str) -> int:
               "modos_de_leitura": sorted({r.get("modo_leitura", "") for r in ok}),
               "verificacoes_ok": all(v["ok"] for v in verificacoes),
               "linhas": con.execute("SELECT count(*) FROM itens").fetchone()[0]}
-    print(json.dumps(resumo, ensure_ascii=False))
+    resumo["modulos_faltando"] = conferir_modulos()
+    print(json.dumps(resumo, ensure_ascii=True))
     certo = (ok and not resumo["falhas"] and resumo["verificacoes_ok"]
-             and resumo["modos_de_leitura"] == ["processo próprio"])
+             and resumo["modos_de_leitura"] == ["processo próprio"]
+             and not resumo["modulos_faltando"])
     return 0 if certo else 1
 
 

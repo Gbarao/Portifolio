@@ -27,7 +27,8 @@ jobs:
       - name: Instalar dependências
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller
+          python -m pip install -r requirements.txt pyinstaller playwright
+          python -m playwright install chromium
 
       - name: Testes de ponta a ponta (Python)
         env:
@@ -63,9 +64,17 @@ jobs:
               if ($r.StatusCode -eq 200) { $ok = $true; break }
             } catch { }
           }
+          $telas = 1
+          if ($ok) {
+            # abre cada tela num navegador de verdade: pega erros de importação e de tela
+            $env:PYTHONIOENCODING = "utf-8"
+            python testes/testar_telas.py http://localhost:8790
+            $telas = $LASTEXITCODE
+          }
           Get-Content "$env:RUNNER_TEMP\ui.log", "$env:RUNNER_TEMP\ui_err.log" -ErrorAction SilentlyContinue
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           if (-not $ok) { throw "A interface do executável não respondeu" }
+          if ($telas -ne 0) { throw "Alguma tela do executável mostrou erro" }
 
       - name: Montar o pacote
         shell: pwsh
