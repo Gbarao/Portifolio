@@ -1,0 +1,11 @@
+﻿cenarios;tributo;regra;valores;mensagem
+"C4a;C4b";PIS;aliquota_em;"0,65;1,3";Venda incentivada para fora da ZFM com PIS diferente de 0,65% ou 1,3% (Decreto 5.310/2004)
+"C4a;C4b";COFINS;aliquota_em;"3;6";Venda incentivada para fora da ZFM com COFINS diferente de 3% ou 6% (Decreto 5.310/2004)
+"C4c;C4d";PIS;aliquota_em;"0;0,65;1,3";Venda incentivada na ZFM com alíquota de PIS fora do esperado
+"C4c;C4d";COFINS;aliquota_em;"0;3;6";Venda incentivada na ZFM com alíquota de COFINS fora do esperado
+"C4a;C4b;C4c;C4d";IPI;cst_em;52;Venda incentivada com CST de IPI diferente de isenção (52)
+"C1a;C1b;C1c";IPI;valor_zero;;Importação com IPI destacado (esperado isento, DL 288/1967, art. 3º)
+"C2a;C2b;C2c";IPI;valor_zero;;Entrada C2 com IPI destacado (esperado isento, DL 288/1967, art. 4º)
+"C2a;C2b;C2c";PIS;aliquota_em;0;Entrada C2 com PIS diferente de zero (Lei 10.996/2004, art. 2º)
+"C2a;C2b;C2c";COFINS;aliquota_em;0;Entrada C2 com COFINS diferente de zero (Lei 10.996/2004, art. 2º)
+"C3a;C3b";IPI;valor_zero;;Compra na ZFM com IPI destacado (esperado isento, DL 288/1967, art. 9º)

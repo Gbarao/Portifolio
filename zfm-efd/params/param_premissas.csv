@@ -1,5 +1,5 @@
 ﻿chave;valor;descricao
-ano_base;2026;Ano das EFDs usadas como base (YTD).
+ano_base;auto;Ano das EFDs usadas como base (YTD). 'auto' = ano mais recente carregado. Se o ano informado não tiver arquivo, o programa usa o mais recente.
 base_cbs_ibs;liquida_sem_tributos;"Base da simulação: 'liquida_sem_tributos' = VL_ITEM − VL_DESC − ICMS − PIS − COFINS (ICMS por item estimado pela proporção ICMS/valor do CFOP no mês); 'valor_liquido' = VL_ITEM − VL_DESC."
 anualizacao;meses_observados_mais_media;Ano simulado = meses observados de 2026 + média mensal nos meses sem dado (= média × 12).
 rateio_produto_uf;proporcao_c190_por_cfop;Saídas sem destinatário por item (C180/C181): destino rateado pela proporção do C190 + 0150 da EFD ICMS/IPI no mesmo estabelecimento, mês e CFOP.
@@ -21,6 +21,10 @@ carga_icms_as_is;e110_mais_excesso_e116;"Carga de ICMS As Is: 'e110_mais_excesso
 rateio_pis_cofins_am;receita;"A EFD Contribuições é da empresa inteira (inclui estabelecimentos fora do AM). 'receita' = PIS/COFINS do bloco M rateados pela receita dos estabelecimentos do AM; 'nenhum' = valor inteiro."
 teses_ativas_ja_na_apuracao;sim;Teses com status 'ativa' já estão refletidas na apuração (não ajustam a carga As Is).
 anualizacao_mensal;perfil_observado;Perfil mês a mês do ano simulado: 'perfil_observado' (meses de 2026 + média nos demais) ou 'media_constante' (sensibilidade sem sazonalidade). O total anual é sempre média × 12.
+revenda_presencial;sim;Importações de mercadoria para revenda por habilitado são 'revenda presencial' (C1b, art. 444)? sim/nao.
+c3a_intermediario;compra_industrializacao;Quando a compra na ZFM é 'bem intermediário' (C3a): 'compra_industrializacao' (CFOP de compra para industrialização ou tipo_bem intermediário) ou 'tipo_bem' (só pelo tipo de bem do item).
+ipi_protegido_regra;tipi;"Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= limite_tipi_ipi (até a lista oficial do § 3º); 'tabela' = coluna ipi_protegido de Produtos."
+simular_risco_ingresso_c2;nao;C2 sem comprovação de ingresso perde a alíquota zero e estorna o crédito presumido. Padrão: só alerta.
 fator_ipi_proprio;0;Fração do IPI próprio a recolher (E520) que permanece no To Be (0 = IPI zerado/ZFM isenta).
 aliq_ibs_teste;0,1;IBS de teste em 2027-2028, em % (LC 214/2025: 0,05% estadual + 0,05% municipal).
 ano_inicio_cp450_ibs;2029;Ano a partir do qual vale o crédito presumido de IBS do art. 450 (§ 1º).
