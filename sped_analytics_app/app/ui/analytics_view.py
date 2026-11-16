@@ -2,6 +2,7 @@
 indicadores, drill-down até a Nota Fiscal, exportação e congelamento de snapshots."""
 from __future__ import annotations
 
+import asyncio
 import json
 
 import polars as pl
@@ -28,6 +29,7 @@ class AnalyticsView:
         self.export_dir = config.DATA_DIR / "exports"
         self.current_df: pl.DataFrame = pl.DataFrame()
         self._loading = False
+        self._pending = False
 
     # ------------------------------------------------------------------ layout
     def build(self) -> None:
@@ -35,7 +37,11 @@ class AnalyticsView:
             self._build_filters()
             self._build_toolbar()
             self.crumbs = ui.row().classes("items-center gap-1 w-full")
-            self.rules_info = ui.label("").classes("text-xs text-primary")
+            with ui.row().classes("w-full items-center gap-4"):
+                self.rules_info = ui.label("").classes("text-xs text-primary")
+                self.trunc_info = ui.label("").classes("text-xs text-warning")
+                ui.space()
+                self.source_info = ui.label("").classes("text-xs opacity-50")
             self.kpi_row = ui.row().classes("w-full gap-2")
             with ui.splitter(horizontal=True, value=62, limits=(25, 90)).classes("w-full").style(
                     "height: calc(100vh - 330px); min-height: 560px") as sp:
@@ -72,12 +78,12 @@ class AnalyticsView:
                 self.f_comps = ui.select(comps, value=gf.get("competencias") or [], multiple=True,
                                          label="Meses específicos", clearable=True).classes("min-w-[190px]").props(
                     "use-chips")
-                self.f_filiais = ui.select({}, value=gf.get("filiais") or [], multiple=True, with_input=True,
+                self.f_filiais = ui.select({}, value=[], multiple=True, with_input=True,
                                            label="Empresa/Filial (CNPJ/nome)", clearable=True).classes(
                     "min-w-[260px] flex-1").props("use-chips")
-                self.f_uf = ui.select([], value=gf.get("ufs_filial") or [], multiple=True, label="UF filial",
+                self.f_uf = ui.select([], value=[], multiple=True, label="UF filial",
                                       clearable=True).classes("w-32").props("use-chips")
-                self.f_forn = ui.select({}, value=gf.get("fornecedores") or [], multiple=True, with_input=True,
+                self.f_forn = ui.select({}, value=[], multiple=True, with_input=True,
                                         label="Fornecedor (CNPJ/razão)", clearable=True).classes(
                     "min-w-[260px] flex-1").props("use-chips")
             with ui.row().classes("w-full items-end gap-2"):
@@ -85,10 +91,10 @@ class AnalyticsView:
                                        value=";".join(gf.get("raizes_fornecedor") or [])).classes("w-48")
                 self.f_busca_forn = ui.input("Razão social contém", value=gf.get("busca_fornecedor") or "").classes(
                     "w-48")
-                self.f_cfop = ui.select({}, value=gf.get("cfops") or [], multiple=True, with_input=True,
+                self.f_cfop = ui.select({}, value=[], multiple=True, with_input=True,
                                         label="CFOP", clearable=True).classes("min-w-[160px]").props("use-chips")
                 self.f_cfop_pref = ui.input("CFOP inicia", value=gf.get("cfop_prefixo") or "").classes("w-28")
-                self.f_item = ui.select({}, value=gf.get("itens") or [], multiple=True, with_input=True,
+                self.f_item = ui.select({}, value=[], multiple=True, with_input=True,
                                         label="Item (código/descrição)", clearable=True).classes(
                     "min-w-[220px] flex-1").props("use-chips")
                 self.f_busca_item = ui.input("Descrição contém", value=gf.get("busca_item") or "").classes(
@@ -96,7 +102,6 @@ class AnalyticsView:
                 self.f_ncm = ui.input("NCM inicia", value=gf.get("ncm_prefixo") or "").classes("w-28")
                 ui.button("Aplicar", icon="search", on_click=self.apply_filters)
                 ui.button(icon="filter_alt_off", on_click=self.clear_filters).props("flat").tooltip("Limpar filtros")
-        self.reload_filter_options()
 
     def _build_toolbar(self) -> None:
         dims = {k: v[0] for k, v in DIMENSIONS.items()}
@@ -124,26 +129,34 @@ class AnalyticsView:
             ui.button("Congelar análise", icon="ac_unit", on_click=self._snapshot_dialog).props("outline")
 
     # ------------------------------------------------------------------ opções dos filtros
-    def reload_filter_options(self) -> None:
+    def _load_options(self) -> dict:
+        """Consulta as listas dos seletores nas tabelas agregadas (executado em thread)."""
         def opts(col: str, fmt=lambda r: f"{r['v']} — {r['l']}") -> dict:
             try:
                 return {r["v"]: fmt(r) for r in analytics.distinct_values(self.db, col, limit=5000)}
             except Exception:  # noqa: BLE001
                 return {}
-        self.f_filiais.options = opts("filial", lambda r: f"{fmt_cnpj(r['v'])} — {r['l']}")
-        self.f_forn.options = opts("fornecedor", lambda r: f"{fmt_cnpj(r['v'])} — {r['l']}")
-        self.f_cfop.options = opts("cfop", lambda r: r["v"])
-        self.f_item.options = opts("item")
-        self.f_uf.options = sorted(opts("uf_filial", lambda r: r["v"]).keys())
-        comps = self.db.competencias()
+        return {"filial": opts("filial", lambda r: f"{fmt_cnpj(r['v'])} — {r['l']}"),
+                "fornecedor": opts("fornecedor", lambda r: f"{fmt_cnpj(r['v'])} — {r['l']}"),
+                "cfop": opts("cfop", lambda r: r["v"]), "item": opts("item"),
+                "uf": sorted(opts("uf_filial", lambda r: r["v"]).keys()), "comps": self.db.competencias()}
+
+    async def reload_filter_options(self) -> None:
+        o = await run.io_bound(self._load_options)
+        self.f_filiais.options, self.f_forn.options = o["filial"], o["fornecedor"]
+        self.f_cfop.options, self.f_item.options, self.f_uf.options = o["cfop"], o["item"], o["uf"]
+        gf = self.state.global_filters
+        saved = {self.f_filiais: gf.get("filiais"), self.f_forn: gf.get("fornecedores"), self.f_cfop: gf.get("cfops"),
+                 self.f_item: gf.get("itens"), self.f_uf: gf.get("ufs_filial"), self.f_comps: gf.get("competencias"),
+                 self.f_ini: gf.get("comp_ini"), self.f_fim: gf.get("comp_fim")}
         for sel in (self.f_ini, self.f_fim, self.f_comps):
-            sel.options = comps
-        for sel in (self.f_filiais, self.f_forn, self.f_cfop, self.f_item, self.f_uf, self.f_ini, self.f_fim,
-                    self.f_comps):
-            if isinstance(sel.value, list):
-                sel.value = [v for v in sel.value if v in sel.options]
-            elif sel.value not in (sel.options if isinstance(sel.options, list) else sel.options.keys()):
-                sel.value = None
+            sel.options = o["comps"]
+        for sel, val in saved.items():
+            valid = sel.options if isinstance(sel.options, list) else sel.options.keys()
+            if isinstance(sel.value, list) or isinstance(val, list):
+                sel.value = [v for v in (val or sel.value or []) if v in valid]
+            else:
+                sel.value = val if val in valid else None
             sel.update()
 
     def collect_filters(self) -> dict:
@@ -220,6 +233,7 @@ class AnalyticsView:
 
     async def refresh(self) -> None:
         if self._loading:
+            self._pending = True      # um novo pedido chegou durante a consulta: reexecuta ao terminar
             return
         self._loading = True
         try:
@@ -227,41 +241,62 @@ class AnalyticsView:
             path = self.state.path_tuples() if self.state.mode != "plana" else []
             dims = self._level_dims()
             metrics = self.state.metrics
+            kpi_metrics = [k for k, _ in KPIS] + ["n_linhas"]
             try:
+                # grade e indicadores em paralelo; ambos resolvidos pelas tabelas agregadas sempre que possível
                 if self.state.mode == "mensal":
-                    df = await run.io_bound(analytics.monthly_pivot, self.db, gf, rules, dims,
-                                            self.state.pivot_metric, path)
+                    grid_task = run.io_bound(analytics.monthly_pivot, self.db, gf, rules, dims,
+                                             self.state.pivot_metric, path)
                 else:
-                    df = await run.io_bound(analytics.aggregate, self.db, gf, rules, dims, metrics, path)
-                tot = await run.io_bound(analytics.totals, self.db, gf, rules,
-                                         [k for k, _ in KPIS] + ["n_docs", "n_linhas"], path)
+                    grid_task = run.io_bound(analytics.aggregate, self.db, gf, rules, dims, metrics, path)
+                res, tot, tot_grid = await asyncio.gather(
+                    grid_task,
+                    run.io_bound(analytics.totals, self.db, gf, rules, kpi_metrics, path),
+                    run.io_bound(analytics.totals, self.db, gf, rules, metrics, path))
             except FilterError as e:
                 ui.notify(f"Filtro inválido: {e}", type="negative")
                 return
+            df, grid_totals = (res[0], res[1]) if self.state.mode == "mensal" else (res, tot_grid)
             self.current_df = df
-            self._render_grid(df, dims)
+            self._render_grid(df, dims, grid_totals)
             self._render_kpis(tot)
             self._render_crumbs()
             desc = describe_rules(rules)
             self.rules_info.text = (f"Regras ativas{' [' + self.state.applied_filter_name + ']' if self.state.applied_filter_name else ''}: "
                                     f"{desc}") if desc else ""
+            self.source_info.text = "Fonte da consulta: " + analytics.source_for(
+                gf, rules, dims + (["competencia"] if self.state.mode == "mensal" else []),
+                [self.state.pivot_metric] if self.state.mode == "mensal" else metrics, path)
         finally:
             self._loading = False
+        if getattr(self, "_pending", False):
+            self._pending = False
+            await self.refresh()
+            return
+        # contagem de documentos distintos: exige a tabela de itens; roda depois, sem segurar a grade
+        try:
+            n = await run.io_bound(analytics.count_documents, self.db, gf, rules, path)
+            self.kpi_docs.text = f"{n:,}".replace(",", ".")
+        except Exception:  # noqa: BLE001
+            self.kpi_docs.text = "—"
 
-    def _render_grid(self, df: pl.DataFrame, dims: list[str]) -> None:
+    def _render_grid(self, df: pl.DataFrame, dims: list[str], totals: dict | None) -> None:
         pin = sum(1 for c in df.columns if c in dims or c.endswith("__desc"))
         first = df.columns[0] if df.columns else None
-        tot = totals_row(df, first) if df.height else None
-        if tot and first:
-            for c in df.columns:
-                if c.endswith("__desc") or c in dims[1:]:
+        tot = None
+        if df.height and first:
+            # linha de totais com o total REAL do filtro (não a soma das linhas exibidas)
+            tot = {c: (totals or {}).get(c) for c in df.columns if c in (totals or {})}
+            for c in tot:
+                if isinstance(tot[c], str):
                     tot[c] = ""
+            tot[first] = "TOTAL"
         opts = grid_options(df, pin_first=min(pin, 4), totals=tot, extra={"rowHeight": 30, "headerHeight": 36})
         set_grid(self.grid, opts)
-
-        if df.height >= config.UI_MAX_GRID_ROWS:
-            ui.notify(f"Exibindo as {config.UI_MAX_GRID_ROWS:,} maiores linhas; use exportação para o conjunto "
-                      "completo".replace(",", "."), type="info")
+        truncado = df.height >= config.UI_MAX_GRID_ROWS
+        self.trunc_info.text = (f"Exibindo as {config.UI_MAX_GRID_ROWS:,} maiores linhas por valor; a linha TOTAL "
+                                "considera todas. Use Exportar para o conjunto completo.".replace(",", ".")
+                                ) if truncado else ""
 
     def _render_kpis(self, tot: dict) -> None:
         self.kpi_row.clear()
@@ -270,10 +305,12 @@ class AnalyticsView:
                 with ui.card().classes("p-2 flex-1 min-w-[140px]"):
                     ui.label(label).classes("text-xs opacity-70")
                     ui.label(fmt_money(tot.get(k))).classes("text-base font-semibold")
-            with ui.card().classes("p-2 min-w-[120px]"):
+            with ui.card().classes("p-2 min-w-[150px]"):
                 ui.label("Documentos / Linhas").classes("text-xs opacity-70")
-                ui.label(f"{int(tot.get('n_docs') or 0):,} / {int(tot.get('n_linhas') or 0):,}".replace(",", ".")
-                         ).classes("text-base font-semibold")
+                with ui.row().classes("items-baseline gap-1 no-wrap"):
+                    self.kpi_docs = ui.label("…").classes("text-base font-semibold")
+                    ui.label(f"/ {int(tot.get('n_linhas') or 0):,}".replace(",", ".")).classes(
+                        "text-base font-semibold")
 
     def _render_crumbs(self) -> None:
         self.crumbs.clear()

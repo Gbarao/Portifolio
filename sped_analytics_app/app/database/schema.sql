@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS sys_snapshots_analises (
     hash_sha256    VARCHAR       -- integridade do parquet congelado
 );
 
+CREATE TABLE IF NOT EXISTS sys_meta (chave VARCHAR PRIMARY KEY, valor VARCHAR);
+
 CREATE TABLE IF NOT EXISTS sys_sessao (
     chave VARCHAR PRIMARY KEY,
     valor VARCHAR,
@@ -137,7 +139,7 @@ CREATE TABLE IF NOT EXISTS fato_entradas_consolidadas (
     nat_bc_cred               VARCHAR,
     nat_bc_cred_origem        VARCHAR,       -- INFORMADO | DERIVADO_CFOP
     cod_cta                   VARCHAR,
-    qtd                       DECIMAL(20,6),
+    qtd                       DECIMAL(18,5),
     vl_item                   DECIMAL(18,2),
     vl_desc                   DECIMAL(18,2),
     vl_rateio_c190            DECIMAL(18,2), -- diferença rateada para fechar com VL_OPR do C190
@@ -156,8 +158,9 @@ CREATE TABLE IF NOT EXISTS fato_entradas_consolidadas (
     vl_cofins                 DECIMAL(18,2),
     vl_trib_recuperaveis      DECIMAL(18,2),
     vl_custo_liquido          DECIMAL(18,2),
-    nivel_cruzamento_efd      VARCHAR,       -- N1_ITEM | N2_ITEM_CFOP | N3_CONSOLIDADO_C190 | DOC_CHAVE | DOC_NUMERO | EC_EXCLUSIVO
+    nivel_cruzamento_efd      VARCHAR,       -- N1_ITEM | N1V_POSICAO_VALOR | N2_ITEM_CFOP | N3_CONSOLIDADO_C190 | DOC_CHAVE | DOC_NUMERO | EC_EXCLUSIVO | EC_SEM_PAR
     status_efd                VARCHAR,
     flag_item_sintetico       BOOLEAN,
-    flag_sem_c190             BOOLEAN
+    flag_sem_c190             BOOLEAN,
+    doc_key                   BIGINT         -- identificador inteiro do documento (contagem distinta rápida)
 );

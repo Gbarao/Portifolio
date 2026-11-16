@@ -18,7 +18,7 @@ from typing import Any
 
 from app import config
 
-FATO = "fato_entradas_consolidadas"
+from app.database.aggregates import FATO  # noqa: E402
 
 # Catálogo de campos filtráveis: coluna -> (rótulo, tipo)
 FIELDS: dict[str, tuple[str, str]] = {
@@ -86,6 +86,7 @@ FIELDS: dict[str, tuple[str, str]] = {
     "flag_item_sintetico": ("Item Sintético", "bool"),
     "flag_sem_c190": ("Item sem C190", "bool"),
 }
+STATUS_SEM_PAR = "Somente EFD — sem correspondência no SPED Fiscal"
 
 OPERATORS: dict[str, str] = {
     "=": "igual a", "!=": "diferente de", ">": "maior que", ">=": "maior ou igual", "<": "menor que",
@@ -268,6 +269,30 @@ def where_clause(gf: dict | None, rules: dict | None, params: list, extra: list[
             parts.append(f"{expr} = ${len(params)}")
     parts = [p for p in parts if p != "TRUE"]
     return " AND ".join(parts) if parts else "TRUE"
+
+
+_GF_COLUMNS = {
+    "competencias": "competencia", "comp_ini": "competencia", "comp_fim": "competencia", "ano": "competencia",
+    "filiais": "cnpj_filial", "ufs_filial": "uf_filial", "raizes_filial": "raiz_cnpj_filial",
+    "fornecedores": "cnpj_cpf_fornecedor", "raizes_fornecedor": "raiz_cnpj_fornecedor", "cfops": "cfop",
+    "itens": "cod_item_unificado", "ncms": "cod_ncm", "busca_fornecedor": "razao_social_fornecedor",
+    "busca_item": "descr_item", "busca_filial": "nome_filial", "ncm_prefixo": "cod_ncm", "cfop_prefixo": "cfop",
+}
+
+
+def columns_used(gf: dict | None, rules: dict | None) -> set[str]:
+    """Colunas referenciadas pelos filtros globais e pelas regras (para o roteador de tabelas agregadas)."""
+    cols = {_GF_COLUMNS[k] for k, v in (gf or {}).items() if v and k in _GF_COLUMNS}
+
+    def walk(node: dict | None) -> None:
+        if not node:
+            return
+        if "field" in node:
+            cols.add(node["field"])
+        for r in node.get("rules", []) or []:
+            walk(r)
+    walk(rules)
+    return cols
 
 
 def describe_rules(node: dict | None) -> str:

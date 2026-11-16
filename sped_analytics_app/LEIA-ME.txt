@@ -23,7 +23,16 @@ USO
   2. Aba "Análise Consolidada": filtros globais, grade Empresa > Fornecedor > CFOP > Item
      (duplo clique desce um nível; clique simples lista as notas fiscais no painel inferior).
   3. Aba "Filtros & Biblioteca": regras sob demanda, filtros salvos e análises congeladas.
-  4. Aba "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições.
+  4. Aba "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições. Ao carregar os primeiros arquivos
+     reais, clique em "Executar todas" e confira:
+       - "Fechamento": deve ficar em 0 (todo PIS/COFINS da EFD está no totalizador);
+       - "Diagnóstico": mostra quanto casou item a item (N1), por rateio (N2/N3) e quanto ficou sem par.
+
+ATUALIZAÇÃO DE UMA VERSÃO ANTERIOR
+  1. Feche o programa.
+  2. Extraia o novo .zip por cima da pasta antiga (substituindo os arquivos). NÃO apague a subpasta "data".
+  3. Abra normalmente. Na primeira abertura a base consolidada é refeita sozinha a partir dos arquivos já
+     importados (não é preciso importar de novo); em bases grandes isso pode levar alguns minutos.
 
 DADOS
   Tudo fica na subpasta "data" (banco sped_master.duckdb, cache Parquet, filtros, snapshots, exportações).

@@ -35,7 +35,7 @@ FILE_ENCODING = "latin-1"  # leiaute oficial: ISO-8859-1
 # --------------------------------------------------------------------------------------
 UI_HOST = "127.0.0.1"  # nunca expor na rede
 UI_PORT = int(os.environ.get("SPED_UI_PORT", 8765))
-UI_MAX_GRID_ROWS = 50_000  # linhas máximas enviadas à grade (o restante via exportação)
+UI_MAX_GRID_ROWS = int(os.environ.get("SPED_UI_MAX_ROWS", 5_000))  # linhas enviadas à grade (maiores valores)
 UI_MAX_DRILL_ROWS = 5_000
 
 # --------------------------------------------------------------------------------------
@@ -64,6 +64,7 @@ ITEM_SINTETICO_POR_MODELO = {
 }
 ITEM_SINTETICO_C190 = "_SEM_ITEM_C190_"
 
+TOLERANCIA_ITEM = 0.01  # R$ — diferença máxima de VL_ITEM para aceitar o cruzamento item a item (N1)
 TOLERANCIA_DIVERGENCIA = 0.05  # R$ — diferenças abaixo disso não são apontadas na auditoria
 
 

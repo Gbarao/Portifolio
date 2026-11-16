@@ -86,9 +86,12 @@ def build_ui(native: bool) -> None:
             ui.notify(f"Filtro aplicado: {state.applied_filter_name}", type="positive")
             await apply_to_analysis()
 
+        async def reload_analysis() -> None:
+            await views["analytics"].reload_filter_options()
+            await views["analytics"].refresh()
+
         def on_data_changed() -> None:
-            views["analytics"].reload_filter_options()
-            ui.timer(0.05, views["analytics"].refresh, once=True)
+            ui.timer(0.05, reload_analysis, once=True)
             refresh_drawer()
 
         # ---------------- cabeçalho
@@ -157,7 +160,9 @@ def build_ui(native: bool) -> None:
 
         views["analytics"].on_snapshot_saved = after_snapshot
         refresh_drawer()
+        # dados carregados após a página abrir (nada de consulta pesada no construtor da página)
         ui.timer(0.1, views["analytics"].refresh, once=True)
+        ui.timer(0.15, views["analytics"].reload_filter_options, once=True)
 
     ui.run(title="Consolidação Fiscal SPED", host=config.UI_HOST, port=config.UI_PORT, reload=False,
            native=native, window_size=(1600, 960) if native else None, show=not native, dark=None,

@@ -164,14 +164,16 @@ def test_hierarquia_drill_e_documentos(env):
     docs = analytics.documents(db, None, None, path=[("filial", sd.CNPJ_A), ("fornecedor", sd.F_X),
                                                      ("cfop", "1102"), ("item", "P1")])
     assert docs.height == 2 and all(len(c) == 44 for c in docs["chave"].to_list())
-    piv = analytics.monthly_pivot(db, None, None, ["filial"], "vl_contabil")
+    piv, tot = analytics.monthly_pivot(db, None, None, ["filial"], "vl_contabil")
     assert {"2024-01", "2024-02", "TOTAL"} <= set(piv.columns)
+    assert abs(tot["TOTAL"] - float(piv["TOTAL"].sum())) < 0.005
 
 
 def test_auditoria(env):
     db = env["db"]
     res = {r["verificacao"]: r["ocorrencias"] for r in audit.summary(db)}
-    assert all(isinstance(v, int) for v in res.values()), res
+    assert all(isinstance(v, int) for k, v in res.items() if k not in audit.INFORMATIVE), res
+    assert res["fechamento_efd"] == 0 and res["efd_sem_par"] == 0
     # filial B: P2 (insumo) com crédito de ICMS e sem PIS/COFINS
     df = audit.run_check(db, "credito_icms_sem_pis")
     assert sd.CNPJ_B in df["cnpj_filial"].to_list()

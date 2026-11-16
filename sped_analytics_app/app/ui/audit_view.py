@@ -42,10 +42,12 @@ class AuditView:
         with self.cards:
             for k, label in audit.CHECKS.items():
                 n = counts.get(k)
-                color = "positive" if n == 0 else ("negative" if isinstance(n, int) and n > 0 else "grey")
+                info = k in audit.INFORMATIVE
+                color = "info" if info else ("positive" if n == 0 else
+                                             ("negative" if isinstance(n, int) and n > 0 else "grey"))
                 with ui.card().classes("p-3 w-[300px] cursor-pointer").on("click", lambda k=k: self.open_check(k)):
                     with ui.row().classes("items-center no-wrap gap-2"):
-                        ui.badge("—" if n is None else str(n), color=color)
+                        ui.badge("i" if info else ("—" if n is None else str(n)), color=color)
                         ui.label(label).classes("text-sm")
 
     async def run_all(self) -> None:
@@ -61,7 +63,8 @@ class AuditView:
         df = await run.io_bound(audit.run_check, self.db, k, self.state.global_filters, float(self.tol.value or 0))
         self.current, self.df = k, df
         self.title.text = f"{audit.CHECKS[k]} — {df.height} ocorrência(s)"
-        set_grid(self.grid, grid_options(df, pin_first=2, totals=totals_row(df, df.columns[0]) if df.height else None))
+        tot = totals_row(df, df.columns[0]) if df.height and k not in audit.INFORMATIVE else None
+        set_grid(self.grid, grid_options(df, pin_first=2, totals=tot))
 
 
     async def export_one(self) -> None:

@@ -35,6 +35,7 @@ class AppState:
     path: list[list] = field(default_factory=list)   # [[dim, valor, rótulo], ...]
     tab: str = "analise"
     applied_filter_name: str = ""
+    v: int = 2                    # versão do estado salvo
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -49,6 +50,13 @@ class AppState:
                 setattr(s, k, v)
         s.hierarchy = [h for h in s.hierarchy if h in DIMENSIONS] or list(DEFAULT_HIERARCHY)
         s.metrics = [m for m in s.metrics if m in METRICS] or list(DEFAULT_METRICS)
+        if (d.get("v") or 1) < 2:
+            # v2: a contagem de documentos saiu das colunas padrão (ela força a leitura linha a linha);
+            # o indicador "Documentos" continua no topo, calculado à parte.
+            s.metrics = [m for m in s.metrics if m != "n_docs"]
+            if "n_linhas" not in s.metrics:
+                s.metrics.append("n_linhas")
+        s.v = 2
         return s
 
     def path_tuples(self) -> list[tuple[str, Any]]:
@@ -90,7 +98,11 @@ def label_for(col: str) -> str:
             "documentos": "Docs. Entrada", "linhas": "Linhas", "tamanho_mb": "Tamanho (MB)",
             "data_importacao": "Importado em", "ativo": "Ativo", "substituido_por": "Substituído por",
             "caminho_origem": "Caminho de origem", "data": "Data", "acao": "Ação", "arquivo": "Arquivo",
-            "mensagem": "Mensagem", "comp_efd": "Competência EFD"}.get(col, col)
+            "mensagem": "Mensagem", "comp_efd": "Competência EFD", "nivel": "Nível de Cruzamento",
+            "pis_efd": "PIS na EFD", "pis_totalizador": "PIS no Totalizador", "dif_pis": "Diferença PIS",
+            "cofins_efd": "COFINS na EFD", "cofins_totalizador": "COFINS no Totalizador",
+            "dif_cofins": "Diferença COFINS", "dif_bc_pis": "Diferença BC PIS", "dif_bc_cofins": "Diferença BC COFINS",
+            "pct_linhas": "% das Linhas", "pct_pis": "% do PIS", "num_item": "Nº Item"}.get(col, col)
 
 
 def col_defs(df: pl.DataFrame, pin_first: int = 0, hide: set[str] | None = None) -> list[dict]:
@@ -103,7 +115,7 @@ def col_defs(df: pl.DataFrame, pin_first: int = 0, hide: set[str] | None = None)
             d["hide"] = True
         kind = METRICS.get(c, (None, None, None))[2]
         if t.is_numeric() or isinstance(t, pl.Decimal):
-            if kind in ("qty", "price") or c.startswith(("qtd", "aliq", "preco")):
+            if kind in ("qty", "price") or c.startswith(("qtd", "aliq", "preco", "pct_")):
                 d[":valueFormatter"] = JS_QTY
             elif kind == "int" or t.is_integer():
                 d[":valueFormatter"] = JS_INT
@@ -151,7 +163,7 @@ def totals_row(df: pl.DataFrame, label_col: str | None = None) -> dict:
     row: dict[str, Any] = {}
     for c, t in zip(df.columns, df.dtypes):
         if (t.is_numeric() or isinstance(t, pl.Decimal)) and c not in ("preco_medio", "file_id", "doc_id", "num_item"):
-            if c.startswith("aliq"):
+            if c.startswith(("aliq", "pct_")):
                 continue
             row[c] = float(df[c].cast(pl.Float64).sum() or 0)
     if "preco_medio" in df.columns and "qtd" in df.columns and "vl_item" in df.columns:

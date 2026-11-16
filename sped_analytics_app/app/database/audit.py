@@ -11,14 +11,19 @@ _IPI = ", ".join(f"'{c}'" for c in config.CST_IPI_CREDITO)
 _INSUMO = ", ".join(f"'{c}'" for c in config.TIPO_ITEM_INSUMO_REVENDA)
 
 CHECKS = {
+    "fechamento_efd": "Fechamento: PIS/COFINS da EFD-Contribuições x totalizador (deve ser zero)",
+    "efd_sem_par": "Créditos somente na EFD-Contribuições (sem correspondência no SPED Fiscal)",
     "valor_documento": "Notas com diferença de Valor do Documento / Mercadoria (C100 SF x C100 EFD)",
-    "valor_item": "Itens com diferença de Valor do Item (C170 SF x C170 EFD, mesmo NUM_ITEM)",
+    "valor_item": "Itens na mesma posição (NUM_ITEM) com código, CFOP ou valor diferente (C170 SF x EFD)",
     "credito_icms_sem_pis": "Insumo/revenda com crédito de ICMS/IPI e sem crédito de PIS/COFINS",
     "credito_pis_sem_icms": "Insumo/revenda com crédito de PIS/COFINS e sem crédito de ICMS/IPI",
     "cst_divergente_filiais": "Mesmo item + CFOP com CST diferente entre filiais",
     "ec_sem_sf": "NF de entrada na EFD-Contribuições ausente no SPED Fiscal",
     "item_sem_c190": "Itens C170 sem registro analítico C190 correspondente (CST/CFOP/alíquota)",
+    "qualidade_cruzamento": "Diagnóstico: distribuição das linhas por nível de cruzamento (informativo)",
 }
+INFORMATIVE = {"qualidade_cruzamento"}   # não são divergências; servem para avaliar a qualidade do cruzamento
+_SIT = ", ".join(f"'{c}'" for c in config.COD_SIT_EXCLUIDOS)
 
 
 def _scope_where(gf: dict | None, params: list, alias: str = "") -> str:
@@ -154,6 +159,83 @@ def run_check(db, check: str, gf: dict | None = None, tol: float = config.TOLERA
                    CAST(aliq_icms AS DOUBLE) AS aliq_icms, CAST(vl_item AS DOUBLE) AS vl_item,
                    CAST(vl_contabil AS DOUBLE) AS vl_contabil
             FROM {FATO} WHERE {w} AND flag_sem_c190 ORDER BY vl_item DESC"""
+    elif check == "fechamento_efd":
+        # Prova de que nenhum centavo de PIS/COFINS da EFD some ou duplica: soma dos registros brutos
+        # (C170, A170, C501/C505, D101/D105, D501/D505, C191/C195, F100/F120/F130) x soma na tabela fato,
+        # por competência da EFD e estabelecimento.
+        w = _scope_where(gf, params, "k")
+        sql = f"""
+            WITH docs AS (
+                SELECT d.file_id, d.doc_id, d.cnpj_filial, a.competencia
+                FROM ec_doc d JOIN sys_arquivos_importados a ON a.id_arquivo = d.file_id AND a.ativo
+                WHERE coalesce(d.cod_sit, '00') NOT IN ({_SIT})
+            ), bruto AS (
+                SELECT d.competencia, d.cnpj_filial, sum(i.vl_bc_pis) AS bp, sum(i.vl_pis) AS p,
+                       sum(i.vl_bc_cofins) AS bc, sum(i.vl_cofins) AS c
+                FROM ec_item i JOIN docs d ON d.file_id = i.file_id AND d.doc_id = i.doc_id GROUP BY ALL
+                UNION ALL
+                SELECT d.competencia, d.cnpj_filial, sum(t.vl_bc) FILTER (WHERE t.tributo = 'PIS'),
+                       sum(t.vl) FILTER (WHERE t.tributo = 'PIS'), sum(t.vl_bc) FILTER (WHERE t.tributo = 'COFINS'),
+                       sum(t.vl) FILTER (WHERE t.tributo = 'COFINS')
+                FROM ec_doc_trib t JOIN docs d ON d.file_id = t.file_id AND d.doc_id = t.doc_id GROUP BY ALL
+                UNION ALL
+                SELECT a.competencia, c.cnpj_filial, sum(x.vl_bc) FILTER (WHERE x.tributo = 'PIS'),
+                       sum(x.vl) FILTER (WHERE x.tributo = 'PIS'), sum(x.vl_bc) FILTER (WHERE x.tributo = 'COFINS'),
+                       sum(x.vl) FILTER (WHERE x.tributo = 'COFINS')
+                FROM ec_c191_195 x JOIN ec_c190 c ON c.file_id = x.file_id AND c.c190_id = x.c190_id
+                JOIN sys_arquivos_importados a ON a.id_arquivo = c.file_id AND a.ativo GROUP BY ALL
+                UNION ALL
+                SELECT a.competencia, f.cnpj_filial, sum(f.vl_bc_pis), sum(f.vl_pis), sum(f.vl_bc_cofins),
+                       sum(f.vl_cofins)
+                FROM ec_f f JOIN sys_arquivos_importados a ON a.id_arquivo = f.file_id AND a.ativo GROUP BY ALL
+            ), e AS (
+                SELECT competencia, cnpj_filial, coalesce(sum(bp), 0) AS bp, coalesce(sum(p), 0) AS p,
+                       coalesce(sum(bc), 0) AS bc, coalesce(sum(c), 0) AS c
+                FROM bruto GROUP BY ALL
+            ), f AS (
+                SELECT coalesce(a.competencia, t.competencia) AS competencia, t.cnpj_filial,
+                       coalesce(sum(t.vl_bc_pis), 0) AS bp, coalesce(sum(t.vl_pis), 0) AS p,
+                       coalesce(sum(t.vl_bc_cofins), 0) AS bc, coalesce(sum(t.vl_cofins), 0) AS c
+                FROM {FATO} t LEFT JOIN sys_arquivos_importados a ON a.id_arquivo = t.file_id_ec
+                WHERE t.nivel_cruzamento_efd IS NOT NULL GROUP BY ALL
+            ), k AS (
+                SELECT coalesce(e.competencia, f.competencia) AS competencia,
+                       coalesce(e.cnpj_filial, f.cnpj_filial) AS cnpj_filial,
+                       CAST(coalesce(e.p, 0) AS DOUBLE) AS pis_efd, CAST(coalesce(f.p, 0) AS DOUBLE) AS pis_totalizador,
+                       CAST(coalesce(e.p, 0) - coalesce(f.p, 0) AS DOUBLE) AS dif_pis,
+                       CAST(coalesce(e.c, 0) AS DOUBLE) AS cofins_efd,
+                       CAST(coalesce(f.c, 0) AS DOUBLE) AS cofins_totalizador,
+                       CAST(coalesce(e.c, 0) - coalesce(f.c, 0) AS DOUBLE) AS dif_cofins,
+                       CAST(coalesce(e.bp, 0) - coalesce(f.bp, 0) AS DOUBLE) AS dif_bc_pis,
+                       CAST(coalesce(e.bc, 0) - coalesce(f.bc, 0) AS DOUBLE) AS dif_bc_cofins
+                FROM e FULL JOIN f ON f.competencia = e.competencia AND f.cnpj_filial IS NOT DISTINCT FROM e.cnpj_filial
+            )
+            SELECT * FROM k
+            WHERE {w} AND (dif_pis <> 0 OR dif_cofins <> 0 OR dif_bc_pis <> 0 OR dif_bc_cofins <> 0)
+            ORDER BY abs(dif_pis) + abs(dif_cofins) DESC"""
+    elif check == "efd_sem_par":
+        w = global_filters_sql(gf, params)
+        sql = f"""
+            SELECT competencia, cnpj_filial, nome_filial, origem, reg_doc, num_doc, serie, dt_doc, chave,
+                   cnpj_cpf_fornecedor, razao_social_fornecedor, num_item, cod_item, descr_item, cfop, cst_pis,
+                   CAST(vl_bc_pis AS DOUBLE) AS vl_bc_pis, CAST(vl_pis AS DOUBLE) AS vl_pis, cst_cofins,
+                   CAST(vl_bc_cofins AS DOUBLE) AS vl_bc_cofins, CAST(vl_cofins AS DOUBLE) AS vl_cofins
+            FROM {FATO} WHERE {w} AND nivel_cruzamento_efd = 'EC_SEM_PAR'
+            ORDER BY coalesce(vl_pis, 0) + coalesce(vl_cofins, 0) DESC"""
+    elif check == "qualidade_cruzamento":
+        w = global_filters_sql(gf, params)
+        sql = f"""
+            WITH b AS (
+                SELECT competencia, cnpj_filial, max(nome_filial) AS nome_filial,
+                       coalesce(nivel_cruzamento_efd, 'SEM_CREDITO') AS nivel, max(status_efd) AS status_efd,
+                       CAST(sum(n_linhas) AS BIGINT) AS linhas, CAST(sum(vl_contabil) AS DOUBLE) AS vl_contabil,
+                       CAST(sum(vl_pis) AS DOUBLE) AS vl_pis, CAST(sum(vl_cofins) AS DOUBLE) AS vl_cofins
+                FROM agg_filial WHERE {w} GROUP BY competencia, cnpj_filial, coalesce(nivel_cruzamento_efd, 'SEM_CREDITO')
+            )
+            SELECT *, round(100.0 * linhas / sum(linhas) OVER (PARTITION BY competencia, cnpj_filial), 2) AS pct_linhas,
+                   round(100.0 * coalesce(vl_pis, 0) / nullif(sum(vl_pis) OVER (PARTITION BY competencia, cnpj_filial), 0),
+                         2) AS pct_pis
+            FROM b ORDER BY competencia, cnpj_filial, linhas DESC"""
     else:
         raise ValueError(f"Verificação desconhecida: {check}")
     return db.query(sql + f" LIMIT {int(limit)}", params)
@@ -162,6 +244,9 @@ def run_check(db, check: str, gf: dict | None = None, tol: float = config.TOLERA
 def summary(db, gf: dict | None = None) -> list[dict]:
     out = []
     for k, label in CHECKS.items():
+        if k in INFORMATIVE:
+            out.append({"verificacao": k, "descricao": label, "ocorrencias": None})
+            continue
         try:
             n = run_check(db, k, gf, limit=100_000).height
         except Exception as e:  # noqa: BLE001

@@ -21,6 +21,7 @@ import duckdb
 import polars as pl
 
 from app import config
+from app.database import aggregates
 from app.parser import detector, efd_contrib, sped_fiscal
 from app.parser.normalizer import SCHEMAS
 
@@ -106,8 +107,11 @@ class SpedDatabase:
         self.parquet_dir = Path(parquet_dir or config.PARQUET_DIR)
         self.parquet_dir.mkdir(parents=True, exist_ok=True)
         self.write_lock = threading.RLock()
+        self.needs_rebuild = False
         self.con = self._connect()
         self._init_schema()
+        if self.needs_rebuild:
+            self._upgrade_rebuild()
 
     # ------------------------------------------------------------------ conexão
     def _connect(self) -> duckdb.DuckDBPyConnection:
@@ -130,7 +134,20 @@ class SpedDatabase:
 
     def _init_schema(self) -> None:
         with self.write_lock:
+            # Versão da tabela fato: dado derivado. Se o esquema/lógica mudou, descarta e reconsolida dos brutos.
+            self.con.execute("CREATE TABLE IF NOT EXISTS sys_meta (chave VARCHAR PRIMARY KEY, valor VARCHAR)")
+            ver = self.con.execute("SELECT valor FROM sys_meta WHERE chave = 'fato_version'").fetchone()
+            has_fato = self.con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = ?",
+                                        [aggregates.FATO]).fetchone()[0] > 0
+            if has_fato and (ver is None or ver[0] != aggregates.FATO_VERSION):
+                for name, _, _ in aggregates.AGGREGATES:
+                    self.con.execute(f"DROP TABLE IF EXISTS {name}")
+                self.con.execute(f"DROP TABLE {aggregates.FATO}")
+                self.needs_rebuild = True
             self.con.execute((_HERE / "schema.sql").read_text(encoding="utf-8"))
+            for stmt in aggregates.ddl():
+                self.con.execute(stmt)
+            self.con.execute("INSERT OR REPLACE INTO sys_meta VALUES ('fato_version', ?)", [aggregates.FATO_VERSION])
             for t, cols in SCHEMAS.items():
                 ddl = ", ".join(f"{c} {_SQL_TYPES[ty]}" for c, ty in cols)
                 self.con.execute(f"CREATE TABLE IF NOT EXISTS {t} ({ddl})")
@@ -138,6 +155,22 @@ class SpedDatabase:
             self.con.executemany("INSERT OR IGNORE INTO ref_item_sintetico VALUES (?, ?)",
                                  list(config.ITEM_SINTETICO_POR_MODELO.items()))
             self.con.executemany("INSERT OR IGNORE INTO ref_cfop_nat_bc_cred VALUES (?, ?)", NAT_BC_CRED_DEFAULT)
+
+    def _upgrade_rebuild(self) -> None:
+        self.needs_rebuild = False
+        if self.con.execute("SELECT count(*) FROM sys_arquivos_importados WHERE ativo").fetchone()[0] == 0:
+            return
+        msg = "Base de versão anterior detectada: reconsolidando com o novo motor de cruzamento..."
+        log.warning(msg)
+        print(msg, flush=True)
+        r = self.rebuild_fato(None)
+        print(f"Reconsolidação concluída: {r['linhas']} linhas em {r['segundos']:.1f}s", flush=True)
+
+    def _linked_competencias(self, file_id: int) -> list[str]:
+        """Competências cujas linhas consolidadas dependem do arquivo (inclui vínculos entre períodos)."""
+        return [r[0] for r in self.con.execute(
+            f"SELECT DISTINCT competencia FROM {aggregates.FATO} WHERE file_id_sf = ? OR file_id_ec = ?",
+            [file_id, file_id]).fetchall()]
 
     # ------------------------------------------------------------------ util
     def query(self, sql: str, params: list | tuple | None = None):
@@ -238,8 +271,7 @@ class SpedDatabase:
         self._finish_log(summary)
         if reconsolidar and affected:
             prog("Consolidando SPED Fiscal x EFD-Contribuições...", 0.88)
-            self.rebuild_fato(sorted(affected))
-            summary.competencias_reconsolidadas = sorted(affected)
+            summary.competencias_reconsolidadas = self.rebuild_fato(sorted(affected))["competencias"]
         prog("Concluído", 1.0)
         summary.segundos = time.perf_counter() - t0
         return summary
@@ -318,6 +350,8 @@ class SpedDatabase:
     def _load_file(self, h: dict, counts: dict) -> None:
         fid, tipo = h["file_id"], h["tipo"]
         with self.write_lock:
+            for old in h.get("replace_ids", []):
+                h.setdefault("replace_comps", []).extend(self._linked_competencias(old))
             self.con.execute("BEGIN TRANSACTION")
             try:
                 for old in h.get("replace_ids", []):
@@ -353,7 +387,8 @@ class SpedDatabase:
         sql = (sql.replace("{{COD_SIT_EXCL}}", q(config.COD_SIT_EXCLUIDOS))
                   .replace("{{CST_CRED}}", q(config.CST_PIS_COFINS_CREDITO))
                   .replace("{{CST_IPI_CRED}}", q(config.CST_IPI_CREDITO))
-                  .replace("{{ITEM_SINT_C190}}", config.ITEM_SINTETICO_C190))
+                  .replace("{{ITEM_SINT_C190}}", config.ITEM_SINTETICO_C190)
+                  .replace("{{TOL_ITEM}}", repr(float(config.TOLERANCIA_ITEM))))
         m = re.search(r"-- @template alocar\n(.*?)-- @endtemplate\n", sql, re.S)
         template = m.group(1)
         sql = sql[:m.start()] + sql[m.end():]
@@ -375,11 +410,37 @@ class SpedDatabase:
                 buf.append(line)
         if "".join(buf).strip():
             steps.append((name, "".join(buf)))
-        return steps
+        return steps + aggregates.refresh_steps()
+
+    _CLOSURE_SQL = """
+        INSERT INTO _scope
+        SELECT DISTINCT x.competencia FROM (
+            SELECT a2.competencia
+            FROM ec_doc e
+            JOIN sys_arquivos_importados a1 ON a1.id_arquivo = e.file_id AND a1.ativo
+            JOIN _scope s ON s.competencia = a1.competencia
+            JOIN sf_doc d ON d.chave = e.chave
+            JOIN sys_arquivos_importados a2 ON a2.id_arquivo = d.file_id AND a2.ativo AND a2.cnpj = e.cnpj_filial
+            WHERE e.chave IS NOT NULL
+            UNION
+            SELECT a1.competencia
+            FROM sf_doc d
+            JOIN sys_arquivos_importados a2 ON a2.id_arquivo = d.file_id AND a2.ativo
+            JOIN _scope s ON s.competencia = a2.competencia
+            JOIN ec_doc e ON e.chave = d.chave AND e.cnpj_filial = a2.cnpj
+            JOIN sys_arquivos_importados a1 ON a1.id_arquivo = e.file_id AND a1.ativo
+            WHERE d.chave IS NOT NULL
+        ) x WHERE x.competencia NOT IN (SELECT competencia FROM _scope)
+        RETURNING competencia"""
 
     def rebuild_fato(self, competencias: list[str] | None = None,
                      progress: Callable[[str, float], None] | None = None) -> dict:
-        """(Re)consolida a tabela fato para as competências informadas (None = todas)."""
+        """(Re)consolida a tabela fato e as agregadas para as competências informadas (None = todas).
+
+        O escopo é expandido para as competências ligadas pela chave do documento (nota escriturada em meses
+        diferentes no SPED Fiscal e na EFD-Contribuições), de modo que o vínculo 1:1 e a regra "nada some,
+        nada duplica" valham também entre períodos.
+        """
         prog = progress or (lambda msg, frac: None)
         t0 = time.perf_counter()
         with self.write_lock:
@@ -388,10 +449,15 @@ class SpedDatabase:
                 cur.execute("CREATE OR REPLACE TEMP TABLE _scope (competencia VARCHAR)")
                 if competencias is None:
                     cur.execute("INSERT INTO _scope SELECT DISTINCT competencia FROM sys_arquivos_importados "
-                                "UNION SELECT DISTINCT competencia FROM fato_entradas_consolidadas")
+                                f"UNION SELECT DISTINCT competencia FROM {aggregates.FATO}")
                 else:
-                    cur.executemany("INSERT INTO _scope VALUES (?)", [[c] for c in competencias])
+                    cur.executemany("INSERT INTO _scope VALUES (?)", [[c] for c in sorted(set(competencias))])
+                    for _ in range(6):  # fecho transitivo (na prática converge em 1 passo)
+                        if not cur.execute(self._CLOSURE_SQL).fetchall():
+                            break
+                scope = [r[0] for r in cur.execute("SELECT competencia FROM _scope ORDER BY 1").fetchall()]
                 steps = self._consolidation_steps()
+                cur.execute("SET preserve_insertion_order = true")  # mantém a ordenação física da carga
                 cur.execute("BEGIN TRANSACTION")
                 try:
                     for i, (name, sql) in enumerate(steps, 1):
@@ -404,11 +470,13 @@ class SpedDatabase:
                 except Exception:
                     cur.execute("ROLLBACK")
                     raise
-                n = cur.execute("SELECT count(*) FROM fato_entradas_consolidadas WHERE competencia IN "
+                finally:
+                    cur.execute("SET preserve_insertion_order = false")
+                n = cur.execute(f"SELECT count(*) FROM {aggregates.FATO} WHERE competencia IN "
                                 "(SELECT competencia FROM _scope)").fetchone()[0]
             finally:
                 cur.close()
-        return {"linhas": n, "segundos": time.perf_counter() - t0}
+        return {"linhas": n, "segundos": time.perf_counter() - t0, "competencias": scope}
 
     # ------------------------------------------------------------------ gestão da base
     def list_files(self, somente_ativos: bool = True):
@@ -435,6 +503,7 @@ class SpedDatabase:
                 if not row:
                     continue
                 tipo, comp, path = row
+                comps.update(self._linked_competencias(fid))
                 self.con.execute("BEGIN TRANSACTION")
                 try:
                     self._delete_raw(fid, tipo)
@@ -447,7 +516,7 @@ class SpedDatabase:
                 self._drop_parquet(fid, tipo)
                 comps.add(comp)
         if reconsolidar and comps:
-            self.rebuild_fato(sorted(comps))
+            return self.rebuild_fato(sorted(comps))["competencias"]
         return sorted(comps)
 
     def remove_competencias(self, competencias: list[str], tipo: str | None = None,
@@ -495,9 +564,9 @@ class SpedDatabase:
                 (SELECT count(*) FROM sys_arquivos_importados WHERE ativo),
                 (SELECT count(*) FROM sys_arquivos_importados WHERE ativo AND tipo_sped='ICMS_IPI'),
                 (SELECT count(*) FROM sys_arquivos_importados WHERE ativo AND tipo_sped='CONTRIB'),
-                (SELECT count(*) FROM fato_entradas_consolidadas),
-                (SELECT count(DISTINCT cnpj_filial) FROM fato_entradas_consolidadas),
-                (SELECT count(DISTINCT competencia) FROM fato_entradas_consolidadas)""").fetchone()
+                (SELECT coalesce(sum(n_linhas), 0) FROM agg_filial),
+                (SELECT count(DISTINCT cnpj_filial) FROM agg_filial),
+                (SELECT count(DISTINCT competencia) FROM agg_filial)""").fetchone()
         finally:
             cur.close()
         size = self.db_path.stat().st_size if self.db_path.exists() else 0

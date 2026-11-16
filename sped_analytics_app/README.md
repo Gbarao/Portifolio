@@ -35,6 +35,7 @@ Variáveis de ambiente opcionais:
 | `SPED_PARSER_WORKERS` | número de processos de leitura (padrão: núcleos − 1) |
 | `SPED_DUCKDB_MEMORY` | teto de RAM do DuckDB (padrão `60%`; acima disso o DuckDB usa disco) |
 | `SPED_UI_PORT` | porta local da interface (padrão 8765) |
+| `SPED_UI_MAX_ROWS` | linhas enviadas à grade (padrão 5.000, as maiores por valor; a linha TOTAL considera todas) |
 
 ## Arquitetura
 
@@ -46,7 +47,8 @@ Variáveis de ambiente opcionais:
 | Banco | `database/engine.py`: DuckDB em arquivo único (`data/sped_master.duckdb`), carga transacional por arquivo, deduplicação e retificadoras |
 | Consolidação | `database/queries_join.sql`: SQL em etapas (`-- @step`) com um template genérico de rateio (`-- @template alocar`) |
 | Filtros | `database/filter_builder.py`: regras JSON convertidas em SQL parametrizado, com whitelist de colunas e operadores |
-| Análise | `database/analytics.py` (agregação multinível, mês a mês, drill-down) e `database/audit.py` (divergências) |
+| Agregadas | `database/aggregates.py`: quatro tabelas pré-somadas (`agg_filial`, `agg_fornecedor`, `agg_produto`, `agg_item`) e o roteador que escolhe a menor capaz de responder cada consulta |
+| Análise | `database/analytics.py` (agregação multinível, mês a mês, drill-down) e `database/audit.py` (divergências e fechamento) |
 | Interface | NiceGUI + AG Grid Community (`ui/*.py`), com tema claro/escuro |
 | Exportação | `exporter/excel_writer.py`: XLSX em streaming (divide em abas acima de 1.048.575 linhas), CSV no padrão BR (`;` e vírgula decimal) e Parquet |
 
@@ -68,15 +70,28 @@ Variáveis de ambiente opcionais:
    A soma por documento fecha 100% com o C190 (há teste automatizado). O FCP do C191 é rateado da mesma forma.
    - Sem C170 no SPED Fiscal (Exceção 2): os itens vêm do C170 da EFD-Contribuições, localizados pela chave da NF-e.
    - Sem itens em nenhum dos dois arquivos: é gerado o item sintético `_SEM_ITEM_C190_` com os valores do C190.
-6. **Cascata de cruzamento de PIS/COFINS** (coluna `nivel_cruzamento_efd`):
-   - `N1_ITEM`: CNPJ filial + CHV_NFE + NUM_ITEM.
-   - `N2_ITEM_CFOP`: CNPJ filial + CHV_NFE + COD_ITEM + CFOP, com rateio do saldo não usado no N1.
-   - `N3_CONSOLIDADO_C190`: CNPJ filial + competência + CNPJ fornecedor + CFOP + COD_ITEM (C190 com C191/C195).
-   - `DOC_CHAVE` / `DOC_NUMERO`: C500, D100, D500 e D700 contra C501/C505, D101/D105 e D501/D505, pela chave ou, na
-     falta dela, por fornecedor + número + série na mesma competência.
+6. **Cruzamento de PIS/COFINS** (coluna `nivel_cruzamento_efd`). Primeiro os documentos são vinculados, sempre
+   1:1: pela chave do documento eletrônico (em qualquer competência) ou, sem chave em um dos lados, por filial +
+   competência + CNPJ do fornecedor + modelo + série + número. Depois, dentro do documento vinculado:
+   - `N1_ITEM`: mesma posição (`NUM_ITEM`) **e** mesmo `COD_ITEM` **e** mesmo `VL_ITEM` (tolerância de R$ 0,01).
+   - `N1V_POSICAO_VALOR`: mesma posição, mesmo valor e mesmo CFOP, com código de item diferente entre os arquivos.
+   - `N2_ITEM_CFOP`: `COD_ITEM` + CFOP. Os itens da EFD ainda não usados formam um saldo por chave, rateado entre
+     as linhas do SPED Fiscal da mesma chave. É o caminho de quem tem numeração de itens diferente nos dois arquivos.
+   - `N3_CONSOLIDADO_C190`: filial + competência + CNPJ fornecedor + CFOP + `COD_ITEM` (C190 com C191/C195).
+   - `DOC_CHAVE` / `DOC_NUMERO`: C500, D100, D500 e D700 contra C501/C505, D101/D105 e D501/D505.
    - `EC_EXCLUSIVO`: A100/A170 (CFOP `SERV`), F100 (CFOP `OUTROS`), F120/F130 (crédito sobre ativo; valor contábil 0
-     para não duplicar a NF de aquisição do bem). Também entram os documentos de filial/competência sem SPED Fiscal
-     carregado.
+     para não duplicar a NF de aquisição do bem) e documentos de filial/competência sem SPED Fiscal carregado.
+   - `EC_SEM_PAR`: há SPED Fiscal da filial no período, mas o item, documento ou consolidação da EFD não encontrou
+     correspondência. Entra como linha "Somente EFD", com valor contábil zero e todo o PIS/COFINS.
+
+   Garantias, cobertas por testes automatizados:
+   - **Nada some**: todo PIS/COFINS da EFD termina em exatamente uma linha do totalizador. A auditoria
+     "Fechamento" compara os registros brutos da EFD com o totalizador, por competência e filial.
+   - **Nada duplica**: um documento ou item da EFD nunca alimenta duas linhas do SPED Fiscal (por exemplo, quando a
+     mesma chave aparece duas vezes no SPED Fiscal, só a primeira recebe o crédito).
+   - **Nada vai para o item errado**: a posição do item sozinha não basta para casar.
+   - **Coerência entre períodos**: quando a mesma nota está em meses diferentes nos dois arquivos, os dois meses
+     são reconsolidados juntos, inclusive ao substituir ou remover um arquivo.
 7. **Itens sintéticos por modelo** (configuráveis em `config.py`): `_ENERGIA_` (06/66), `_AGUA_` (29), `_GAS_` (28),
    `_TELECOM_` (21/22/62) e `_FRETE_CTE_` (57/67 e demais modelos de transporte).
 8. **Exclusões.** Documentos cancelados, denegados ou inutilizados (`COD_SIT` 02, 03, 04 e 05) e todas as saídas.
@@ -92,7 +107,9 @@ Os CSTs considerados estão em `config.py`.
 | Estrutura | Conteúdo |
 |---|---|
 | `sys_arquivos_importados` | ID, SHA-256, tipo, CNPJ, competência, finalidade, data, ativo e `substituido_por` |
-| `fato_entradas_consolidadas` | tabela fato com todas as chaves, valores e tributos |
+| `fato_entradas_consolidadas` | tabela fato com todas as chaves, valores e tributos, gravada em ordem de filial/fornecedor/item |
+| `agg_filial`, `agg_fornecedor`, `agg_produto`, `agg_item` | resumos pré-somados da fato, atualizados por competência a cada consolidação |
+| `sys_meta` | versão da fato; ao abrir uma base de versão anterior, a fato é recriada e reconsolidada sozinha a partir dos dados brutos |
 | `sys_filtros_salvos` + `data/user_presets.json` | biblioteca de filtros (espelho em JSON) |
 | `sys_snapshots_analises` + `data/snapshots/*.parquet` | análises congeladas, somente leitura, com hash de integridade |
 | `sys_sessao` | último estado da tela (filtros, hierarquia, aba, tema), restaurado ao reabrir |
@@ -120,14 +137,18 @@ Regras de proteção na importação:
 3. **Filtros & Biblioteca**: construtor de regras com E/OU e grupos aninhados, sobre qualquer coluna da fato.
    Permite testar (contagem e valor), aplicar e salvar por categoria, e oferece a biblioteca com aplicação em 1 clique
    e a lista de snapshots. O menu lateral (☰) dá acesso rápido aos mesmos itens.
-4. **Auditoria**: sete verificações, exportáveis em uma pasta de trabalho:
+4. **Auditoria**: verificações exportáveis em uma pasta de trabalho:
+   - **fechamento**: PIS/COFINS dos registros brutos da EFD × totalizador (deve ser sempre zero);
+   - créditos somente na EFD (linhas `EC_SEM_PAR`);
    - diferença de valor do documento entre SF e EFD;
-   - diferença de valor do item entre SF e EFD;
-   - crédito de ICMS/IPI sem crédito de PIS/COFINS;
-   - crédito de PIS/COFINS sem crédito de ICMS/IPI;
+   - itens na mesma posição com código, CFOP ou valor diferente;
+   - crédito de ICMS/IPI sem crédito de PIS/COFINS, e o inverso;
    - CST divergente entre filiais para o mesmo item e CFOP;
    - NF presente na EFD e ausente no SF;
-   - item sem C190.
+   - item sem C190;
+   - **diagnóstico** (informativo): distribuição das linhas e do PIS por nível de cruzamento, por filial e mês.
+     É a primeira tela a olhar ao carregar arquivos reais: mostra quanto casou item a item, quanto precisou de
+     rateio e quanto ficou sem par.
 
 ## Testes e desempenho
 
@@ -136,23 +157,58 @@ pip install -r requirements-opcional.txt
 python -m pytest -q tests
 ```
 
-São 18 testes ponta a ponta sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`). Eles cobrem
-detecção, duplicidade, retificadora, fechamento C170 = C190, rateio de frete, N1/N3/DOC, Exceção 2, 0175,
-conservação total do PIS da EFD na fato, segurança do construtor de filtros, auditoria, cobertura, exportação,
-snapshot, backup e remoção.
+São 40 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
+- `tests/test_pipeline.py` (18): detecção, duplicidade, retificadora, fechamento C170 = C190, rateio de frete,
+  N1/N3/DOC, Exceção 2, 0175, filtros, auditoria, cobertura, exportação, snapshot, backup e remoção.
+- `tests/test_cruzamento.py` (22): cenários em que os dois arquivos **não** são espelhos. Numeração de itens
+  invertida, item só na EFD, código de item diferente, valor divergente, nota duplicada no SPED Fiscal, nota
+  ausente no SPED Fiscal, nota sem chave, CT-e sem D190, nota em meses diferentes e todos combinados. Em todos,
+  o total de PIS e COFINS da EFD é igual ao do totalizador. Inclui a prova de que as tabelas agregadas devolvem
+  exatamente o mesmo resultado da fato linha a linha.
 
-Teste de volume com `python -m tests.perf_gen DEST 100000 4`, executado no ambiente de desenvolvimento com 4 vCPUs:
+### Como o relatório fica rápido
+
+- Cada consulta é respondida pela **menor tabela agregada** que contém as colunas pedidas. A tela mostra qual foi
+  usada ("Fonte da consulta").
+- A fato linha a linha só é lida quando a pergunta exige o documento (drill-down até a nota, contagem de
+  documentos) ou uma condição sobre valores de linha (por exemplo `VL_ICMS > 0`).
+- Visões com muitas linhas são resolvidas em duas fases: primeiro as N maiores chaves, depois as métricas
+  completas só para elas.
+- A fato é gravada em ordem de filial/fornecedor/item, o que permite ao DuckDB pular blocos nos filtros.
+- Na tela, grade e indicadores são consultados em paralelo; as listas dos filtros e a contagem de documentos
+  carregam depois, sem segurar a grade.
+
+### Medições (ambiente de desenvolvimento, 4 vCPUs)
+
+Importação, com `python -m tests.perf_gen DEST 100000 4` (5 arquivos, 3,6 milhões de linhas, 520 MB):
 
 | Medida | Resultado |
 |---|---|
-| Entrada | 5 arquivos (4 SF + 1 EFD), 3,6 milhões de linhas, 520 MB |
-| Importação + consolidação | 39 s |
+| Importação + consolidação | 36 s |
 | Tabela fato | 1,2 milhão de linhas |
-| Reconsolidação | 9,7 s |
-| Agregação por filial, fornecedor ou item | 120–250 ms |
-| Drill-down até as notas | 33 ms |
-| Visão plana de 4 níveis (50 mil linhas) | 2,4 s |
-| Cache Parquet | 95 MB |
+| Reconsolidação do mês | 12,6 s |
+| Auditoria de fechamento | 78 ms |
+
+Relatório, com a fato ampliada artificialmente para **28,8 milhões de linhas** (24 meses). É um cenário
+desfavorável: os itens são sorteados, então quase não há repetição de fornecedor + item e a `agg_item` fica com
+24,9 milhões de linhas.
+
+| Consulta | Tabela usada | Tempo |
+|---|---|---|
+| Por filial / indicadores do topo | `agg_filial` | 14 ms / 3 ms |
+| Fornecedores de uma filial | `agg_fornecedor` | 21 ms |
+| CFOPs de filial + fornecedor | `agg_fornecedor` | 14 ms |
+| Itens de filial + fornecedor + CFOP | `agg_item` | 30 ms |
+| Por item ou por NCM, sem filtro | `agg_produto` | 34 ms / 22 ms |
+| Mês a mês por fornecedor / por item | `agg_fornecedor` / `agg_produto` | 16 ms / 25 ms |
+| Listas dos 5 filtros globais | agregadas | 16 ms |
+| Visão plana de 4 níveis (5 mil maiores linhas) | `agg_item` | 0,86 s |
+| Regra por linha (`VL_ICMS > 0`), por filial, sem período | fato | 0,6 s |
+| Regra por linha, 1 filial + 3 meses | fato | 49 ms |
+| Contagem de documentos distintos | fato | 0,15 s |
+| Drill-down até as notas | fato | 17–38 ms |
+| Abrir o programa até a grade preenchida (navegador) | — | 0,8 s |
+| Visão plana na tela (consulta + envio + desenho da grade) | — | 2,3 s |
 
 ## Premissas e limites conhecidos
 
@@ -165,6 +221,12 @@ Teste de volume com `python -m tests.perf_gen DEST 100000 4`, executado no ambie
   do C500 devem ser conferidos com o Guia Prático vigente. Campos ausentes em versões antigas são lidos como vazios.
 - **Vínculo entre competências.** O vínculo pela chave do documento eletrônico aceita competências diferentes entre
   SF e EFD. O vínculo por número/série só ocorre dentro da mesma competência.
+- **Validação com arquivos reais.** Toda a lógica foi testada com arquivos sintéticos. Ao carregar os primeiros
+  arquivos reais, confira a auditoria "Diagnóstico" (níveis de cruzamento) e "Fechamento".
+- **Fechamento com o Bloco M.** A conferência do totalizador com a apuração oficial (M100/M105, M500/M505) não
+  está implementada.
+- **Contagem de documentos.** É a única métrica que sempre lê a fato linha a linha; por isso saiu das colunas
+  padrão da grade (continua no indicador do topo, calculada à parte).
 - **De-para de itens.** O de-para do 0205 é de um nível (código anterior → código atual).
 - **Upload pela interface.** O envio por arrastar copia os arquivos para `data/uploads`. Para volumes de vários GB,
   prefira informar a pasta.
