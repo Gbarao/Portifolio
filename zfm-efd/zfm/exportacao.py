@@ -8,6 +8,7 @@ import duckdb
 import pandas as pd
 
 from . import as_is, beneficio_atual as ba
+from . import cenarios as cz
 from . import conciliacoes, params, qualidade, simulacao
 from .filtros import TODOS, Filtro
 
@@ -45,7 +46,7 @@ def gerar_excel(con: duckdb.DuckDBPyConnection, f: Filtro | list[str] | None = N
         ["Com teses", "sim" if com_teses else "não"],
         ["Sinal da diferença", "To Be − As Is: positivo = aumento de carga (perda); negativo = ganho"],
     ], columns=["Item", "Valor"])
-    abas["Premissas adotadas"] = params.resumo_premissas()
+    abas["Premissas"] = params.resumo_premissas()
     if not anual.empty:
         dif = simulacao.diferenca_por_tributo(anual)
         abas["Diferença por tributo"] = _por_empresa(dif, ["cenario", "ano", "tributo"], "diferenca", nomes)
@@ -75,6 +76,35 @@ def gerar_excel(con: duckdb.DuckDBPyConnection, f: Filtro | list[str] | None = N
                                           "cp_entrada_expirado", "cp_ibs_450", "meses_saldo_credor"]]
         abas["Absorção (mensal)"] = mensal
         abas["Simulação - detalhe"] = anual
+    # ---- cenarios ZFM (C1-C5)
+    desc = cz.descricoes()
+    mat = cz.matriz(con, f)
+    if not mat.empty:
+        mv = _por_empresa(mat, ["cenario", "sentido"], "valor", nomes)
+        md = _por_empresa(mat, ["cenario", "sentido"], "documentos", nomes)
+        mv.insert(2, "medida", "valor (R$)")
+        md.insert(2, "medida", "documentos")
+        m = cz.ordenar(pd.concat([mv, md], ignore_index=True))
+        m.insert(1, "descricao", m["cenario"].map(lambda c: desc.get(c, "")))
+        abas["Matriz cenários"] = m.astype({"cenario": str})
+    res = cz.resultado(con, anual, f, com_teses) if not anual.empty else pd.DataFrame()
+    if not res.empty:
+        r = cz.ordenar(res.copy())
+        r.insert(4, "empresa", r["raiz"].map(lambda x: nomes.get(x, x)))
+        r.insert(6, "descricao", r["cenario"].map(lambda c: desc.get(c, "")))
+        abas["Cenários As Is x To Be"] = r.astype({"cenario": str}).sort_values(
+            ["cenario_aliq", "ano", "raiz", "cenario", "tributo"])
+    ipi = cz.ipi_por_produto(con, f)
+    if not ipi.empty:
+        abas["IPI por produto (C5)"] = ipi
+    al = cz.alertas(con, f)
+    if not al.empty:
+        abas["Alertas"] = al
+    nc = con.execute(f"""SELECT raiz, cnpj_estab, mes, cenario, motivo, cfop, cnpj_part, uf_part, cod_item, valor,
+                                arquivo_id, linha_num FROM v_cenarios
+                         WHERE cenario IN ('NC_S', 'NC_E') AND {f.sql()} ORDER BY valor DESC LIMIT 100000""").df()
+    if not nc.empty:
+        abas["Não classificados"] = nc
     asis = as_is.carga_anual(con, f, com_teses)
     if not asis.empty:
         abas["Carga As Is (anual)"] = _por_empresa(

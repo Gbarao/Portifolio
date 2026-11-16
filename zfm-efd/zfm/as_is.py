@@ -179,7 +179,7 @@ def _pis_cofins(con: duckdb.DuckDBPyConnection, f: Filtro, ops: bool = False) ->
         if df.empty:
             continue
         df = df.merge(fat, on=["raiz", "mes"], how="left")
-        df["fator"] = df["fator"].fillna(1.0)
+        df["fator"] = pd.to_numeric(df["fator"], errors="coerce").fillna(1.0)
         if ops:  # R5: contribuicao sobre as operacoes + ajustes do bloco M (nao operacionais)
             contrib = df["contrib_ops"] + (df["per"] - df["apur"])
             carga = (contrib - df["creditos"] - df["deducoes"]).clip(lower=0)
@@ -218,7 +218,7 @@ def carga_mensal(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS, ops: bool = 
 
 def meses_observados(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
     """Meses com arquivo ativo por empresa (dentro do periodo filtrado)."""
-    ano = int(params.premissa_num("ano_base", 2026))
+    ano = params.ano_base(con)
     return con.execute(f"""
         SELECT raiz, month(dt_ini) AS mes FROM arquivos
         WHERE ativo AND year(dt_ini) = {ano} AND {f.sql('raiz', None, 'month(dt_ini)')}
@@ -247,7 +247,7 @@ def teses_mensais(con: duckdb.DuckDBPyConnection, f: Filtro, para_as_is: bool) -
     ja = _premissa("teses_ativas_ja_na_apuracao", "sim") in ("sim", "s")
     if ja:
         t = t[t["status"].str.strip().str.lower() != "ativa"]
-    ano = int(params.premissa_num("ano_base", 2026))
+    ano = params.ano_base(con)
     meses = meses_observados(con, f)
     rec = receita_incentivada_mensal(con, f)
     geral = ba._aliq_geral()

@@ -136,6 +136,23 @@ def esperar_porta(porta: int, segundos: float = 90) -> bool:
     return False
 
 
+def remover_telas_antigas() -> None:
+    """Versoes anteriores tinham as telas na pasta 'pages'. Se a pasta nova foi copiada por cima da
+    antiga, a pasta 'pages' sobra e o Streamlit mostra um menu duplicado: ela e renomeada."""
+    antiga = RAIZ / "pages"
+    if antiga.is_dir() and (RAIZ / "telas").is_dir():
+        destino = RAIZ / "data" / "pages_versao_anterior"
+        n = 1
+        while destino.exists():
+            n += 1
+            destino = RAIZ / "data" / f"pages_versao_anterior_{n}"
+        try:
+            antiga.rename(destino)
+            print(f"[OK] Telas da versao anterior movidas para {destino}")
+        except OSError:
+            print("[AVISO] Existe uma pasta 'pages' de versao anterior. Apague-a manualmente.")
+
+
 def abrir_programa(abrir_navegador: bool = True) -> int:
     porta = porta_livre()
     if porta is None:
@@ -148,6 +165,7 @@ def abrir_programa(abrir_navegador: bool = True) -> int:
     print(f"Endereco (so funciona neste computador): {url}")
     print("Para FECHAR o programa, feche esta janela preta.")
     (RAIZ / "data").mkdir(exist_ok=True)
+    remover_telas_antigas()
     cmd = [str(python_venv()), "-m", "streamlit", "run", str(RAIZ / "app.py"),
            "--server.port", str(porta), "--server.address", "127.0.0.1",
            "--server.headless", "true", "--browser.gatherUsageStats", "false"]

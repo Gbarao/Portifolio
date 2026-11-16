@@ -33,6 +33,23 @@ class ErroEFD(Exception):
     """Erro com mensagem pronta para o usuario (sem termos tecnicos)."""
 
 
+class ImportacaoCancelada(Exception):
+    """Levantada pelo callback de progresso para interromper a leitura (o arquivo e desfeito)."""
+
+
+def assinatura_rapida(caminho: Path, bloco: int = 1 << 20) -> str:
+    """Tamanho + primeiro e ultimo 1 MB: identifica arquivo ja carregado sem reler 1 GB."""
+    h = hashlib.sha256()
+    tam = os.path.getsize(caminho)
+    h.update(str(tam).encode())
+    with open(caminho, "rb") as f:
+        h.update(f.read(bloco))
+        if tam > bloco:
+            f.seek(max(bloco, tam - bloco))
+            h.update(f.read(bloco))
+    return h.hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Encoding e linhas
 # ---------------------------------------------------------------------------
@@ -191,6 +208,10 @@ def carregar_arquivo(con: duckdb.DuckDBPyConnection, caminho: str | Path,
     log = logger()
     try:
         return _carregar(con, caminho, progresso)
+    except ImportacaoCancelada:
+        log.info("Leitura de %s cancelada pelo usuario", caminho)
+        return ResultadoCarga(None, caminho.name, None, "cancelado",
+                              "Leitura cancelada; nada deste arquivo foi gravado.")
     except ErroEFD as e:
         log.warning("Arquivo %s recusado: %s", caminho, e)
         return ResultadoCarga(None, caminho.name, None, "erro", str(e))
@@ -213,6 +234,12 @@ def _carregar(con: duckdb.DuckDBPyConnection, caminho: Path,
     if ident.dt_ini is None:
         raise ErroEFD(f"O arquivo {caminho.name} tem data inicial inválida no registro 0000.")
     registros = db.LAYOUTS[ident.tipo]
+    rapida = assinatura_rapida(caminho)
+    ja = con.execute("SELECT arquivo_id, nome_arquivo FROM arquivos WHERE assinatura_rapida = ?",
+                     [rapida]).fetchall()
+    if ja:
+        return ResultadoCarga(ja[0][0], caminho.name, ident.tipo, "duplicado",
+                              f"Já carregado anteriormente (como {ja[0][1]}). Nada foi alterado.", ativo=True)
 
     hasher = hashlib.sha256()
     lidos_bytes = [0]
@@ -361,11 +388,14 @@ def _carregar(con: duckdb.DuckDBPyConnection, caminho: Path,
 
         raiz = (ident.cnpj or "")[:8]
         con.execute(
-            """INSERT INTO arquivos VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-               current_localtimestamp(), TRUE, NULL, ?, ?, ?)""",
+            """INSERT INTO arquivos (arquivo_id, tipo, cnpj, raiz, ie, uf, nome, dt_ini, dt_fin, cod_ver,
+                   cod_fin, retificador, hash_sha256, nome_arquivo, caminho, encoding, dt_carga, ativo,
+                   substituido_por, qtd_linhas, bytes, qtd_linhas_9999, assinatura_rapida)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_localtimestamp(), TRUE, NULL,
+                       ?, ?, ?, ?)""",
             [arquivo_id, ident.tipo, ident.cnpj, raiz, ident.ie, ident.uf, ident.nome,
              ident.dt_ini, ident.dt_fin, ident.cod_ver, ident.cod_fin, ident.retificador,
-             hash_hex, caminho.name, str(caminho), encoding, total_linhas, tamanho, qtd_lin_9999])
+             hash_hex, caminho.name, str(caminho), encoding, total_linhas, tamanho, qtd_lin_9999, rapida])
         ativo, msg_ret = _resolver_versoes(con, arquivo_id, ident)
         con.execute("COMMIT")
     except Exception:

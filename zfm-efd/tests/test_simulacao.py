@@ -160,7 +160,7 @@ def test_devolucoes_abatem_a_base(con_param):
     i2 = simulacao.insumos_mensais(con_param)
     g = lambda i, c: i[(i.raiz == "11111111") & (i.mes == 2)][c].sum()  # noqa: E731
     # devolucao de venda 2201 de 40.000 (interestadual) e devolucao de compra 6201 de 10.000 de SP
-    assert g(i2, "deb_base_zfm") - g(i1, "deb_base_zfm") == pytest.approx(40000.0)
+    assert g(i2, "deb_cbs_base") - g(i1, "deb_cbs_base") == pytest.approx(40000.0)
     assert g(i2, "cp447_cheio") - g(i1, "cp447_cheio") == pytest.approx(10000 * 0.075)
 
 

@@ -13,10 +13,11 @@ from zfm.filtros import Filtro
 def test_excel(con_param):
     dados = exportacao.gerar_excel(con_param, None, False, False)
     wb = openpyxl.load_workbook(io.BytesIO(dados), data_only=True)
-    for aba in ("Resumo", "Premissas adotadas", "Diferença por tributo", "Diferença por empresa",
+    for aba in ("Resumo", "Premissas", "Diferença por tributo", "Diferença por empresa",
                 "Ponte As Is → To Be", "Saídas x entradas", "Vantagem competitiva IPI", "Absorção (anual)",
                 "Carga As Is (anual)", "R5 reconciliação", "Benefício ZFM (informativo)",
-                "Parâmetros (tabelas)", "Completude Q1"):
+                "Parâmetros (tabelas)", "Completude Q1", "Matriz cenários", "Cenários As Is x To Be",
+                "IPI por produto (C5)", "Alertas"):
         assert aba in wb.sheetnames, aba
     ws = wb["Diferença por empresa"]
     cab = [c.value for c in ws[1]]

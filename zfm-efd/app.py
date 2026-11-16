@@ -1,19 +1,37 @@
 """Entrada do programa (Streamlit). Abra pelo iniciar.bat."""
 import streamlit as st
 
-st.set_page_config(page_title="ZFM x Reforma Tributária", page_icon="📊", layout="wide")
+from zfm import ui
 
-paginas = [
-    st.Page("pages/0_Inicio.py", title="Início", icon="🏠", default=True),
-    st.Page("pages/1_Carga_de_arquivos.py", title="1. Carga de arquivos", icon="📂"),
-    st.Page("pages/2_Perimetro_e_qualidade.py", title="2. Perímetro e qualidade", icon="✅"),
-    st.Page("pages/3_Parametros.py", title="3. Parâmetros e premissas", icon="⚙️"),
-    st.Page("pages/4_Base_de_operacoes.py", title="4. Base de operações", icon="🗂️"),
-    st.Page("pages/5_Saidas.py", title="5. Saídas", icon="📤"),
-    st.Page("pages/6_Entradas.py", title="6. Entradas", icon="📥"),
-    st.Page("pages/7_Carga_As_Is.py", title="7. Carga As Is (apuração)", icon="🧾"),
-    st.Page("pages/8_To_Be_e_diferenca.py", title="8. To Be e diferença", icon="📈"),
-    st.Page("pages/9_Beneficio_informativo.py", title="9. Benefício ZFM (informativo)", icon="💰"),
-    st.Page("pages/10_Exportacao.py", title="10. Exportação", icon="📊"),
-]
+st.set_page_config(page_title="ZFM × Reforma Tributária", page_icon=":material/analytics:", layout="wide",
+                   initial_sidebar_state="expanded")
+ui.estilo()
+
+P = st.Page
+paginas = {
+    "Visão geral": [
+        P("telas/painel.py", title="Painel", icon=":material/dashboard:", default=True, url_path="painel"),
+    ],
+    "Dados": [
+        P("telas/importacao.py", title="Importação das EFDs", icon=":material/upload_file:", url_path="importacao"),
+        P("telas/qualidade.py", title="Qualidade e reconciliação", icon=":material/fact_check:",
+          url_path="qualidade"),
+        P("telas/parametros.py", title="Parâmetros e premissas", icon=":material/tune:", url_path="parametros"),
+    ],
+    "Operações": [
+        P("telas/base_operacoes.py", title="Base de operações", icon=":material/table_view:", url_path="base"),
+        P("telas/saidas.py", title="Saídas", icon=":material/north_east:", url_path="saidas"),
+        P("telas/entradas.py", title="Entradas", icon=":material/south_west:", url_path="entradas"),
+    ],
+    "Análise": [
+        P("telas/cenarios.py", title="Cenários ZFM (C1–C5)", icon=":material/account_tree:", url_path="cenarios"),
+        P("telas/carga_as_is.py", title="Carga As Is", icon=":material/receipt_long:", url_path="as-is"),
+        P("telas/to_be.py", title="To Be e diferença", icon=":material/trending_up:", url_path="to-be"),
+        P("telas/beneficio.py", title="Benefício ZFM (informativo)", icon=":material/savings:",
+          url_path="beneficio"),
+    ],
+    "Relatórios": [
+        P("telas/exportacao.py", title="Exportação para Excel", icon=":material/download:", url_path="exportacao"),
+    ],
+}
 st.navigation(paginas).run()

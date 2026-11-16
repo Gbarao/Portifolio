@@ -102,6 +102,33 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
            "credito_adicional (R$/mês), reduz_base (% da receita incentivada × alíquota do regime "
            "geral), reduz_aliquota (p.p. sobre a receita incentivada). Vigência AAAA-MM. "
            "raiz_cnpj vazio ou 'todas' = todas as empresas."),
+    Tabela("param_empresas_zfm", "Empresas ZFM (tipo e regime)",
+           {"cnpj": "texto", "raiz": "texto", "nome": "texto", "origem": "texto", "uf": "texto",
+            "cod_mun": "texto", "suframa": "texto", "tipo": "texto", "regime": "texto",
+            "regra_automatica": "texto", "revisado": "bool", "observacao": "texto"},
+           ("cnpj",),
+           "Uma linha por CNPJ (estabelecimentos do grupo e participantes do Amazonas). tipo: "
+           "industria_incentivada (Suframa + projeto com PPB aprovado), habilitado (Suframa sem projeto "
+           "industrial: comércio/serviço) ou nao_habilitado. regime: regular ou simples. Pré-preenchida "
+           "a partir das EFDs; confirme e marque 'revisado'."),
+    Tabela("param_regras_cenario", "Regras To Be por cenário",
+           {"cenario": "texto", "descricao": "texto", "sentido": "texto", "cbs_debito": "num",
+            "ibs_debito": "num", "cbs_entrada": "num", "ibs_entrada": "num", "entrada_creditavel": "texto",
+            "cbs_credito_fornecedor": "num", "ibs_credito_fornecedor": "num", "cp_cbs_450": "bool",
+            "cp_ibs_450": "bool", "cp_ibs_entrada": "texto", "cp_444_pct": "num", "base_legal": "texto",
+            "observacao": "texto"},
+           ("cenario",),
+           "Tratamento simulado de cada cenário (frações da alíquota do ano, 1 = integral, 0 = zero). "
+           "*_debito: débito sobre a venda. *_entrada: tributo devido pela empresa na entrada "
+           "(importação, IBS de 70% do art. 446). entrada_creditavel: sim, nao ou regime (só regime "
+           "regular credita). *_credito_fornecedor: crédito do tributo cobrado pelo fornecedor. "
+           "cp_ibs_entrada: 447 (7,5%/13,5% por origem), 449 (7,5%) ou 444 (cp_444_pct % da alíquota)."),
+    Tabela("param_conferencia_cenario", "Conferências As Is por cenário",
+           {"cenarios": "texto", "tributo": "texto", "regra": "texto", "valores": "texto", "mensagem": "texto"},
+           ("cenarios", "tributo", "regra"),
+           "Alerta quando o escriturado diverge do esperado para o cenário. cenarios: lista separada por ';'. "
+           "regra: aliquota_em (alíquota deve estar na lista), cst_em (CST na lista) ou valor_zero "
+           "(o tributo não deveria estar destacado)."),
     Tabela("param_premissas", "Premissas",
            {"chave": "texto", "valor": "texto", "descricao": "texto"},
            ("chave",),
@@ -195,7 +222,9 @@ def aplicar_referencias(refs: pd.DataFrame) -> pd.DataFrame:
 
 
 _PREMISSAS = [
-    ("ano_base", "2026", "Ano das EFDs usadas como base (YTD)."),
+    ("ano_base", "auto",
+     "Ano das EFDs usadas como base (YTD). 'auto' = ano mais recente carregado. Se o ano informado "
+     "não tiver arquivo, o programa usa o mais recente."),
     ("base_cbs_ibs", "liquida_sem_tributos",
      "Base da simulação: 'liquida_sem_tributos' = VL_ITEM − VL_DESC − ICMS − PIS − COFINS "
      "(ICMS por item estimado pela proporção ICMS/valor do CFOP no mês); 'valor_liquido' = "
@@ -243,6 +272,16 @@ _PREMISSAS = [
     ("anualizacao_mensal", "perfil_observado",
      "Perfil mês a mês do ano simulado: 'perfil_observado' (meses de 2026 + média nos demais) ou "
      "'media_constante' (sensibilidade sem sazonalidade). O total anual é sempre média × 12."),
+    ("revenda_presencial", "sim",
+     "Importações de mercadoria para revenda por habilitado são 'revenda presencial' (C1b, art. 444)? sim/nao."),
+    ("c3a_intermediario", "compra_industrializacao",
+     "Quando a compra na ZFM é 'bem intermediário' (C3a): 'compra_industrializacao' (CFOP de compra para "
+     "industrialização ou tipo_bem intermediário) ou 'tipo_bem' (só pelo tipo de bem do item)."),
+    ("ipi_protegido_regra", "tipi",
+     "Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= limite_tipi_ipi "
+     "(até a lista oficial do § 3º); 'tabela' = coluna ipi_protegido de Produtos."),
+    ("simular_risco_ingresso_c2", "nao",
+     "C2 sem comprovação de ingresso perde a alíquota zero e estorna o crédito presumido. Padrão: só alerta."),
     ("fator_ipi_proprio", "0",
      "Fração do IPI próprio a recolher (E520) que permanece no To Be (0 = IPI zerado/ZFM isenta)."),
     ("aliq_ibs_teste", "0,1", "IBS de teste em 2027-2028, em % (LC 214/2025: 0,05% estadual + 0,05% municipal)."),
@@ -266,7 +305,79 @@ _PREMISSAS = [
     ("cp449", "7,5", "Crédito presumido de IBS (art. 449), % das compras de intermediários da ZFM."),
 ]
 
+
+def _r(cen, desc, sentido, base_legal, obs="", cbs_d=0.0, ibs_d=0.0, cbs_e=0.0, ibs_e=0.0, cred="regime",
+       cbs_f=0.0, ibs_f=0.0, cp_cbs=False, cp_ibs=False, cp_ent="", cp444=None):
+    return {"cenario": cen, "descricao": desc, "sentido": sentido, "cbs_debito": cbs_d, "ibs_debito": ibs_d,
+            "cbs_entrada": cbs_e, "ibs_entrada": ibs_e, "entrada_creditavel": cred,
+            "cbs_credito_fornecedor": cbs_f, "ibs_credito_fornecedor": ibs_f, "cp_cbs_450": cp_cbs,
+            "cp_ibs_450": cp_ibs, "cp_ibs_entrada": cp_ent, "cp_444_pct": cp444, "base_legal": base_legal,
+            "observacao": obs}
+
+
+_REGRAS_CENARIO = [
+    _r("C1a", "Importação para indústria incentivada", "entrada", "LC 214/2025, art. 443",
+       "CBS/IBS suspensos -> isenção quando consumidos na produção ou após 48 meses no ativo. Sem crédito. "
+       "Não vale para bens excluídos (art. 441) nem uso e consumo pessoal."),
+    _r("C1b", "Importação por habilitado (revenda presencial)", "entrada", "LC 214/2025, art. 444",
+       "CBS integral (creditável no regime regular); IBS devido menos crédito presumido de 50% da alíquota.",
+       cbs_e=1, ibs_e=1, cp_ent="444", cp444=50.0),
+    _r("C1c", "Importação por habilitado (outros fins)", "entrada", "Regra geral",
+       "CBS e IBS integrais, sem crédito presumido.", cbs_e=1, ibs_e=1),
+    _r("C2a", "Compra de outro Estado por indústria incentivada", "entrada", "LC 214/2025, arts. 445 e 447",
+       "CBS/IBS zero; crédito presumido de IBS 7,5% (S/SE exc. ES) ou 13,5% (demais e ES) a partir de 2029.",
+       cp_ent="447"),
+    _r("C2b", "Compra de outro Estado por habilitado (regime regular)", "entrada",
+       "LC 214/2025, arts. 445, 446 e 447",
+       "CBS/IBS zero na compra; IBS de 70% da alíquota cobrado na entrada no AM (destinatário contribuinte); "
+       "crédito presumido de 7,5%/13,5%.", ibs_e=0.7, cp_ent="447"),
+    _r("C2c", "Compra de outro Estado por habilitado do Simples", "entrada", "LC 214/2025, arts. 445 e 446",
+       "CBS/IBS zero; IBS de 70% na entrada; sem crédito presumido do art. 447.", ibs_e=0.7),
+    _r("C3a", "Compra na ZFM: intermediário de indústria incentivada para indústria incentivada", "entrada",
+       "LC 214/2025, arts. 448 e 449",
+       "CBS/IBS zero; compradora do regime regular recebe crédito presumido de IBS de 7,5%.", cp_ent="449"),
+    _r("C3b", "Demais compras de PJ na ZFM", "entrada", "LC 214/2025, art. 451",
+       "CBS zero; IBS pela regra geral (cobrado pelo fornecedor e creditado no regime regular).", ibs_f=1),
+    _r("C4a", "Venda para fora da ZFM a contribuinte regular", "saida", "LC 214/2025, art. 450",
+       "CBS/IBS integrais; crédito presumido de CBS 6%/2% e de IBS sobre o saldo devedor.",
+       cbs_d=1, ibs_d=1, cp_cbs=True, cp_ibs=True),
+    _r("C4b", "Venda para fora da ZFM a consumidor final ou não contribuinte", "saida", "LC 214/2025, art. 450",
+       "CBS/IBS integrais; créditos presumidos do art. 450.", cbs_d=1, ibs_d=1, cp_cbs=True, cp_ibs=True),
+    _r("C4c", "Venda dentro da ZFM para PJ (bem final)", "saida", "LC 214/2025, arts. 450 e 451",
+       "CBS zero (sem crédito presumido de CBS); IBS com crédito presumido do art. 450.",
+       ibs_d=1, cp_ibs=True),
+    _r("C4d", "Venda dentro da ZFM de intermediário para indústria incentivada", "saida",
+       "LC 214/2025, art. 448", "CBS/IBS zero; sem crédito presumido do art. 450."),
+    _r("EXP", "Exportação (fora do escopo; sem débito nos dois regimes)", "saida", "Imunidade"),
+    _r("TR", "Transferência entre estabelecimentos (à parte)", "ambos", "Conferir LC 214/2025"),
+    _r("REM", "Remessas, retornos e outras operações sem receita/crédito", "ambos", "—"),
+    _r("SRV", "Serviços tomados", "entrada", "Regra geral", "Crédito do tributo cobrado pelo prestador.",
+       cbs_f=1, ibs_f=1),
+    _r("NC_S", "Saída não classificada (tratada pela regra geral)", "saida", "Regra geral",
+       "Débito integral, sem crédito presumido. Ver relatório de não classificados.", cbs_d=1, ibs_d=1),
+    _r("NC_E", "Entrada não classificada (tratada pela regra geral)", "entrada", "Regra geral",
+       "Crédito do tributo cobrado pelo fornecedor. Ver relatório de não classificados.", cbs_f=1, ibs_f=1),
+]
+
+_CONFERENCIAS = [
+    ("C4a;C4b", "PIS", "aliquota_em", "0,65;1,3",
+     "Venda incentivada para fora da ZFM com PIS diferente de 0,65% ou 1,3% (Decreto 5.310/2004)"),
+    ("C4a;C4b", "COFINS", "aliquota_em", "3;6",
+     "Venda incentivada para fora da ZFM com COFINS diferente de 3% ou 6% (Decreto 5.310/2004)"),
+    ("C4c;C4d", "PIS", "aliquota_em", "0;0,65;1,3", "Venda incentivada na ZFM com alíquota de PIS fora do esperado"),
+    ("C4c;C4d", "COFINS", "aliquota_em", "0;3;6", "Venda incentivada na ZFM com alíquota de COFINS fora do esperado"),
+    ("C4a;C4b;C4c;C4d", "IPI", "cst_em", "52", "Venda incentivada com CST de IPI diferente de isenção (52)"),
+    ("C1a;C1b;C1c", "IPI", "valor_zero", "", "Importação com IPI destacado (esperado isento, DL 288/1967, art. 3º)"),
+    ("C2a;C2b;C2c", "IPI", "valor_zero", "", "Entrada C2 com IPI destacado (esperado isento, DL 288/1967, art. 4º)"),
+    ("C2a;C2b;C2c", "PIS", "aliquota_em", "0", "Entrada C2 com PIS diferente de zero (Lei 10.996/2004, art. 2º)"),
+    ("C2a;C2b;C2c", "COFINS", "aliquota_em", "0", "Entrada C2 com COFINS diferente de zero (Lei 10.996/2004, art. 2º)"),
+    ("C3a;C3b", "IPI", "valor_zero", "", "Compra na ZFM com IPI destacado (esperado isento, DL 288/1967, art. 9º)"),
+]
+
 _MODELOS: dict[str, pd.DataFrame] = {
+    "param_regras_cenario": pd.DataFrame(_REGRAS_CENARIO),
+    "param_conferencia_cenario": pd.DataFrame(_CONFERENCIAS,
+                                              columns=["cenarios", "tributo", "regra", "valores", "mensagem"]),
     "param_aliquotas_cenario": _modelo_aliquotas(),
     "param_aliquotas_regime_geral": pd.DataFrame([
         {"tributo": "PIS", "aliquota": 1.65, "observacao": "Não cumulativo (Lei 10.637/2002)"},
@@ -503,7 +614,8 @@ def preencher_a_partir_das_efds(con: duckdb.DuckDBPyConnection) -> dict[str, int
         linhas.append({"cfop": c, "categoria": cat, "eh_receita": rec,
                        "devolucao_de": _cfop.devolucao_de(c), "automatico": True})
     mesclar("param_cfops", pd.DataFrame(linhas))
-    sincronizar(con)  # categorias de CFOP sao usadas abaixo (v_saidas_item)
+    from . import visoes
+    visoes.preparar(con)  # categorias de CFOP sao usadas abaixo (visoes materializadas)
 
     cods = con.execute("""
         SELECT COD_AJ_APUR AS codigo, 'E111' AS registro, string_agg(DISTINCT DESCR_COMPL_AJ, ' | '),
@@ -551,6 +663,45 @@ def preencher_a_partir_das_efds(con: duckdb.DuckDBPyConnection) -> dict[str, int
             "nivel_credito_estimulo": None, "ce_100_em_2023": False,
             "fonte": "automático (EFD): incentivado = vendido com CFOP de produção própria"})
     mesclar("param_produtos", pd.DataFrame(linhas))
+    visoes.preparar(con)
+
+    # Empresas ZFM: estabelecimentos do grupo no AM + participantes do AM
+    grupo = con.execute("""
+        SELECT e.cnpj, e.raiz, e.nome, e.uf, e.cod_mun, e.suframa,
+               EXISTS (SELECT 1 FROM v_saidas_item s WHERE s.cnpj_estab = e.cnpj
+                       AND s.categoria_cfop = 'venda_producao') AS vende_producao
+        FROM v_estabelecimentos e WHERE e.no_amazonas""").fetchall()
+    linhas = []
+    for cnpj, raiz, nome, uf, cod_mun, suframa, vende in grupo:
+        if vende:
+            tipo, regra = "industria_incentivada", "grupo: vende produção própria (confirmar projeto com PPB)"
+        elif suframa:
+            tipo, regra = "habilitado", "grupo: inscrição Suframa sem venda de produção própria"
+        else:
+            tipo, regra = "nao_habilitado", "grupo: sem inscrição Suframa no cadastro"
+        linhas.append({"cnpj": cnpj, "raiz": raiz, "nome": nome, "origem": "grupo", "uf": uf,
+                       "cod_mun": cod_mun or "", "suframa": suframa or "", "tipo": tipo, "regime": "regular",
+                       "regra_automatica": regra, "revisado": False})
+    cnpjs_grupo = {g[0] for g in grupo}
+    parts = con.execute("""
+        SELECT cnpj_part, any_value(nome_part), any_value(uf), any_value(cod_mun),
+               max(nullif(suframa, '')), bool_or(municipio_zfm)
+        FROM (SELECT cnpj_part, nome_part, uf, cod_mun, suframa, municipio_zfm FROM v_participantes
+              UNION ALL
+              SELECT cnpj_part, nome_part, uf, cod_mun, suframa, municipio_zfm FROM v_participantes_contrib)
+        WHERE uf = 'AM' AND nullif(cnpj_part, '') IS NOT NULL GROUP BY 1""").fetchall()
+    for cnpj, nome, uf, cod_mun, suframa, mun_zfm in parts:
+        if cnpj in cnpjs_grupo:
+            continue
+        if mun_zfm and suframa:
+            tipo, regra = "habilitado", "participante: SUFRAMA no 0150 e município da ZFM (projeto industrial a confirmar)"
+        else:
+            tipo, regra = "nao_habilitado", "participante: sem SUFRAMA ou fora dos municípios da ZFM"
+        linhas.append({"cnpj": cnpj, "raiz": cnpj[:8], "nome": nome, "origem": "participante", "uf": uf,
+                       "cod_mun": cod_mun or "", "suframa": suframa or "", "tipo": tipo, "regime": "regular",
+                       "regra_automatica": regra, "revisado": False})
+    mesclar("param_empresas_zfm", pd.DataFrame(linhas))
+    visoes.preparar(con)
     return novos
 
 
@@ -571,6 +722,29 @@ def criar_tabelas_vazias(con: duckdb.DuckDBPyConnection) -> None:
         if atual is not None and sorted(atual) != sorted(c.lower() for c in t.colunas):
             con.execute(f"DROP TABLE {t.nome}")
         con.execute(f"CREATE TABLE IF NOT EXISTS {t.nome} ({cols})")
+
+
+def esquema_ok(con: duckdb.DuckDBPyConnection) -> bool:
+    """As tabelas param_* existem com as colunas da versao atual?"""
+    existentes: dict[str, list[str]] = {}
+    for nome, col in con.execute("""SELECT table_name, column_name FROM information_schema.columns
+                                    WHERE table_schema = 'main' AND table_name LIKE 'param_%'""").fetchall():
+        existentes.setdefault(nome, []).append(col.lower())
+    return all(sorted(existentes.get(t.nome, [])) == sorted(c.lower() for c in t.colunas)
+               for t in TABELAS.values())
+
+
+def ano_base(con: duckdb.DuckDBPyConnection | None = None) -> int:
+    """Ano-base das EFDs. Premissa 'ano_base': numero ou 'auto' (ano mais recente carregado).
+    Se o ano informado nao tiver arquivo carregado, usa o ano mais recente (evita telas vazias)."""
+    v = _para_num(premissa(None, "ano_base", "auto"))
+    if con is None:
+        return int(v or 2026)
+    anos = [r[0] for r in con.execute(
+        "SELECT DISTINCT year(dt_ini) FROM arquivos WHERE ativo ORDER BY 1").fetchall() if r[0]]
+    if v and int(v) in anos:
+        return int(v)
+    return int(anos[-1]) if anos else int(v or 2026)
 
 
 def sincronizar(con: duckdb.DuckDBPyConnection) -> None:
@@ -631,11 +805,33 @@ def resumo_premissas() -> pd.DataFrame:
             "Parâmetros > Alíquotas por cenário", "LC 214/2025 art. 457 — preencher para sensibilidade")
     for r in carregar("param_aliquotas_regime_geral").itertuples():
         add("Regime geral (fora da ZFM)", r.tributo, pct(r.aliquota), "Parâmetros > Regime geral", r.observacao)
-    for r in carregar("param_regras_entradas").itertuples():
-        add("Entradas pós-reforma", f"Origem {r.origem}",
-            f"CBS: {r.tratamento_cbs} · IBS: {r.tratamento_ibs}"
-            + (" · base do CP 447" if r.base_cp_447 else "") + (" · base do CP 449" if r.base_cp_449 else ""),
-            "Parâmetros > Tratamento das entradas", r.observacao)
+    def fr(v):
+        return "-" if v is None or pd.isna(v) else f"{float(v):g}".replace(".", ",")
+
+    for r in carregar("param_regras_cenario").itertuples():
+        partes = []
+        if r.sentido == "saida":
+            partes.append(f"débito CBS {fr(r.cbs_debito)} · IBS {fr(r.ibs_debito)}")
+        else:
+            if (r.cbs_entrada or 0) or (r.ibs_entrada or 0):
+                partes.append(f"devido na entrada CBS {fr(r.cbs_entrada)} · IBS {fr(r.ibs_entrada)} "
+                              f"(creditável: {r.entrada_creditavel})")
+            if (r.cbs_credito_fornecedor or 0) or (r.ibs_credito_fornecedor or 0):
+                partes.append(f"crédito do fornecedor CBS {fr(r.cbs_credito_fornecedor)} · "
+                              f"IBS {fr(r.ibs_credito_fornecedor)}")
+        if r.cp_cbs_450 or r.cp_ibs_450:
+            partes.append("CP art. 450: " + "/".join(x for x, y in (("CBS", r.cp_cbs_450), ("IBS", r.cp_ibs_450)) if y))
+        if r.cp_ibs_entrada:
+            partes.append(f"CP IBS de entrada art. {r.cp_ibs_entrada}"
+                          + (f" ({fr(r.cp_444_pct)}%)" if r.cp_ibs_entrada == "444" else ""))
+        add("Regras por cenário", f"{r.cenario} – {r.descricao}", "; ".join(partes) or "sem CBS/IBS",
+            "Parâmetros > Regras por cenário", r.base_legal)
+    ez = carregar("param_empresas_zfm")
+    if not ez.empty:
+        cont = ez["tipo"].value_counts()
+        add("Perímetro", "Tipo ZFM dos CNPJs (grupo e participantes do AM)",
+            " · ".join(f"{k}: {v}" for k, v in cont.items()) + f" · revisados: {int(ez['revisado'].sum())}",
+            "Parâmetros > Empresas ZFM", "Pré-preenchido pelas EFDs (0000/0005, 0150 SUFRAMA e município)")
     for r in carregar("param_premissas").itertuples():
         add("Premissas de cálculo", r.chave, r.valor, "Parâmetros > Premissas", r.descricao)
     mun = carregar("param_municipios_zfm")

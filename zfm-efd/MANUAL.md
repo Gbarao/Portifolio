@@ -50,118 +50,114 @@ Tudo roda **só no seu computador**: nenhum dado é enviado para a internet.
   Esse endereço só funciona no seu computador.
 - **Fechar:** feche a janela preta. (Fechar só o navegador não encerra o programa.)
 
-## 4. Carregar as EFDs
+## 4. Importar as EFDs (menu Dados > Importação das EFDs)
 
 1. Copie as EFDs (`.txt` originais) para uma pasta, por exemplo `Documentos\EFDs 2026`.
-   Podem estar em subpastas.
-2. No programa, abra **1. Carga de arquivos** (menu à esquerda).
-3. No Windows Explorer, abra a pasta das EFDs, clique na **barra de endereço** (no alto da
-   janela) e aperte **Ctrl+C**.
-4. No programa, clique no campo **Pasta das EFDs** e aperte **Ctrl+V**.
-5. Clique em **Carregar arquivos**. Aguarde a barra de progresso chegar ao fim.
-6. A tabela mostra cada arquivo como *Carregado*, *Já existia* ou *Não carregado* (com o motivo).
+   Podem estar em subpastas. Arquivos de 1 GB ou mais são aceitos.
+2. No Windows Explorer, abra a pasta, clique na **barra de endereço** (no alto da janela) e aperte **Ctrl+C**.
+3. No programa, clique no campo **Pasta das EFDs** e aperte **Ctrl+V**.
+4. Clique em **Verificar pasta**. Aparecem cartões com a quantidade de arquivos, o tamanho total e o maior
+   arquivo.
+5. Clique em **Iniciar importação**. Aparece a barra de progresso (com tempo decorrido e estimativa) e uma
+   tabela com a situação de cada arquivo: *Na fila*, *Lendo*, *Carregado*, *Já existia* ou *Não carregado*
+   (com o motivo).
+
+**A importação roda em segundo plano.** Você pode ir para outras telas: o progresso continua aparecendo na
+barra lateral. Fechar a aba do navegador também não interrompe. Ela só para se você **fechar a janela
+preta** ou clicar em **Cancelar importação** (o arquivo que estava sendo lido é descartado; os já
+concluídos ficam). Enquanto a importação roda, as telas mostram os dados importados antes, com um aviso
+azul; ao final, tudo é atualizado sozinho e os cadastros novos entram em Parâmetros.
 
 Observações:
+- Tempo de referência: alguns minutos por GB. Arquivo já importado é reconhecido em segundos e pulado.
 - O programa reconhece sozinho se o arquivo é EFD ICMS/IPI ou EFD Contribuições.
-- Se carregar uma **retificadora**, ela substitui a original do mesmo CNPJ/IE/período
-  (a original aparece como *Substituído*).
-- Carregar o mesmo arquivo de novo não duplica nada.
-- Para recomeçar do zero: *Apagar todos os dados carregados*, no fim da tela (os `.txt` não são apagados).
+- Uma **retificadora** substitui a original do mesmo CNPJ/IE/período (a original aparece como *Substituído*).
+- Para recomeçar do zero: *Apagar todos os dados carregados*, no fim da tela (os `.txt` e os parâmetros não
+  são apagados).
 
-## 5. Conferir os arquivos (tela 2. Perímetro e qualidade)
+## 5. Conferir os arquivos (menu Dados > Qualidade e reconciliação)
 
-- **Q1 – Completude:** uma linha por estabelecimento do Amazonas e uma coluna por mês.
-  Verde *OK* = as duas EFDs existem. Vermelho = falta arquivo.
-- **Q2 – Integridade:** quantidade de registros lidos × informada no próprio arquivo (9900/9999).
-- **Conciliações:** cada linha abre a lista do que não fecha.
-  - R1 (Q5) documentos × E110; R2 (Q6) documentos × E520; R3 (Q8) receitas × bloco M (tolerância de
-    0,5%); R4 (Q7) mesmo documento nas duas EFDs; **R5** carga recalculada pela base de operações ×
-    carga da apuração. O R5 é a porta de entrada da simulação: se não fechar, a diferença aparece na
-    tela 8 como "ajuste de reconciliação", separada do efeito da reforma.
-  - Q3, Q4, Q9 a Q13: itens × documento, alíquotas de PIS/COFINS, CST de IPI, códigos de ajuste sem
-    classificação, E116 × E110 e C180 × C181/C185.
-- **Avisos de leitura:** linhas com formato diferente do esperado ou valores que não são número/data
-  válidos (o aviso mostra o exemplo e a linha do arquivo).
+No topo, quatro cartões resumem a situação (OK ou quantidade de divergências). As abas:
+- **Completude e integridade:** uma linha por estabelecimento do Amazonas e uma coluna por mês. Verde *OK* =
+  as duas EFDs existem; vermelho = falta arquivo. Abaixo, Q2: registros lidos × informados (9900/9999).
+- **Conciliações:** lista das checagens com a situação. Escolha uma na caixa *Ver divergências de* para ver
+  as linhas que não fecham. R1 (Q5) documentos × E110; R2 (Q6) documentos × E520; R3 (Q8) receitas × bloco M
+  (0,5%); R4 (Q7) mesmo documento nas duas EFDs; Q3, Q4, Q9 a Q13.
+- **Reconciliação R5:** carga recalculada pela base de operações × carga da apuração. Se não fechar, a
+  diferença aparece como "ajuste de reconciliação", separada do efeito da reforma.
+- **Avisos de leitura:** linhas com formato diferente do esperado (com exemplo e linha do arquivo).
 
-## 6. Preencher os parâmetros (tela 3. Parâmetros e premissas)
+## 6. Revisar os parâmetros (menu Dados > Parâmetros e premissas)
 
-1. Depois de carregar as EFDs, clique em **Preencher a partir das EFDs**. O programa acrescenta
-   empresas, produtos (registro 0200), CFOPs e códigos de ajuste do ICMS (E111/E116) encontrados nos
-   arquivos. O que você já editou não é apagado.
-2. Revise cada aba e clique em **Salvar** na própria aba. Alternativa: **Baixar CSV**, editar no
-   Excel, salvar como CSV e usar **Importar CSV**.
-3. Avisos amarelos no topo mostram o que falta (por exemplo, produtos sem alíquota TIPI).
+O preenchimento a partir das EFDs é automático ao fim de cada importação (o botão **Preencher a partir das
+EFDs** repete o processo). O que você editou não é apagado. O quadro **Pendências de revisão** lista o que
+falta. Para editar: clique na célula, digite, e clique em **Salvar** na própria aba. Alternativa: **Baixar
+CSV**, editar no Excel e usar **Importar CSV editado no Excel**. Tabelas grandes têm o campo **Buscar**.
 
-**Aba "Premissas e alíquotas" (a primeira):**
-- *1. Alíquotas de referência*: digite a CBS e o IBS de referência (%) de cada cenário e clique em
-  **Aplicar aos anos 2027–2033**. O programa calcula os anos de transição sozinho. Para criar um
-  cenário novo, acrescente uma linha.
-- *2. Todas as premissas adotadas*: lista, em linguagem simples, cada premissa usada nos cálculos,
-  o valor adotado, onde alterar e a fonte. É a mesma lista da aba "Premissas adotadas" do Excel.
+Ordem recomendada:
 
-Abas e exemplo de linha preenchida:
+1. **Empresas ZFM** — uma linha por CNPJ (estabelecimentos do grupo e participantes do Amazonas). Confira a
+   coluna *tipo* (`industria_incentivada`, `habilitado`, `nao_habilitado`) e *regime* (`regular`, `simples`)
+   e marque *revisado*. É o que define os cenários C1 a C4.
+   Exemplo: `11111111000191; 11111111; ALFA; grupo; AM; 1302603; 200001; industria_incentivada; regular; ...; sim`
+2. **Produtos** — preencha a **alíquota TIPI de 31/12/2023 (%)**, *produzido_zfm_2024*, *eh_tic* e o *nível de
+   crédito estímulo (%)*. Abaixo da tabela aparecem os percentuais do art. 450 calculados.
+   Exemplo: `11111111; TV50; 85287200; Televisor; sim; final; 15; ; sim; não; não; 55; não`
+3. **Regras por cenário** — tratamento simulado de cada cenário (frações da alíquota: 1 = integral, 0 = zero,
+   0,7 = 70%) e créditos presumidos. Valores iniciais com a base legal na própria linha.
+4. **Conferências** — CST/alíquota esperados por cenário (geram alertas de divergência).
+5. **Alíquotas por ano**, **Códigos de ajuste**, **CFOPs**, **Empresas do grupo**, **Municípios ZFM**,
+   **Regime geral**, **Teses** e **Premissas** — como antes.
 
-| Aba | O que preencher | Exemplo |
-| --- | --- | --- |
-| Empresas | Nome curto e se entra na análise | `12345678; ALFA ELETRONICOS LTDA; Alfa; sim` |
-| Produtos | Incentivado, tipo de bem, **alíquota TIPI de 31/12/2023 (%)**, IPI protegido, nível de crédito estímulo (%) | `12345678; TV50; 85287200; Televisor; sim; final; 15; ; sim; não; não; 55; não` |
-| Alíquotas por cenário | CBS e IBS do ano (%), fator do ICMS, crédito presumido do art. 450 | `base; 2033; 11,3; 18,7; 0; 1; sim; ; 0` |
-| Códigos de ajuste | Classe de cada código E111/E116 (crédito estímulo, fundo FTI/UEA/FMPES, outros) | `AM040014; E111; credito_estimulo; ...; sim` |
-| Tratamento das entradas | Como cada origem de compra é tratada após a reforma | `nacional_fora_zfm; aliquota_zero; aliquota_zero; sim; não` |
-| Regime geral | PIS 1,65% e COFINS 7,6% (contrafactual fora da ZFM) | `PIS; 1,65` |
-| CFOPs | Categoria e se é receita | `6101; venda_producao; sim` |
-| Municípios da ZFM | Código IBGE | `1302603; Manaus` |
-| Teses | Efeito de cada tese (R$/mês ou %) e vigência | `T1; Exclusão X; todas; ICMS; valor_fixo_mensal; 10000; 2026-01; 2032-12; ativa` |
-| Premissas | Bases de cálculo, rateios, prazo do crédito presumido | `prazo_cp_anos; 5` |
+**Aba "Resumo e alíquotas" (a primeira):** digite a CBS e o IBS de referência (%) de cada cenário e clique em
+**Aplicar aos anos 2027–2033**; abaixo, a lista de **todas as premissas adotadas** (valor, onde alterar e
+fonte) — a mesma da aba "Premissas" do Excel.
 
-**Códigos de ajuste:** como os códigos não eram conhecidos, o programa classifica sozinho pela
-descrição na EFD (ex.: texto com "ESTÍMULO", "FTI", "UEA", "FMPES") e pelo tipo do código
-(dedução do ICMS no AM = crédito estímulo). A coluna *regra_automatica* mostra o motivo. Confira e
-marque *revisado*.
+**Códigos de ajuste:** classificação automática pela descrição (ex.: "ESTÍMULO", "FTI", "UEA", "FMPES"); a
+coluna *regra_automatica* mostra o motivo. Confira e marque *revisado*.
 
-**Alíquotas de CBS e IBS:** os valores iniciais vêm de pesquisa de 06/11/2026 (coluna *fonte*):
-CBS 11,3% (TCU) e IBS 18,7% (premissa do Comitê Gestor) no cenário base. Edite quando o Senado
-fixar as alíquotas.
+**Alíquotas de CBS e IBS:** valores iniciais de pesquisa de 06/11/2026 (coluna *fonte*): CBS 11,3% (TCU) e
+IBS 18,7% (premissa do Comitê Gestor) no cenário base.
 
-## 7. Filtros e telas de resultado
+## 7. Telas de análise
 
-**Barra lateral (vale para todas as telas):** empresas (uma, várias ou o consolidado), **período**
-(meses de 2026 — a anualização usa os meses escolhidos), **estabelecimentos** (abre a empresa por
-CNPJ completo; vazio = todos) e **Com teses**. Nas telas há filtros próprios (CFOP, produto, NCM, UF,
-origem, natureza, tributo, cenário, ano, visão).
+**Barra lateral (vale para todas as telas):** empresas (uma, várias ou o consolidado), **meses** do ano-base
+(a anualização usa os meses escolhidos), **estabelecimentos** e **Com teses**. Os selos abaixo do título de
+cada tela mostram o filtro em uso.
 
-- **4. Base de operações:** a base usada na simulação, uma linha por item. Devoluções aparecem com
-  valor negativo (abatem a operação de origem). Transferências entre estabelecimentos aparecem à parte.
-  Botão para baixar em CSV.
-- **5. Saídas / 6. Entradas:** só as saídas ou só as entradas, com filtros.
-- **7. Carga As Is (apuração):** ICMS, IPI, PIS e COFINS **lidos da apuração**, sem recálculo; carga
-  anualizada; composição saídas × entradas; crédito estímulo e fundos (informativo); saldos credores no
-  fim do período; resultado do R5.
-- **8. To Be e diferença:**
-  - escolha **cenário**, **ano**, **tributos** e a **visão** (Completa, Só saídas, Só entradas);
-  - cartões: carga As Is, carga To Be e diferença (vermelho = perda);
-  - **diferença por tributo** (uma coluna por empresa e o total);
-  - **ponte**: carga As Is → ajuste de reconciliação → efeito CBS (substitui PIS/COFINS) → efeito IBS →
-    ICMS residual → IPI → contribuição do art. 457 → carga To Be;
-  - **ranking** das empresas, da maior perda ao maior ganho;
-  - **duas métricas**: diferença de carga própria × perda de vantagem competitiva do IPI (IPI que o
-    concorrente de fora pagava e deixa de pagar), também por produto;
-  - **teste de absorção**: crédito presumido gerado, usado e expirado; carga teórica × realizável;
-    alerta de saldo credor estrutural.
-- **9. Benefício ZFM (informativo):** quanto a ZFM reduz hoje de IPI, PIS, COFINS e ICMS (regime
-  geral − ZFM). Não entra na diferença.
+- **Painel (Visão geral):** números da base, roteiro com o que está concluído/pendente, resultado consolidado
+  (As Is, To Be 2033, diferença), gráfico da diferença 2027–2033, diferença por empresa e alertas principais.
+  Se alguma tela aparecer vazia, o painel explica o motivo (ex.: nenhum estabelecimento no AM).
+- **Base de operações, Saídas, Entradas (Operações):** cartões, abas e **Filtros** (clique para abrir).
+  As tabelas mostram as maiores linhas; o CSV traz todas.
+- **Cenários ZFM (C1–C5) (Análise):**
+  - *Matriz*: cenário × empresa, em valor ou nº de documentos; coluna *intragrupo* sinaliza operações com
+    empresas do grupo;
+  - *As Is × To Be*: escolha cenário de alíquotas, ano e tributos; tabela por cenário (As Is, To Be,
+    diferença), por cenário × tributo, por cenário × empresa e evolução 2027–2033. A linha **"Não atribuído"**
+    reúne ajustes da apuração, saldos credores, absorção dos créditos presumidos e teses: com ela, a soma dos
+    cenários é igual à diferença total da empresa;
+  - *Ponte e ranking*: gráfico As Is → cenários → To Be (vermelho = paga mais; verde = paga menos) e
+    rankings de cenários e empresas;
+  - *IPI por produto (C5)*: carga própria de IPI (zero) × vantagem competitiva (IPI do concorrente) hoje e no
+    To Be, por situação da TIPI; chave para simular sem IPI protegido;
+  - *Alertas*: não classificados, divergências de CST/alíquota (com arquivo e linha), comprovação de ingresso,
+    produtos candidatos a perda no IBS, produtos sem TIPI, TIC, tipo ZFM não revisado e R5;
+  - *Não classificados*: operações sem cenário, com o motivo e onde corrigir.
+- **Carga As Is:** ICMS, IPI, PIS e COFINS lidos da apuração (sem recálculo), anualizados; composição;
+  crédito estímulo e fundos; saldos credores; R5.
+- **To Be e diferença:** cenário, ano, tributos e visão (Completa, Só saídas, Só entradas); diferença por
+  tributo, ranking, ponte por tributo, evolução, comparação de cenários de alíquotas, teste de absorção e
+  vantagem do IPI.
+- **Benefício ZFM (informativo):** quanto a ZFM reduz hoje (regime geral − ZFM); não entra na diferença.
 
-## 8. Exportar para o Excel (tela 10)
+## 8. Exportar para o Excel (menu Relatórios)
 
-Clique em **Gerar Excel** e depois em **Baixar Excel**. O arquivo usa os filtros da barra lateral e
-traz: diferença por tributo e por empresa, ponte, composição saídas × entradas, vantagem competitiva do
-IPI, absorção, carga As Is, R5, base de operações (resumo), benefício informativo, divergências das
-conciliações, **Premissas adotadas** (lista legível) e **Parâmetros (tabelas)**.
-
-**Depois de atualizar o programa:** abra 3. Parâmetros, clique em **Preencher a partir das EFDs**
-(acrescenta as colunas novas, como a operação de origem das devoluções) e, na aba "Premissas e
-alíquotas", clique em **Aplicar aos anos 2027–2033** (aplica o IBS de teste de 0,1% em 2027–2028).
-Não é preciso carregar as EFDs de novo.
+Clique em **Gerar Excel** e depois em **Baixar Excel**. Uma aba por visão: Matriz cenários, Cenários As Is x
+To Be, IPI por produto (C5), Alertas, Não classificados, Diferença por tributo e por empresa, Ponte, Saídas x
+entradas, Vantagem competitiva IPI, Absorção, Carga As Is, R5, Benefício (informativo), divergências das
+conciliações, **Premissas** (lista legível) e **Parâmetros (tabelas)**. Os filtros da barra lateral valem para
+todas as abas.
 
 ## 9. Quando der erro
 
@@ -181,5 +177,9 @@ Não é preciso carregar as EFDs de novo.
 - **Por que o benefício de IPI está zerado?** Falta a alíquota TIPI dos produtos em
   Parâmetros > Produtos.
 - **Mudei um parâmetro e nada mudou.** Clique em *Salvar* na aba; as telas usam o valor salvo.
+- **Uma tela aparece vazia.** Abra o Painel: o quadro de diagnóstico mostra o motivo (sem estabelecimento no
+  AM, falta EFD Contribuições, empresa desmarcada etc.).
+- **Posso usar o programa durante a importação?** Sim. As telas mostram os dados anteriores com um aviso e
+  são atualizadas ao final.
 - **O antivírus/TI perguntou sobre o Python acessando a rede:** é o servidor local do programa
   (endereço `127.0.0.1`, só dentro do computador).

@@ -207,6 +207,79 @@ filtro), estabelecimentos (abre a empresa por CNPJ), com/sem teses. Telas com fi
 **D-038 — E116 com COD_OR 000.** É o ICMS próprio a recolher, não um ajuste: classificado como
 "outros". Código sem regra fica `nao_classificado` e gera alerta (Q11) até ser classificado.
 
+**D-039 — Cenários C1–C5 (classificação).** Cada operação da base recebe um cenário na visão
+`v_cenarios`. Entradas: importação (CFOP 3xxx) → C1a (estabelecimento indústria incentivada), C1b
+(habilitado, compra para revenda presencial — premissa `revenda_presencial`), C1c (demais habilitados);
+compra de outro Estado → C2a (indústria incentivada), C2b (habilitado do regime regular), C2c (habilitado
+do Simples); compra de fornecedor da ZFM → C3a (intermediário de indústria incentivada para indústria
+incentivada — premissa `c3a_intermediario`) ou C3b (demais). Saídas: C4a (fora da ZFM, contribuinte),
+C4b (fora da ZFM, consumidor final/não contribuinte), C4c (dentro da ZFM, bem final), C4d (dentro da ZFM,
+intermediário para indústria incentivada), EXP (exportação, fora do escopo). À parte: TR (transferências),
+REM (remessas/retornos), SRV (serviços tomados). O que não se encaixa vira NC_S/NC_E ("não classificado"),
+com o motivo, e entra na simulação pela regra geral. Devoluções recebem o cenário da operação de origem
+(abatem); cancelados ficam fora.
+
+**D-040 — Tipo ZFM e regime (tabela `param_empresas_zfm`).** Uma linha por CNPJ (estabelecimentos do grupo
+e participantes do AM). Preenchimento automático: estabelecimento do grupo que vende produção própria =
+`industria_incentivada`; com SUFRAMA = `habilitado`; demais = `nao_habilitado`. Participante do AM em
+município da ZFM com SUFRAMA no 0150 = `habilitado`. Regime inicial = `regular`. O usuário confirma e
+marca "revisado"; enquanto não revisar, há alerta.
+
+**D-041 — Regras To Be por cenário (tabela `param_regras_cenario`).** Frações da alíquota do ano para débito,
+tributo devido na entrada, crédito do fornecedor e créditos presumidos (art. 450; 447/449/444).
+Valores iniciais: C1a suspensão sem crédito (art. 443); C1b CBS e IBS integrais com crédito presumido de
+IBS de 50% (art. 444); C1c integrais; C2a zero com CP 447; C2b IBS de 70% na entrada + CP 447 (arts. 445–447);
+C2c IBS de 70% sem CP; C3a zero com CP 449; C3b IBS pela regra geral com crédito do fornecedor (art. 451);
+C4a/C4b débito integral com CP do art. 450 de CBS e IBS; C4c CBS zero e IBS com CP do art. 450; C4d zero.
+Crédito na entrada (`entrada_creditavel` = `regime`): só o regime regular credita. Todos os valores são
+editáveis; os pontos a validar estão em P-016.
+
+**D-042 — As Is por cenário.** Tributo escriturado na própria operação: débito nas saídas (+), crédito nas
+entradas (−); PIS/COFINS só creditam com CST 50–66. Crédito estímulo e fundos do ICMS (apuração) são
+distribuídos entre as vendas incentivadas (C4) pela proporção do ICMS debitado. A diferença entre a carga
+total da apuração e a soma dos cenários (ajustes, saldos credores, teses) aparece na linha
+"Não atribuído", para que a soma por cenário seja igual ao total da empresa.
+
+**D-043 — To Be por cenário.** CBS/IBS por cenário com as regras da D-041 e as alíquotas do ano; o crédito
+presumido do art. 450 de IBS (calculado sobre o saldo devedor pelo motor mensal) é distribuído entre os
+cenários de venda pela base incentivada; ICMS = As Is × fator do ano; IPI próprio = As Is ×
+`fator_ipi_proprio` (0 = extinto). A linha "Não atribuído" fecha com o motor mensal (absorção dos créditos
+presumidos, safras que expiram, teses). Consolidado = soma das empresas, sem compensação entre elas.
+
+**D-044 — IPI por produto (C5).** Premissa `ipi_protegido_regra` = `tipi` (padrão): TIPI de 31/12/2023 ≥
+`limite_tipi_ipi` (6,5%) → IPI mantido para o concorrente; abaixo disso e produzido na ZFM em 2024 → IPI
+zero para todos (vantagem perdida; o comprador também perde o crédito de IPI). Com `tabela`, vale a marcação
+"ipi_protegido" de cada produto. TIC: regra própria (art. 454, § 2º), sinalizado para análise manual.
+Duas métricas separadas: carga própria de IPI (zero antes e depois) e vantagem competitiva (receita
+incentivada anualizada × TIPI). Alerta quando o crédito estímulo atual do produto é maior que o percentual
+do art. 450 (candidato a perda no IBS).
+
+**D-045 — Conferências do As Is (tabela `param_conferencia_cenario`).** Regras CST/alíquota esperadas por
+cenário (ex.: PIS 0,65%/1,3% e COFINS 3%/6% nas vendas para fora da ZFM; IPI com CST 52 nas vendas
+incentivadas; entradas C1/C2 sem IPI destacado). Divergência gera alerta com arquivo e linha; devoluções não
+são conferidas (usam CST de entrada).
+
+**D-046 — Ano-base automático.** Premissa `ano_base` = `auto`: usa o ano mais recente com EFD carregada
+(ou o ano informado, se houver arquivo dele). Evita telas vazias quando as EFDs não são de 2026.
+
+**D-047 — Importação em segundo plano.** A leitura roda numa linha de execução própria do programa,
+independente da tela: trocar de tela, recarregar ou fechar a aba do navegador não interrompe; só para ao
+fechar a janela preta ou em "Cancelar". Cada arquivo é gravado numa transação (cancelado = nada daquele
+arquivo fica no banco). Arquivo repetido é reconhecido em segundos por uma assinatura rápida (tamanho +
+primeiro e último 1 MB) antes do SHA-256. Ao final, as análises são preparadas e os cadastros novos entram
+nos parâmetros, sem apagar o que foi editado.
+
+**D-048 — Desempenho com arquivos de 1 GB+.** Leitura em partes (memória baixa) e gravação via CSV
+temporário lido pelo DuckDB. As visões pesadas são materializadas em tabelas e só são refeitas quando os
+dados ou os parâmetros mudam (versão gravada em `_meta`). Os cálculos ficam em cache por versão dos dados +
+filtro: trocar de tela não recalcula. As telas agregam no banco e mostram até alguns milhares de linhas;
+o CSV traz o restante.
+
+**D-049 — Interface.** Navegação por seções (Visão geral, Dados, Operações, Análise, Relatórios), painel com
+roteiro e pendências, cartões, abas e tabelas com números no formato do navegador. Estilo e ícones são
+locais (nenhum recurso da internet; conferido no navegador: zero requisições externas). A tabela
+`param_regras_entradas` foi substituída por `param_regras_cenario` (fica no arquivo, sem uso).
+
 ---
 
 ## Perguntas pendentes
@@ -229,3 +302,10 @@ filtro), estabelecimentos (abre a empresa por CNPJ), com/sem teses. Telas com fi
 - **P-013** — Tratamento das transferências entre estabelecimentos na CBS/IBS.
 - **P-014** — Lista dos produtos com IPI mantido (art. 454, § 3º).
 - **P-015** — Onde as empresas registram as contribuições a FTI/UEA/FMPES (E111, E116 ou fora da EFD).
+- **P-016** — Validar as regras por cenário (D-041), em especial: crédito presumido de 50% do art. 444 (C1b),
+  IBS de 70% na entrada para habilitados (C2b/C2c), crédito de IBS do fornecedor em C3b e CBS zero em C4c.
+- **P-017** — Comprovação de ingresso (internamento) nas compras C2: hoje só alerta; a simulação da perda
+  do benefício está desligada (`simular_risco_ingresso_c2` = nao).
+- **P-018** — Produtos TIC (art. 454, § 2º): tratamento a definir caso a caso.
+- **P-019** — Tipo ZFM (indústria incentivada/habilitado) e regime dos participantes: confirmar na aba
+  Empresas ZFM; a classificação automática usa SUFRAMA e município do 0150.

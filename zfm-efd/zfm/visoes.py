@@ -49,9 +49,17 @@ def _sql_participantes(tabela: str, chave_estab: str) -> str:
                  OR coalesce((SELECT lower(valor) FROM param_premissas WHERE chave = 'zfm_exige_suframa'),
                              'sim') IN ('nao', 'não'))) AS eh_zfm,
            (nullif(p.CNPJ, '') IS NOT NULL AND (substr(p.CNPJ, 1, 8) IN (SELECT raiz_cnpj FROM param_empresas)
-             OR substr(p.CNPJ, 1, 8) IN (SELECT raiz FROM arquivos))) AS eh_grupo
+             OR substr(p.CNPJ, 1, 8) IN (SELECT raiz FROM arquivos))) AS eh_grupo,
+           (nullif(p.CNPJ, '') IS NOT NULL AND nullif(p.IE, '') IS NOT NULL
+            AND upper(p.IE) NOT LIKE 'ISENT%') AS contribuinte,
+           coalesce(nullif(pz.tipo, ''),
+                    CASE WHEN u.uf = 'AM' AND p.COD_MUN IN (SELECT cod_ibge FROM param_municipios_zfm)
+                              AND nullif(p.CNPJ, '') IS NOT NULL AND nullif(p.SUFRAMA, '') IS NOT NULL
+                         THEN 'habilitado' ELSE 'nao_habilitado' END) AS tipo_zfm,
+           coalesce(nullif(pz.regime, ''), 'regular') AS regime_part
     FROM {tabela} p JOIN arquivos a USING (arquivo_id)
     LEFT JOIN ref_uf u ON u.cod = substr(p.COD_MUN, 1, 2)
+    LEFT JOIN param_empresas_zfm pz ON pz.cnpj = p.CNPJ
     WHERE a.ativo
     """
 
@@ -71,7 +79,8 @@ VIEWS: list[tuple[str, str]] = [
            d.VL_ICMS AS vl_icms, d.VL_IPI AS vl_ipi, d.VL_PIS AS vl_pis, d.VL_COFINS AS vl_cofins,
            p.nome_part, p.cnpj_part, p.uf, p.regiao, coalesce(p.exterior, FALSE) AS exterior,
            coalesce(p.eh_zfm, FALSE) AS eh_zfm, coalesce(p.municipio_zfm, FALSE) AS municipio_zfm,
-           coalesce(p.eh_grupo, FALSE) AS eh_grupo
+           coalesce(p.eh_grupo, FALSE) AS eh_grupo, coalesce(p.contribuinte, FALSE) AS contribuinte,
+           coalesce(p.tipo_zfm, 'nao_habilitado') AS tipo_zfm, coalesce(p.regime_part, 'regular') AS regime_part
     FROM raw_icms_c100 d JOIN arquivos a USING (arquivo_id)
     LEFT JOIN v_participantes p ON p.arquivo_id = d.arquivo_id AND p.cod_part = d.COD_PART
     WHERE a.ativo
@@ -158,7 +167,7 @@ VIEWS: list[tuple[str, str]] = [
                 WHEN u.cfop LIKE '6%' THEN 'interestadual'
                 WHEN p.eh_zfm THEN 'zfm_interna' ELSE 'interna' END AS tipo_operacao_exato,
            CASE WHEN u.cod_part IS NULL THEN NULL ELSE coalesce(p.eh_grupo, FALSE) END AS eh_grupo_exato,
-           p.uf AS uf_dest_exato,
+           p.uf AS uf_dest_exato, p.contribuinte AS contribuinte_exato, p.tipo_zfm AS tipo_zfm_exato,
            coalesce(e.no_amazonas, FALSE) AS estab_no_am
     FROM u JOIN arquivos a ON a.arquivo_id = u.arquivo_id AND a.ativo
     LEFT JOIN param_cfops pc ON pc.cfop = u.cfop
@@ -170,7 +179,8 @@ VIEWS: list[tuple[str, str]] = [
     """),
     ("v_saidas_dest", """
     WITH sh AS (
-        SELECT cnpj_estab, mes, cfop, tipo_operacao, eh_grupo, uf AS uf_dest, sum(vl_opr) AS v
+        SELECT cnpj_estab, mes, cfop, tipo_operacao, eh_grupo, uf AS uf_dest, contribuinte, tipo_zfm,
+               sum(vl_opr) AS v
         FROM v_saidas_doc GROUP BY ALL),
     tot AS (SELECT cnpj_estab, mes, cfop, sum(v) AS t, count(*) AS n FROM sh GROUP BY ALL),
     icms AS (SELECT cnpj_estab, mes, cfop,
@@ -185,6 +195,10 @@ VIEWS: list[tuple[str, str]] = [
                CASE WHEN s.tipo_operacao_exato IS NOT NULL THEN s.eh_grupo_exato
                     ELSE coalesce(sh.eh_grupo, FALSE) END AS eh_grupo,
                CASE WHEN s.tipo_operacao_exato IS NOT NULL THEN s.uf_dest_exato ELSE sh.uf_dest END AS uf_dest,
+               CASE WHEN s.tipo_operacao_exato IS NOT NULL THEN coalesce(s.contribuinte_exato, FALSE)
+                    ELSE coalesce(sh.contribuinte, s.cfop NOT LIKE '7%') END AS contribuinte,
+               CASE WHEN s.tipo_operacao_exato IS NOT NULL THEN coalesce(s.tipo_zfm_exato, 'nao_habilitado')
+                    ELSE coalesce(sh.tipo_zfm, 'nao_habilitado') END AS tipo_zfm_dest,
                CASE WHEN s.tipo_operacao_exato IS NOT NULL OR sh.v IS NULL THEN 1.0
                     WHEN coalesce(t.t, 0) = 0 THEN 1.0 / t.n
                     ELSE CAST(sh.v AS DOUBLE) / CAST(t.t AS DOUBLE) END AS fator_rateio,
@@ -224,7 +238,7 @@ VIEWS: list[tuple[str, str]] = [
                           WHERE x.arquivo_id = c.arquivo_id AND x.pai_linha = c.pai_linha)
     )
     SELECT it.*, v.raiz, v.cnpj_estab, v.ano, v.mes, v.cod_part, v.nome_part, v.cnpj_part, v.chv_nfe,
-           v.uf, v.regiao, v.exterior, v.eh_zfm, v.eh_grupo,
+           v.uf, v.regiao, v.exterior, v.eh_zfm, v.eh_grupo, v.contribuinte, v.tipo_zfm, v.regime_part,
            it.vl_item - it.vl_desc AS valor,
            coalesce(pc.categoria, 'outros') AS categoria_cfop, coalesce(pc.devolucao_de, '') AS devolucao_de,
            CASE WHEN it.cfop LIKE '3%' OR v.exterior THEN 'importacao'
@@ -278,7 +292,8 @@ VIEWS: list[tuple[str, str]] = [
                CAST(coalesce(s.vl_ipi, 0) AS DOUBLE) * s.fator_rateio AS ipi, s.pis_r AS pis,
                s.cofins_r AS cofins, CAST(NULL AS VARCHAR) AS cst_icms, s.cst_ipi, s.cst_pis,
                CAST(s.aliq_pis AS DOUBLE) AS aliq_pis, s.cst_cofins,
-               CAST(s.aliq_cofins AS DOUBLE) AS aliq_cofins, s.fator_rateio, s.rateado, s.icms_estimado
+               CAST(s.aliq_cofins AS DOUBLE) AS aliq_cofins, s.fator_rateio, s.rateado, s.icms_estimado,
+               s.contribuinte, s.tipo_zfm_dest AS tipo_zfm_part, CAST(NULL AS VARCHAR) AS regime_part
         FROM v_saidas_dest s LEFT JOIN param_cfops pc ON pc.cfop = s.cfop
         WHERE s.estab_no_am AND coalesce(pc.devolucao_de, '') = ''
     ),
@@ -293,7 +308,8 @@ VIEWS: list[tuple[str, str]] = [
                -CAST(e.valor AS DOUBLE), -CAST(e.valor AS DOUBLE), -CAST(coalesce(e.vl_icms, 0) AS DOUBLE),
                -CAST(coalesce(e.vl_ipi, 0) AS DOUBLE), -CAST(coalesce(e.vl_pis, 0) AS DOUBLE),
                -CAST(coalesce(e.vl_cofins, 0) AS DOUBLE), e.cst_icms, e.cst_ipi, e.cst_pis,
-               CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE
+               CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE,
+               e.contribuinte, e.tipo_zfm, e.regime_part
         FROM v_entradas_item e
         WHERE e.devolucao_de IN ('venda_producao', 'venda_revenda') AND (SELECT abater FROM prm)
     ),
@@ -308,7 +324,8 @@ VIEWS: list[tuple[str, str]] = [
                CAST(e.valor AS DOUBLE), CAST(e.valor AS DOUBLE), CAST(coalesce(e.vl_icms, 0) AS DOUBLE),
                CAST(coalesce(e.vl_ipi, 0) AS DOUBLE), CAST(coalesce(e.vl_pis, 0) AS DOUBLE),
                CAST(coalesce(e.vl_cofins, 0) AS DOUBLE), e.cst_icms, e.cst_ipi, e.cst_pis,
-               CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE
+               CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE,
+               e.contribuinte, e.tipo_zfm, e.regime_part
         FROM v_entradas_item e
         WHERE e.devolucao_de NOT IN ('venda_producao', 'venda_revenda')
     ),
@@ -322,7 +339,8 @@ VIEWS: list[tuple[str, str]] = [
                -CAST(d.vl_opr - coalesce(d.vl_ipi_c190, 0) - coalesce(d.vl_icms_st_c190, 0) AS DOUBLE),
                -CAST(d.vl_opr - coalesce(d.vl_ipi_c190, 0) - coalesce(d.vl_icms_st_c190, 0) AS DOUBLE),
                -CAST(coalesce(d.vl_icms_c190, 0) AS DOUBLE), -CAST(coalesce(d.vl_ipi_c190, 0) AS DOUBLE),
-               0.0, 0.0, d.cst_icms, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE
+               0.0, 0.0, d.cst_icms, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE,
+               d.contribuinte, d.tipo_zfm, d.regime_part
         FROM v_saidas_doc d
         WHERE coalesce(d.devolucao_de, '') IN ('compra_industrializacao', 'compra_revenda', 'ativo', 'uso_consumo')
           AND d.uf_estab = 'AM' AND (SELECT abater FROM prm)
@@ -331,7 +349,8 @@ VIEWS: list[tuple[str, str]] = [
         SELECT 'entrada', v.raiz, v.cnpj_estab, v.ano, v.mes, NULL, v.reg_origem, v.arquivo_id,
                v.linha_num, NULL, 'insumo_servico', 'insumo_servico', FALSE, 'servico_tomado', NULL, NULL,
                NULL, 'servicos', FALSE, NULL, NULL, FALSE, CAST(v.valor AS DOUBLE), CAST(v.valor AS DOUBLE),
-               0.0, 0.0, 0.0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE
+               0.0, 0.0, 0.0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE,
+               NULL, NULL, NULL
         FROM v_entradas_servicos v
         WHERE v.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)
     ),
@@ -342,6 +361,74 @@ VIEWS: list[tuple[str, str]] = [
            p.tipo_bem, coalesce(p.aliq_tipi_2026, p.aliq_tipi_2023) AS aliq_tipi,
            coalesce(p.ipi_protegido, FALSE) AS ipi_protegido
     FROM u LEFT JOIN param_produtos p ON p.raiz_cnpj = u.raiz AND p.cod_item = u.cod_item
+    """),
+    ("v_cenarios", """
+    -- Classificacao de cada operacao nos cenarios C1-C4 (C5 = IPI por produto, zfm/cenarios.py)
+    WITH prm AS (
+        SELECT coalesce((SELECT lower(valor) FROM param_premissas WHERE chave = 'revenda_presencial'),
+                        'sim') IN ('sim', 's') AS revenda,
+               coalesce((SELECT lower(valor) FROM param_premissas WHERE chave = 'c3a_intermediario'),
+                        'compra_industrializacao') AS c3a),
+    b AS (
+        SELECT b.*, coalesce(nullif(e.tipo, ''), 'nao_habilitado') AS tipo_estab,
+               coalesce(nullif(e.regime, ''), 'regular') AS regime_estab,
+               b.categoria_origem IN ('compra_industrializacao', 'compra_revenda', 'ativo', 'uso_consumo',
+                                      'insumo_servico') AS compra,
+               CASE WHEN b.natureza = 'devolucao_compra' THEN translate(substr(b.cfop, 1, 1), '567', '123')
+                    ELSE substr(b.cfop, 1, 1) END AS dig
+        FROM v_base_operacoes b LEFT JOIN param_empresas_zfm e ON e.cnpj = b.cnpj_estab)
+    SELECT b.*,
+        CASE
+            WHEN b.natureza = 'transferencia' THEN 'TR'
+            WHEN b.sentido = 'entrada' AND b.origem = 'servicos' THEN 'SRV'
+            WHEN b.sentido = 'entrada' AND NOT b.compra THEN 'REM'
+            WHEN b.sentido = 'entrada' AND (b.dig = '3' OR b.origem = 'importacao') THEN
+                CASE WHEN b.tipo_estab = 'industria_incentivada' THEN 'C1a'
+                     WHEN b.tipo_estab = 'habilitado' THEN
+                         CASE WHEN b.categoria_origem = 'compra_revenda' AND (SELECT revenda FROM prm)
+                              THEN 'C1b' ELSE 'C1c' END
+                     ELSE 'NC_E' END
+            WHEN b.sentido = 'entrada' AND b.dig = '2' AND coalesce(b.uf_part, '') <> 'AM' THEN
+                CASE WHEN b.tipo_estab = 'industria_incentivada' THEN 'C2a'
+                     WHEN b.tipo_estab = 'habilitado' AND b.regime_estab = 'simples' THEN 'C2c'
+                     WHEN b.tipo_estab = 'habilitado' THEN 'C2b'
+                     ELSE 'NC_E' END
+            WHEN b.sentido = 'entrada' AND b.dig = '1'
+                 AND b.tipo_zfm_part IN ('industria_incentivada', 'habilitado') THEN
+                CASE WHEN b.tipo_zfm_part = 'industria_incentivada' AND b.tipo_estab = 'industria_incentivada'
+                          AND (b.tipo_bem = 'intermediario'
+                               OR ((SELECT c3a FROM prm) = 'compra_industrializacao'
+                                   AND b.categoria_origem = 'compra_industrializacao'))
+                     THEN 'C3a' ELSE 'C3b' END
+            WHEN b.sentido = 'entrada' THEN 'NC_E'
+            WHEN NOT b.eh_receita THEN 'REM'
+            WHEN b.tipo_operacao = 'exportacao' THEN 'EXP'
+            WHEN b.categoria_origem = 'venda_producao' AND b.incentivado
+                 AND b.tipo_estab = 'industria_incentivada' THEN
+                CASE WHEN b.tipo_operacao = 'zfm_interna' THEN
+                         CASE WHEN b.tipo_zfm_part = 'industria_incentivada' AND b.tipo_bem = 'intermediario'
+                              THEN 'C4d' ELSE 'C4c' END
+                     WHEN b.contribuinte THEN 'C4a' ELSE 'C4b' END
+            ELSE 'NC_S' END AS cenario,
+        CASE
+            WHEN b.natureza = 'transferencia' OR NOT (b.sentido = 'entrada' OR b.eh_receita) THEN ''
+            WHEN b.sentido = 'entrada' AND b.origem = 'servicos' THEN ''
+            WHEN b.sentido = 'entrada' AND NOT b.compra THEN ''
+            WHEN b.sentido = 'entrada' AND b.tipo_estab = 'nao_habilitado' AND b.dig IN ('2', '3')
+                THEN 'Estabelecimento do grupo sem tipo ZFM (habilitado/indústria) em Empresas ZFM'
+            WHEN b.sentido = 'entrada' AND b.dig = '1' AND b.tipo_zfm_part NOT IN ('industria_incentivada', 'habilitado')
+                THEN 'Compra interna de fornecedor fora da ZFM ou sem SUFRAMA'
+            WHEN b.sentido = 'entrada' AND b.dig = '2' AND coalesce(b.uf_part, '') = 'AM'
+                THEN 'CFOP interestadual com fornecedor do AM'
+            WHEN b.sentido = 'saida' AND b.tipo_operacao = 'exportacao' THEN ''
+            WHEN b.sentido = 'saida' AND b.categoria_origem = 'venda_revenda'
+                THEN 'Venda de mercadoria adquirida (revenda): cenário não definido'
+            WHEN b.sentido = 'saida' AND NOT b.incentivado
+                THEN 'Produto não marcado como incentivado (Parâmetros > Produtos)'
+            WHEN b.sentido = 'saida' AND b.tipo_estab <> 'industria_incentivada'
+                THEN 'Estabelecimento não é indústria incentivada (Empresas ZFM)'
+            ELSE '' END AS motivo
+    FROM b
     """),
     ("v_ajustes_icms", """
     SELECT a.arquivo_id, a.cnpj AS cnpj_estab, a.raiz, year(a.dt_ini) AS ano, month(a.dt_ini) AS mes,
@@ -432,18 +519,77 @@ VIEWS: list[tuple[str, str]] = [
 ]
 
 
+# Visoes pesadas viram TABELAS (materializadas) apos a carga/alteracao de parametros:
+# as telas leem tabelas prontas em vez de recalcular a cadeia de visoes a cada clique.
+MATERIALIZAR = ["v_estabelecimentos", "v_participantes", "v_participantes_contrib", "v_docs",
+                "v_saidas_doc", "v_saidas_item", "v_saidas_dest", "v_entradas_item",
+                "v_entradas_servicos", "v_base_operacoes", "v_cenarios"]
+VERSAO_CODIGO = "5"  # mudar quando o SQL das visoes mudar (forca reconstrucao)
+
+
 def criar(con: duckdb.DuckDBPyConnection) -> None:
-    """Cria a tabela de UFs, as tabelas de parametros e as visoes."""
+    """Cria a tabela de UFs, as tabelas de parametros e as visoes (sem materializar)."""
     con.execute("CREATE TABLE IF NOT EXISTS ref_uf (cod VARCHAR, uf VARCHAR, regiao VARCHAR)")
     if con.execute("SELECT count(*) FROM ref_uf").fetchall()[0][0] == 0:
         con.executemany("INSERT INTO ref_uf VALUES (?, ?, ?)",
                         [[k, v[0], v[1]] for k, v in UFS.items()])
     params.criar_tabelas_vazias(con)
+    _remover(con, [n for n, _ in VIEWS])
     for nome, sql in VIEWS:
-        con.execute(f"CREATE OR REPLACE VIEW {nome} AS {sql}")
+        con.execute(f"CREATE VIEW {nome} AS {sql}")
 
 
-def preparar(con: duckdb.DuckDBPyConnection) -> None:
-    """Sincroniza parametros e (re)cria as visoes. Chamar antes das analises."""
+def _remover(con: duckdb.DuckDBPyConnection, nomes: list[str]) -> None:
+    tipos = dict(con.execute("""SELECT table_name, table_type FROM information_schema.tables
+                                WHERE table_schema = 'main'""").fetchall())
+    for n in nomes:
+        t = tipos.get(n)
+        if t == "VIEW":
+            con.execute(f"DROP VIEW {n}")
+        elif t:
+            con.execute(f"DROP TABLE {n}")
+
+
+def _materializar(con: duckdb.DuckDBPyConnection) -> None:
+    for nome in MATERIALIZAR:
+        con.execute("DROP TABLE IF EXISTS _tmp_mat")
+        con.execute(f"CREATE TABLE _tmp_mat AS SELECT * FROM {nome}")
+        con.execute(f"DROP VIEW {nome}")
+        con.execute(f"ALTER TABLE _tmp_mat RENAME TO {nome}")
+
+
+def versao_dados(con: duckdb.DuckDBPyConnection) -> str:
+    """Muda quando arquivos sao carregados/substituidos/apagados ou um parametro e salvo."""
+    import hashlib
+    a = con.execute("""SELECT count(*), coalesce(max(arquivo_id), 0),
+                              coalesce(sum(arquivo_id) FILTER (WHERE ativo), 0) FROM arquivos""").fetchall()[0]
+    h = hashlib.sha256()
+    for p in sorted(params.pasta_params().glob("*.csv")):
+        h.update(p.name.encode())
+        h.update(p.read_bytes())
+    return f"{VERSAO_CODIGO}|{a[0]}|{a[1]}|{a[2]}|{h.hexdigest()[:16]}"
+
+
+def _estado_ok(con: duckdb.DuckDBPyConnection) -> bool:
+    nomes = {r[0] for r in con.execute("""SELECT table_name FROM information_schema.tables
+                                           WHERE table_schema = 'main'""").fetchall()}
+    if "_meta" not in nomes or any(n not in nomes for n, _ in VIEWS):
+        return False
+    return params.esquema_ok(con)
+
+
+def preparar(con: duckdb.DuckDBPyConnection, forcar: bool = False) -> bool:
+    """Sincroniza parametros, recria as visoes e materializa as pesadas, SO se os dados ou os
+    parametros mudaram desde a ultima vez. Retorna True se reconstruiu."""
+    con.execute("CREATE TABLE IF NOT EXISTS _meta (chave VARCHAR PRIMARY KEY, valor VARCHAR)")
+    v = versao_dados(con)
+    if not forcar and _estado_ok(con):
+        r = con.execute("SELECT valor FROM _meta WHERE chave = 'versao'").fetchall()
+        if r and r[0][0] == v:
+            return False
     criar(con)
     params.sincronizar(con)
+    _materializar(con)
+    v = versao_dados(con)  # sincronizar pode ter criado CSV a partir dos modelos
+    con.execute("INSERT OR REPLACE INTO _meta VALUES ('versao', ?)", [v])
+    return True

@@ -610,11 +610,20 @@ def gerar_contrib(emp: Empresa, mes: int) -> str:
 
 
 def gerar_conjunto(pasta: Path, meses: tuple[int, ...] = (1, 2, 3), retificadora: bool = False,
-                   assinatura: bool = False) -> list[Path]:
-    """Grava as EFDs sinteticas em ``pasta`` (Latin-1). Retorna os caminhos."""
+                   assinatura: bool = False, escala: int = 1) -> list[Path]:
+    """Grava as EFDs sinteticas em ``pasta`` (Latin-1). Retorna os caminhos.
+    escala > 1 replica os documentos (teste de desempenho com volume realista)."""
+    import dataclasses
     pasta = Path(pasta)
     pasta.mkdir(parents=True, exist_ok=True)
     empresas = montar_cenario(meses)
+    if escala > 1:
+        for emp in empresas:
+            for e in emp.estabs:
+                for m, docs in e.docs.items():
+                    base = list(docs)
+                    for k in range(1, escala):
+                        docs.extend(dataclasses.replace(d, num=d.num + k * 1_000_000) for d in base)
     gerados: list[Path] = []
     for emp in empresas:
         for e in emp.estabs:

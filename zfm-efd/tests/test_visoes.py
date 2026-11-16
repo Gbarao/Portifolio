@@ -60,3 +60,35 @@ def test_estab_fora_do_am_marcado(con_param):
     r = con_param.execute("""SELECT DISTINCT estab_no_am FROM v_saidas_item
                              WHERE cnpj_estab = '33333333000133'""").fetchall()
     assert r == [(False,)]
+
+
+def test_preparar_so_reconstroi_quando_muda(con_param):
+    from zfm import params, visoes
+    assert visoes.preparar(con_param) is False          # nada mudou
+    tipo = con_param.execute("""SELECT table_type FROM information_schema.tables
+                                WHERE table_name = 'v_base_operacoes'""").fetchall()[0][0]
+    assert tipo == "BASE TABLE"                          # materializada
+    pr = params.carregar("param_premissas")
+    pr.loc[pr.chave == "tolerancia_conciliacao", "valor"] = "2,00"
+    params.salvar("param_premissas", pr)
+    assert visoes.preparar(con_param) is True           # parametro salvo -> reconstroi
+    assert visoes.preparar(con_param) is False
+
+
+def test_ano_base_automatico(con_param):
+    from zfm import params
+    assert params.ano_base(con_param) == 2026
+    pr = params.carregar("param_premissas")
+    pr.loc[pr.chave == "ano_base", "valor"] = "2025"     # ano sem arquivo: usa o mais recente
+    params.salvar("param_premissas", pr)
+    assert params.ano_base(con_param) == 2026
+
+
+def test_texto_sem_espacos_nas_pontas(con, tmp_path):
+    from tests.fixtures.gerador import gerar_icms, montar_cenario
+    from zfm.parsers import carregar_arquivo
+    txt = gerar_icms(montar_cenario(meses=(1,))[0].estabs[0], 1).replace("|AM|041111111|", "| AM |041111111|", 1)
+    p = tmp_path / "esp.txt"
+    p.write_bytes(txt.encode("latin-1"))
+    carregar_arquivo(con, p)
+    assert con.execute("SELECT UF FROM raw_icms_0000").fetchall() == [("AM",)]

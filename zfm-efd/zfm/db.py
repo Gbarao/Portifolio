@@ -64,6 +64,8 @@ _DDL_CONTROLE = [
 def criar_esquema(con: duckdb.DuckDBPyConnection) -> None:
     for ddl in _DDL_CONTROLE:
         con.execute(ddl)
+    # colunas acrescentadas em versoes novas (banco antigo e atualizado sem perder dados)
+    con.execute("ALTER TABLE arquivos ADD COLUMN IF NOT EXISTS assinatura_rapida VARCHAR")
     for tipo, registros in LAYOUTS.items():
         for r in registros.values():
             if r.carregar:
@@ -74,6 +76,9 @@ def conectar(caminho: str | Path | None = None) -> duckdb.DuckDBPyConnection:
     caminho = Path(caminho) if caminho else caminho_banco()
     caminho.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(caminho))
+    # arquivos de 1 GB+: gravar sem preservar a ordem de insercao reduz memoria e acelera;
+    # a ordem das linhas e garantida por linha_num nas consultas
+    con.execute("SET preserve_insertion_order = false")
     criar_esquema(con)
     return con
 
@@ -87,7 +92,7 @@ def _expr_cast(coluna: str) -> str:
         return f"TRY_CAST(TRY_STRPTIME({c}, '%d%m%Y') AS DATE)"
     if t == "BIGINT":
         return f"TRY_CAST({c} AS BIGINT)"
-    return f'NULLIF("{coluna}", \'\')'
+    return c  # texto: sem espacos nas pontas (ex.: ' AM', CNPJ com espaco)
 
 
 def _read_csv(colunas: list[str], caminho_csv: str | Path) -> str:

@@ -100,7 +100,7 @@ def test_aplicar_aliquotas_de_referencia():
 
 def test_resumo_lista_todas_as_premissas():
     r = params.resumo_premissas()
-    assert {"Alíquotas CBS/IBS", "Transição", "Regime geral (fora da ZFM)", "Entradas pós-reforma",
+    assert {"Alíquotas CBS/IBS", "Transição", "Regime geral (fora da ZFM)", "Regras por cenário",
             "Premissas de cálculo", "Perímetro", "Método"} <= set(r["grupo"])
     chaves = set(r.loc[r.grupo == "Premissas de cálculo", "premissa"])
     assert {"prazo_cp_anos", "limite_tipi_ipi", "cp447_demais_e_es", "p_ibs_450_final"} <= chaves

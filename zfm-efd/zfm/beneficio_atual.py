@@ -132,7 +132,7 @@ def _teses_atual(con: duckdb.DuckDBPyConnection, s: pd.DataFrame, f: Filtro = TO
     t = params.carregar("param_teses")
     if t.empty:
         return pd.DataFrame(columns=COLUNAS)
-    ano = int(params.premissa_num("ano_base", 2026))
+    ano = params.ano_base(con)
     meses = con.execute(f"SELECT DISTINCT raiz, month(dt_ini) AS mes FROM arquivos "
                         f"WHERE ativo AND year(dt_ini) = ? AND {f.sql('raiz', None, 'month(dt_ini)')}",
                         [ano]).df()
@@ -200,7 +200,7 @@ def receita_incentivada(con: duckdb.DuckDBPyConnection, eliminar_intragrupo: boo
 
 
 def meses_observados(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    ano = int(params.premissa_num("ano_base", 2026))
+    ano = params.ano_base(con)
     return con.execute("""SELECT raiz, count(DISTINCT month(dt_ini)) AS meses FROM arquivos
                           WHERE ativo AND tipo = 'ICMS_IPI' AND year(dt_ini) = ? GROUP BY 1""",
                        [ano]).df()

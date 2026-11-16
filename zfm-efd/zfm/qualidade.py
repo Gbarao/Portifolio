@@ -17,23 +17,26 @@ FALTA_CONTRIB = "Falta EFD Contribuições"
 FALTAM_AMBAS = "Faltam as duas"
 
 
-def periodo_padrao(con: duckdb.DuckDBPyConnection, ano: int = 2026) -> tuple[int, int]:
+def periodo_padrao(con: duckdb.DuckDBPyConnection, ano: int | None = None) -> tuple[int, int]:
     """(ano, ultimo_mes) para o YTD: ultimo mes com algum arquivo ativo no ano."""
+    from . import params
+    ano = ano or params.ano_base(con)
     r = con.execute(
         "SELECT max(month(dt_ini)) FROM arquivos WHERE ativo AND year(dt_ini) = ?", [ano]
     ).fetchall()
     return ano, int(r[0][0]) if r and r[0][0] else 0
 
 
-def q1_completude(con: duckdb.DuckDBPyConnection, ano: int = 2026,
+def q1_completude(con: duckdb.DuckDBPyConnection, ano: int | None = None,
                   mes_fim: int | None = None) -> pd.DataFrame:
     """Matriz estabelecimento x mes: as duas EFDs existem para cada mes do YTD?
 
     Por estabelecimento do AM: EFD ICMS/IPI do proprio CNPJ e EFD Contribuicoes
     da empresa (raiz do CNPJ), que e entregue pela matriz.
     """
+    ano, fim_padrao = periodo_padrao(con, ano)
     if mes_fim is None:
-        _, mes_fim = periodo_padrao(con, ano)
+        mes_fim = fim_padrao
     est = estabelecimentos(con)
     est = est[est["no_amazonas"]] if not est.empty else est
     colunas = ["raiz", "cnpj", "ie", "nome"] + MESES[:mes_fim]

@@ -83,9 +83,9 @@ def produtos_com_percentuais(prod: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Insumos mensais por unidade de apuracao
 # ---------------------------------------------------------------------------
-MEDIDAS = ["deb_base_zfm", "base_zfm_interna", "cp450_cbs", "base_incent_p_ibs", "receita_incent",
-           "exportacao", "transferencias", "ipi_conc_as_is", "ipi_conc_prot", "cred_cbs", "cred_ibs",
-           "cp447_cheio", "cp449_cheio", "icms_as_is", "ipi_as_is"]
+MEDIDAS = ["deb_cbs_base", "deb_ibs_base", "deb_ibs_saidas", "cred_cbs", "cred_ibs", "cp450_cbs",
+           "base_incent_p_ibs", "cp447_cheio", "cp449_cheio", "cp444_base", "receita_incent", "exportacao",
+           "transferencias", "base_zfm_interna", "ipi_conc_as_is", "ipi_conc_prot", "icms_as_is", "ipi_as_is"]
 
 
 def _sim(chave: str, padrao: str = "sim") -> bool:
@@ -97,65 +97,90 @@ def unidade_apuracao() -> str:
     return "cnpj_estab" if v.startswith("estab") else "raiz"
 
 
-def insumos_mensais(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
-    """Uma linha por (unidade, raiz, mes) com as medidas que o motor usa."""
+class _ProdutosRegistrados:
+    """Registra no banco (temporariamente) os percentuais do art. 450 por produto."""
+
+    def __init__(self, con: duckdb.DuckDBPyConnection):
+        self.con = con
+
+    def __enter__(self):
+        prod = produtos_com_percentuais(params.carregar("param_produtos"))
+        cols = ["raiz_cnpj", "cod_item", "p_cbs_450", "p_ibs_450", "eh_tic"]
+        df = prod[cols] if not prod.empty else pd.DataFrame(
+            {"raiz_cnpj": pd.Series(dtype=str), "cod_item": pd.Series(dtype=str),
+             "p_cbs_450": pd.Series(dtype=float), "p_ibs_450": pd.Series(dtype=float),
+             "eh_tic": pd.Series(dtype=bool)})
+        self.con.register("_prod_pct", df)
+        return self
+
+    def __exit__(self, *exc):
+        self.con.unregister("_prod_pct")
+
+
+def sql_base_cenarios(f: Filtro) -> str:
+    """Operacoes classificadas + regra To Be do cenario + percentuais (uma linha por operacao).
+    Requer _ProdutosRegistrados ativo."""
     pc = percentuais()
     liquida = params.premissa(None, "base_cbs_ibs", "liquida_sem_tributos") == "liquida_sem_tributos"
     transf = _sim("transferencias_na_base_cbs_ibs", "nao")
+    tipi_regra = params.premissa(None, "ipi_protegido_regra", "tipi").strip().lower()
+    prot = (f"c.aliq_tipi >= {pc['limite_tipi_ipi']}" if tipi_regra == "tipi"
+            else f"c.ipi_protegido AND c.aliq_tipi >= {pc['limite_tipi_ipi']}")
+    return f"""
+        SELECT c.*,
+               c.valor - CASE WHEN {liquida} THEN c.icms + c.pis + c.cofins ELSE 0 END AS base,
+               CASE coalesce(r.entrada_creditavel, 'regime') WHEN 'sim' THEN 1.0 WHEN 'nao' THEN 0.0
+                    ELSE CASE WHEN c.regime_estab = 'regular' THEN 1.0 ELSE 0.0 END END AS credok,
+               CASE WHEN c.regime_estab = 'regular' THEN 1.0 ELSE 0.0 END AS regular,
+               coalesce(r.cbs_debito, 0) AS r_cbs_debito, coalesce(r.ibs_debito, 0) AS r_ibs_debito,
+               coalesce(r.cbs_entrada, 0) AS r_cbs_entrada, coalesce(r.ibs_entrada, 0) AS r_ibs_entrada,
+               coalesce(r.cbs_credito_fornecedor, 0) AS r_cbs_forn, coalesce(r.ibs_credito_fornecedor, 0) AS r_ibs_forn,
+               coalesce(r.cp_cbs_450, FALSE) AND c.incentivado AS r_cp_cbs,
+               coalesce(r.cp_ibs_450, FALSE) AND c.incentivado AS r_cp_ibs,
+               coalesce(r.cp_ibs_entrada, '') AS r_cp_ent, coalesce(r.cp_444_pct, 0) AS r_cp444,
+               coalesce(pp.p_cbs_450, 0) AS p_cbs, coalesce(pp.p_ibs_450, 0) AS p_ibs,
+               CASE WHEN c.sul_sudeste_exceto_es THEN {pc['cp447_sul_sudeste_exceto_es'] / 100}
+                    ELSE {pc['cp447_demais_e_es'] / 100} END AS pct447,
+               {pc['cp449'] / 100} AS pct449,
+               coalesce({prot}, FALSE) AS ipi_prot
+        FROM v_cenarios c
+        LEFT JOIN _prod_pct pp ON pp.raiz_cnpj = c.raiz AND pp.cod_item = c.cod_item
+        LEFT JOIN param_regras_cenario r ON r.cenario = CASE
+             WHEN c.cenario = 'TR' AND {transf} THEN CASE c.sentido WHEN 'saida' THEN 'NC_S' ELSE 'NC_E' END
+             ELSE c.cenario END
+        WHERE {f.sql('c.raiz', 'c.cnpj_estab', 'c.mes')}"""
+
+
+AGREGADOS = """
+    sum(x.base * x.r_cbs_debito) + sum(x.base * x.r_cbs_entrada * (1 - x.credok)) AS deb_cbs_base,
+    sum(x.base * x.r_ibs_debito) + sum(x.base * x.r_ibs_entrada * (1 - x.credok)) AS deb_ibs_base,
+    sum(x.base * x.r_ibs_debito) AS deb_ibs_saidas,
+    sum(x.base * x.r_cbs_forn * x.regular) AS cred_cbs,
+    sum(x.base * x.r_ibs_forn * x.regular) AS cred_ibs,
+    sum(x.base * x.p_cbs * x.r_cbs_debito) FILTER (WHERE x.r_cp_cbs) AS cp450_cbs,
+    sum(x.base * x.p_ibs * x.r_ibs_debito) FILTER (WHERE x.r_cp_ibs) AS base_incent_p_ibs,
+    sum(x.base * x.pct447 * x.regular) FILTER (WHERE x.r_cp_ent = '447') AS cp447_cheio,
+    sum(x.base * x.pct449 * x.regular) FILTER (WHERE x.r_cp_ent = '449') AS cp449_cheio,
+    sum(x.base * x.r_cp444 / 100) FILTER (WHERE x.r_cp_ent = '444') AS cp444_base,
+    sum(x.valor) FILTER (WHERE x.cenario LIKE 'C4%') AS receita_incent,
+    sum(x.valor) FILTER (WHERE x.cenario = 'EXP') AS exportacao,
+    sum(x.valor) FILTER (WHERE x.cenario = 'TR' AND x.sentido = 'saida') AS transferencias,
+    sum(x.base) FILTER (WHERE x.cenario IN ('C4c', 'C4d')) AS base_zfm_interna,
+    sum(x.valor * x.aliq_tipi / 100) FILTER (WHERE x.cenario LIKE 'C4%' AND x.aliq_tipi IS NOT NULL)
+        AS ipi_conc_as_is,
+    sum(x.valor * x.aliq_tipi / 100) FILTER (WHERE x.cenario LIKE 'C4%' AND x.ipi_prot) AS ipi_conc_prot
+"""
+
+
+def insumos_mensais(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
+    """Uma linha por (unidade, raiz, mes) com as medidas que o motor usa, a partir das
+    operacoes classificadas nos cenarios e das regras de param_regras_cenario."""
     unid = unidade_apuracao()
-    prod = produtos_com_percentuais(params.carregar("param_produtos"))
-    regras = params.carregar("param_regras_entradas")
-    con.register("_prod_pct", prod[["raiz_cnpj", "cod_item", "p_cbs_450", "p_ibs_450"]]
-                 if not prod.empty else pd.DataFrame({"raiz_cnpj": pd.Series(dtype=str),
-                                                      "cod_item": pd.Series(dtype=str),
-                                                      "p_cbs_450": pd.Series(dtype=float),
-                                                      "p_ibs_450": pd.Series(dtype=float)}))
-    con.register("_regras", regras)
-    cred = ", ".join(f"'{c}'" for c in _cfop.CATEGORIAS_CREDITAVEIS)
-    try:
+    with _ProdutosRegistrados(con):
         ops = con.execute(f"""
-            WITH x AS (
-                SELECT b.*,
-                       b.valor - CASE WHEN {liquida} THEN b.icms + b.pis + b.cofins ELSE 0 END AS base,
-                       (b.sentido = 'saida' AND b.tipo_operacao NOT IN ('exportacao', 'zfm_interna')
-                        AND (b.eh_receita OR (b.natureza = 'transferencia' AND {transf}))) AS trib_zfm,
-                       (b.sentido = 'entrada' AND (b.categoria_origem IN ({cred})
-                        OR (b.natureza = 'transferencia' AND {transf}))) AS cred_ok
-                FROM v_base_operacoes b WHERE {f.sql('b.raiz', 'b.cnpj_estab', 'b.mes')})
-            SELECT x.{unid} AS unidade, x.raiz, x.mes,
-                sum(x.base) FILTER (WHERE x.trib_zfm) AS deb_base_zfm,
-                sum(x.base) FILTER (WHERE x.sentido = 'saida' AND x.eh_receita
-                                    AND x.tipo_operacao = 'zfm_interna') AS base_zfm_interna,
-                sum(x.base * coalesce(pp.p_cbs_450, 0)) FILTER (WHERE x.trib_zfm AND x.incentivado) AS cp450_cbs,
-                sum(x.base * coalesce(pp.p_ibs_450, 0)) FILTER (WHERE x.trib_zfm AND x.incentivado)
-                    AS base_incent_p_ibs,
-                sum(x.valor) FILTER (WHERE x.sentido = 'saida' AND x.incentivado
-                                     AND x.tipo_operacao <> 'exportacao') AS receita_incent,
-                sum(x.valor) FILTER (WHERE x.sentido = 'saida' AND x.eh_receita
-                                     AND x.tipo_operacao = 'exportacao') AS exportacao,
-                sum(x.valor) FILTER (WHERE x.natureza = 'transferencia' AND x.sentido = 'saida') AS transferencias,
-                sum(x.valor * x.aliq_tipi / 100) FILTER (WHERE x.sentido = 'saida' AND x.incentivado
-                    AND x.tipo_operacao <> 'exportacao' AND x.aliq_tipi IS NOT NULL) AS ipi_conc_as_is,
-                sum(x.valor * x.aliq_tipi / 100) FILTER (WHERE x.sentido = 'saida' AND x.incentivado
-                    AND x.tipo_operacao <> 'exportacao' AND x.ipi_protegido
-                    AND x.aliq_tipi >= {pc['limite_tipi_ipi']}) AS ipi_conc_prot,
-                sum(x.base) FILTER (WHERE x.cred_ok AND coalesce(r.tratamento_cbs, 'tributada') = 'tributada')
-                    AS cred_cbs,
-                sum(x.base) FILTER (WHERE x.cred_ok AND coalesce(r.tratamento_ibs, 'tributada') = 'tributada')
-                    AS cred_ibs,
-                sum(x.base * CASE WHEN x.sul_sudeste_exceto_es THEN {pc['cp447_sul_sudeste_exceto_es'] / 100}
-                                  ELSE {pc['cp447_demais_e_es'] / 100} END)
-                    FILTER (WHERE x.cred_ok AND coalesce(r.base_cp_447, FALSE)
-                            AND r.tratamento_ibs = 'aliquota_zero') AS cp447_cheio,
-                sum(x.base * {pc['cp449'] / 100}) FILTER (WHERE x.cred_ok AND coalesce(r.base_cp_449, FALSE)
-                    AND x.categoria_origem = 'compra_industrializacao') AS cp449_cheio
-            FROM x
-            LEFT JOIN _prod_pct pp ON pp.raiz_cnpj = x.raiz AND pp.cod_item = x.cod_item
-            LEFT JOIN _regras r ON r.origem = x.origem
-            GROUP BY 1, 2, 3""").df()
-    finally:
-        con.unregister("_prod_pct")
-        con.unregister("_regras")
+            WITH x AS ({sql_base_cenarios(f)})
+            SELECT x.{unid} AS unidade, x.raiz, x.mes, {AGREGADOS}
+            FROM x GROUP BY 1, 2, 3""").df()
     ap = _as_is.carga_mensal(con, f)
     ap = ap[ap["tributo"].isin(["ICMS", "IPI"])]
     if not ap.empty:
@@ -163,8 +188,8 @@ def insumos_mensais(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.Dat
         ap = ap.pivot_table(index=["unidade", "raiz", "mes"], columns="tributo", values="carga",
                             aggfunc="sum", fill_value=0.0).reset_index()
         ap = ap.rename(columns={"ICMS": "icms_as_is", "IPI": "ipi_as_is"})
-    out = pd.concat([d for d in (ops, ap) if not d.empty], ignore_index=True) if (
-        not ops.empty or not ap.empty) else pd.DataFrame(columns=["unidade", "raiz", "mes"])
+    partes = [d for d in (ops, ap) if not d.empty]
+    out = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame(columns=["unidade", "raiz", "mes"])
     for c in MEDIDAS:
         if c not in out.columns:
             out[c] = 0.0
@@ -292,7 +317,7 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
                 for mes in range(1, 13):
                     v = pr.loc[mes]
                     # ---------------- CBS
-                    deb = v["deb_base_zfm"] * a_cbs
+                    deb = v["deb_cbs_base"] * a_cbs
                     cred = v["cred_cbs"] * a_cbs
                     cp_new = v["cp450_cbs"] if aplica450 else 0.0
                     exp_c = cp_cbs.expirar(idx)
@@ -303,15 +328,16 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
                     usado_c = cp_cbs.usar(liq)
                     cbs_pagar = liq - usado_c
                     # ---------------- IBS
-                    deb_i = v["deb_base_zfm"] * a_ibs
+                    deb_i = v["deb_ibs_base"] * a_ibs
                     cred_i = v["cred_ibs"] * a_ibs
-                    cp_ent = (v["cp447_cheio"] + v["cp449_cheio"]) * f_cp if a_ibs > 0 else 0.0
+                    cp_ent = ((v["cp447_cheio"] + v["cp449_cheio"]) * f_cp + v["cp444_base"] * a_ibs
+                              if a_ibs > 0 else 0.0)
                     exp_i = cp_ibs.expirar(idx)
                     liq_i = deb_i - cred_i - normal_ibs
                     normal_ibs = max(0.0, -liq_i)
                     liq_i = max(0.0, liq_i)
                     cp_ibs.adicionar(idx, cp_ent)
-                    share = v["base_incent_p_ibs"] / v["deb_base_zfm"] if v["deb_base_zfm"] > 0 else 0.0
+                    share = v["base_incent_p_ibs"] / v["deb_ibs_saidas"] if v["deb_ibs_saidas"] > 0 else 0.0
                     aplica450_ibs = aplica450 and ano >= ano_cp450_ibs
                     if ordem_450_antes:
                         cp450_ibs = liq_i * share if aplica450_ibs else 0.0
