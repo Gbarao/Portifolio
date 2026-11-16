@@ -326,8 +326,14 @@ def _carregar(con: duckdb.DuckDBPyConnection, caminho: Path,
         if progresso:
             progresso(0.85, f"{caminho.name}: gravando no banco local")
         for chave, campos_ in versao_campos.items():
-            db.inserir_csv(con, ident.tipo, chave[0], campos_,
-                           pasta_tmp / f"{chave[0]}_{chave[1]}.csv")
+            falhas = db.inserir_csv(con, ident.tipo, chave[0], campos_,
+                                    pasta_tmp / f"{chave[0]}_{chave[1]}.csv")
+            for campo, n, ex_linha, ex_valor in falhas:
+                k = (chave[0], "conversao",
+                     f"Campo {campo} com valor que não é número/data válido "
+                     f"(ex.: '{ex_valor[:30]}'); ficou vazio no banco")
+                avisos[k] += n
+                exemplo_aviso.setdefault(k, ex_linha)
 
         if not encerrado:
             avisar("9999", "sem_9999", "Arquivo sem registro 9999 (pode estar incompleto)", total_linhas)

@@ -68,8 +68,9 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
             "regra_automatica": "texto", "revisado": "bool"},
            ("codigo", "registro"),
            "Classes: credito_estimulo, credito_presumido_entrada, fundo_FTI, fundo_UEA, "
-           "fundo_FMPES, outros_beneficios, outros. Preenchida automaticamente a partir das "
-           "EFDs; marque 'revisado' ao conferir."),
+           "fundo_FMPES, outros_beneficios, outros, nao_classificado. Preenchida automaticamente "
+           "a partir das EFDs; código sem regra fica 'nao_classificado' e gera alerta até ser "
+           "classificado. Marque 'revisado' ao conferir."),
     Tabela("param_aliquotas_regime_geral", "Regime geral (fora da ZFM)",
            {"tributo": "texto", "aliquota": "num", "observacao": "texto"},
            ("tributo",),
@@ -79,10 +80,13 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
            ("cod_ibge",),
            "Municípios da área da Zona Franca (código IBGE de 7 dígitos)."),
     Tabela("param_cfops", "CFOPs",
-           {"cfop": "texto", "categoria": "texto", "eh_receita": "bool", "automatico": "bool"},
+           {"cfop": "texto", "categoria": "texto", "eh_receita": "bool", "devolucao_de": "texto",
+            "automatico": "bool"},
            ("cfop",),
            "Classificação dos CFOPs encontrados nas EFDs. 'eh_receita' define o que conta "
-           "como receita de venda. Ao editar, desmarque 'automatico'."),
+           "como receita de venda. 'devolucao_de' indica a operação de origem que a devolução "
+           "abate (ex.: 1201 abate venda_producao; 5201 abate compra_industrializacao). "
+           "Ao editar, desmarque 'automatico'."),
     Tabela("param_regras_entradas", "Tratamento das entradas (pós-reforma)",
            {"origem": "texto", "tratamento_cbs": "texto", "tratamento_ibs": "texto",
             "base_cp_447": "bool", "base_cp_449": "bool", "observacao": "texto"},
@@ -118,13 +122,13 @@ _FATOR_ICMS = {2027: 1.0, 2028: 1.0, 2029: 0.9, 2030: 0.8, 2031: 0.7, 2032: 0.6,
 
 
 def montar_aliquotas(refs: pd.DataFrame, atual: pd.DataFrame | None = None,
-                     reducao_cbs: float = 0.1) -> pd.DataFrame:
+                     reducao_cbs: float = 0.1, ibs_teste: float = 0.1) -> pd.DataFrame:
     """Gera as linhas cenario x ano (2027-2033) a partir das aliquotas de REFERENCIA.
 
     refs: cenario, cbs_referencia, ibs_referencia, aplica_cp_450, ipi_protegido_override, fonte.
     Mantem fator_icms, fator_cp_entrada e aliq_contrib_art457 ja editados em ``atual``.
-    Regras: 2027-2028 CBS = ref − reducao, IBS = 0 (teste neutro); 2029-2032 IBS = ref ×
-    (1 − fator_icms); 2033 = referencia cheia.
+    Regras: 2027-2028 CBS = ref − reducao e IBS = aliquota de teste (0,1%); 2029-2032
+    IBS = ref × (1 − fator_icms); 2033 = referencia cheia.
     """
     linhas = []
     for r in refs.itertuples():
@@ -141,9 +145,9 @@ def montar_aliquotas(refs: pd.DataFrame, atual: pd.DataFrame | None = None,
             ibs = float(r.ibs_referencia) if pd.notna(r.ibs_referencia) else None
             if ano <= 2028:
                 a_cbs = None if cbs is None else round(cbs - reducao_cbs, 4)
-                a_ibs = 0.0
-                obs = (" | 2027-2028: CBS reduzida em 0,1 p.p.; IBS-teste de 0,1% compensável "
-                       "com a CBS tratado como neutro")
+                a_ibs = ibs_teste
+                obs = (" | 2027-2028: CBS = referência − 0,1 p.p. e IBS de teste de 0,1% "
+                       "(sem crédito presumido do art. 450 de IBS antes de 2029)")
             else:
                 a_cbs = cbs
                 a_ibs = None if ibs is None else round(ibs * (1 - f), 4)
@@ -185,7 +189,7 @@ def aplicar_referencias(refs: pd.DataFrame) -> pd.DataFrame:
     refs = refs.dropna(subset=["cenario"])
     refs = refs[refs["cenario"].astype(str).str.strip() != ""]
     novo = montar_aliquotas(refs, carregar("param_aliquotas_cenario"),
-                            premissa_num("reducao_cbs_2027_2028", 0.1))
+                            premissa_num("reducao_cbs_2027_2028", 0.1), premissa_num("aliq_ibs_teste", 0.1))
     salvar("param_aliquotas_cenario", novo)
     return novo
 
@@ -205,17 +209,44 @@ _PREMISSAS = [
      "Crédito estímulo e fundos alocados aos produtos pela receita incentivada do "
      "estabelecimento no mês."),
     ("ordem_deducao_ibs", "debito-creditos-cp447_449-cp450",
-     "Débito − créditos − CP entradas (447/449) → aplica p_ibs_450 sobre o saldo devedor "
-     "atribuível aos incentivados. CONFERIR na Resolução CGIBS / NT 2025.002."),
+     "Ordem de dedução do IBS: 'debito-creditos-cp447_449-cp450' (CP de entrada antes; o art. 450 "
+     "incide sobre o saldo que sobra) ou 'debito-creditos-cp450-cp447_449' (art. 450 sobre o saldo "
+     "após créditos; CP de entrada depois). CONFERIR na Resolução CGIBS / NT 2025.002."),
     ("prazo_cp_anos", "5", "Prazo para usar crédito presumido (art. 452)."),
-    ("nivel_apuracao_cbs_ibs", "raiz", "Apuração de CBS/IBS por raiz do CNPJ."),
-    ("tolerancia_conciliacao", "1,00", "Tolerância das conciliações, em R$."),
+    ("nivel_apuracao_cbs_ibs", "raiz",
+     "Apuração de CBS/IBS: 'raiz' (empresa, centralizada) ou 'estabelecimento' (CNPJ completo). "
+     "Conferir a regra de centralização na LC 214/2025."),
+    ("tolerancia_conciliacao", "1,00", "Tolerância das conciliações (R1, R2, R4, R5), em R$ por estabelecimento/mês."),
     ("cst_ipi_isento", "52", "CSTs de IPI de saída considerados isenção ZFM (separar por ;)."),
     ("ipi_sem_cst_assume_isento", "sim",
      "Saídas sem CST de IPI por item (C181): produto incentivado é tratado como isento."),
     ("aliq_pis_zfm_validas", "0,65;1,3;0", "Alíquotas de PIS aceitas nas saídas incentivadas (Q9)."),
     ("aliq_cofins_zfm_validas", "3;6;0", "Alíquotas de COFINS aceitas nas saídas incentivadas (Q9)."),
     ("beneficio_entradas_no_total", "nao", "Benefícios nas entradas entram no total? (informativo)"),
+    ("zfm_exige_suframa", "sim",
+     "Destinatário/fornecedor só é tratado como ZFM se tiver SUFRAMA no cadastro 0150 (sim/nao)."),
+    ("abater_devolucoes", "sim",
+     "Devoluções de venda abatem as saídas de origem e devoluções de compra abatem as entradas (sim/nao)."),
+    ("transferencias_na_base_cbs_ibs", "nao",
+     "Transferências entre estabelecimentos entram como débito/crédito de CBS/IBS? (sim/nao). "
+     "Padrão 'nao' (conferir o tratamento na LC 214/2025). Sempre mostradas à parte."),
+    ("tolerancia_receita_pct", "0,5", "Tolerância das conciliações de receita (R3), em % do valor."),
+    ("carga_icms_as_is", "e110_mais_excesso_e116",
+     "Carga de ICMS As Is: 'e110_mais_excesso_e116' = ICMS a recolher + débitos especiais (E110) + "
+     "obrigações do E116 além desse total (ex.: fundos pagos à parte); 'e110_mais_fundos' = E110 + "
+     "fundos classificados; 'somente_e110' = só o E110."),
+    ("rateio_pis_cofins_am", "receita",
+     "A EFD Contribuições é da empresa inteira (inclui estabelecimentos fora do AM). 'receita' = "
+     "PIS/COFINS do bloco M rateados pela receita dos estabelecimentos do AM; 'nenhum' = valor inteiro."),
+    ("teses_ativas_ja_na_apuracao", "sim",
+     "Teses com status 'ativa' já estão refletidas na apuração (não ajustam a carga As Is)."),
+    ("anualizacao_mensal", "perfil_observado",
+     "Perfil mês a mês do ano simulado: 'perfil_observado' (meses de 2026 + média nos demais) ou "
+     "'media_constante' (sensibilidade sem sazonalidade). O total anual é sempre média × 12."),
+    ("fator_ipi_proprio", "0",
+     "Fração do IPI próprio a recolher (E520) que permanece no To Be (0 = IPI zerado/ZFM isenta)."),
+    ("aliq_ibs_teste", "0,1", "IBS de teste em 2027-2028, em % (LC 214/2025: 0,05% estadual + 0,05% municipal)."),
+    ("ano_inicio_cp450_ibs", "2029", "Ano a partir do qual vale o crédito presumido de IBS do art. 450 (§ 1º)."),
     ("reducao_cbs_2027_2028", "0,1",
      "Redução da CBS em 2027-2028, em p.p. (IBS-teste de 0,1% compensável com a CBS)."),
     ("limite_tipi_ipi", "6,5",
@@ -343,6 +374,13 @@ def carregar(nome: str) -> pd.DataFrame:
             salvar(nome, df, registrar=False)
     df = pd.read_csv(p, sep=";", dtype=str, encoding="utf-8-sig", keep_default_na=False)
     df = normalizar(nome, df)
+    if nome == "param_cfops" and not df.empty:  # versao anterior nao tinha 'devolucao_de'
+        vazio = df["automatico"] & (df["devolucao_de"] == "")
+        df.loc[vazio, "devolucao_de"] = df.loc[vazio, "cfop"].map(_cfop.devolucao_de)
+    if nome == "param_codigos_ajuste_icms" and not df.empty:
+        # versao anterior gravava 'outros' para codigo sem regra: vira 'nao_classificado' (alerta)
+        velho = (df["classe"] == "outros") & (df["regra_automatica"] == "sem regra") & ~df["revisado"]
+        df.loc[velho, "classe"] = "nao_classificado"
     if nome == "param_premissas":  # premissas criadas em versoes novas entram com o valor padrao
         faltam = [x for x in _PREMISSAS if x[0] not in set(df["chave"])]
         if faltam:
@@ -409,7 +447,7 @@ _PALAVRAS = [
 _CODIGOS_CONHECIDOS = {"AM040001": "credito_estimulo", "AM040014": "credito_estimulo"}
 
 
-def classificar_codigo(codigo: str, registro: str, texto: str) -> tuple[str, str]:
+def classificar_codigo(codigo: str, registro: str, texto: str, cod_or: str = "") -> tuple[str, str]:
     """(classe, regra) para um codigo de ajuste encontrado na EFD."""
     t = (texto or "").upper()
     for padrao, classe, rotulo in _PALAVRAS:
@@ -422,7 +460,9 @@ def classificar_codigo(codigo: str, registro: str, texto: str) -> tuple[str, str
         return "credito_estimulo", "dedução do ICMS próprio no AM (4º caractere = 4); conferir"
     if registro == "E111" and len(c) == 8 and c[2] == "0" and c[3] == "2":
         return "outros_beneficios", "outro crédito do ICMS próprio (4º caractere = 2); conferir"
-    return "outros", "sem regra"
+    if registro == "E116" and str(cod_or or "").strip() == "000":
+        return "outros", "E116 com COD_OR 000: ICMS próprio a recolher (não é ajuste)"
+    return "nao_classificado", "sem regra: classificar manualmente"
 
 
 def preencher_a_partir_das_efds(con: duckdb.DuckDBPyConnection) -> dict[str, int]:
@@ -460,20 +500,25 @@ def preencher_a_partir_das_efds(con: duckdb.DuckDBPyConnection) -> dict[str, int
     linhas = []
     for (c,) in cfops:
         cat, rec = _cfop.classificar(c)
-        linhas.append({"cfop": c, "categoria": cat, "eh_receita": rec, "automatico": True})
+        linhas.append({"cfop": c, "categoria": cat, "eh_receita": rec,
+                       "devolucao_de": _cfop.devolucao_de(c), "automatico": True})
     mesclar("param_cfops", pd.DataFrame(linhas))
     sincronizar(con)  # categorias de CFOP sao usadas abaixo (v_saidas_item)
 
     cods = con.execute("""
-        SELECT COD_AJ_APUR AS codigo, 'E111' AS registro, string_agg(DISTINCT DESCR_COMPL_AJ, ' | ')
+        SELECT COD_AJ_APUR AS codigo, 'E111' AS registro, string_agg(DISTINCT DESCR_COMPL_AJ, ' | '),
+               NULL AS cod_or
         FROM raw_icms_e111 JOIN arquivos USING (arquivo_id) WHERE ativo GROUP BY 1
         UNION ALL
-        SELECT coalesce(COD_REC, COD_OR), 'E116', string_agg(DISTINCT coalesce(TXT_COMPL, ''), ' | ')
+        SELECT coalesce(COD_REC, COD_OR), 'E116', string_agg(DISTINCT coalesce(TXT_COMPL, ''), ' | '),
+               CASE WHEN count(DISTINCT COD_OR) = 1 THEN max(COD_OR) END
         FROM raw_icms_e116 JOIN arquivos USING (arquivo_id) WHERE ativo GROUP BY 1
     """).fetchall()
     linhas = []
-    for cod, reg, txt in cods:
-        classe, regra = classificar_codigo(cod, reg, txt)
+    for linha in cods:
+        cod, reg, txt = linha[0], linha[1], linha[2]
+        cod_or = linha[3] if len(linha) > 3 else ""
+        classe, regra = classificar_codigo(cod, reg, txt, cod_or)
         linhas.append({"codigo": cod, "registro": reg, "classe": classe,
                        "descricao": (txt or "")[:200], "regra_automatica": regra, "revisado": False})
     mesclar("param_codigos_ajuste_icms", pd.DataFrame(linhas))
@@ -513,9 +558,18 @@ def preencher_a_partir_das_efds(con: duckdb.DuckDBPyConnection) -> dict[str, int
 # Sincronizacao com o banco (as visoes usam as tabelas param_*)
 # ---------------------------------------------------------------------------
 def criar_tabelas_vazias(con: duckdb.DuckDBPyConnection) -> None:
+    """Cria as tabelas param_* no banco. Tabela com estrutura de versao anterior e recriada
+    (o conteudo e sempre copiado dos CSV em sincronizar)."""
     tipos = {"texto": "VARCHAR", "bool": "BOOLEAN", "num": "DOUBLE", "int": "INTEGER"}
+    existentes = {}
+    for nome, col in con.execute("""SELECT table_name, column_name FROM information_schema.columns
+                                    WHERE table_schema = 'main' AND table_name LIKE 'param_%'""").fetchall():
+        existentes.setdefault(nome, []).append(col.lower())
     for t in TABELAS.values():
         cols = ", ".join(f'"{c}" {tipos[tp]}' for c, tp in t.colunas.items())
+        atual = existentes.get(t.nome)
+        if atual is not None and sorted(atual) != sorted(c.lower() for c in t.colunas):
+            con.execute(f"DROP TABLE {t.nome}")
         con.execute(f"CREATE TABLE IF NOT EXISTS {t.nome} ({cols})")
 
 
@@ -610,10 +664,17 @@ def resumo_premissas() -> pd.DataFrame:
     t = carregar("param_teses")
     add("Teses", "Teses cadastradas", str(len(t)), "Parâmetros > Teses", "Aplicadas só com o filtro 'Com teses'")
     for regra, texto in [
-        ("Benefício atual", "Benefício = carga no regime geral − carga efetiva na ZFM; exportações fora"),
-        ("Benefício pós-reforma", "Carga total (tributo pago + embutido nas compras); créditos normais "
-                                  "acima do débito considerados ressarcíveis (DECISOES D-016)"),
+        ("Resultado principal", "Diferença = carga To Be − carga As Is, por empresa, ano e tributo "
+                                "(positivo = aumento de carga/perda) — DECISOES D-023"),
+        ("Carga As Is", "Lida da apuração, sem recálculo (E110/E111/E116, E520, M200/M600), anualizada: "
+                        "soma do período ÷ meses com arquivo × 12"),
+        ("Carga To Be", "CBS/IBS sobre a base de operações, mês a mês, por unidade de apuração; ICMS = As Is × "
+                        "fator do ano; IPI próprio = As Is × fator_ipi_proprio; PIS/COFINS extintos em 2027"),
+        ("Reconciliação", "R5: carga recalculada pela base × apuração; diferença vira 'ajuste de reconciliação'"),
+        ("Vantagem competitiva", "IPI do concorrente (receita incentivada × TIPI) hoje − no To Be; separado da "
+                                 "carga própria"),
         ("Consolidação", "Cada empresa apurada separadamente; consolidado = soma (sem compensação)"),
+        ("Benefício ZFM hoje", "Informativo: carga no regime geral − carga efetiva na ZFM; não entra na diferença"),
     ]:
         add("Método", regra, texto, "—", "DECISOES.md")
     return pd.DataFrame(linhas)

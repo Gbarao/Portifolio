@@ -129,6 +129,84 @@ e a redução da CBS em 2027–2028 (0,1 p.p.) passaram para Parâmetros > Premi
 "Premissas e alíquotas" lista todas as premissas adotadas (valor, onde alterar, fonte) e permite
 digitar a alíquota de referência de CBS/IBS por cenário (recalcula 2027–2033).
 
+**D-023 — Método As Is × To Be (substitui o resultado principal das D-016/D-017).** O resultado
+do estudo passou a ser a **diferença de carga** por empresa, ano e tributo:
+`Diferença = carga To Be − carga As Is` (positivo = aumento de carga/perda; negativo = ganho).
+- *As Is*: lido da apuração, sem recálculo (D-025/D-026), anualizado (soma do período ÷ meses com
+  arquivo × 12).
+- *To Be*: CBS e IBS calculados sobre a base de operações; ICMS = As Is × fator do ano; IPI próprio =
+  As Is × `fator_ipi_proprio` (padrão 0); PIS/COFINS = 0 a partir de 2027; contribuição do art. 457.
+- O benefício "regime geral − ZFM" (D-016/D-017) continua como tela **informativa** (tela 9).
+
+**D-024 — Duas métricas.** A carga própria de IPI da empresa da ZFM é zero antes e depois; o efeito
+do IPI é concorrencial. A **perda de vantagem competitiva** = IPI que o concorrente de fora pagaria
+sobre os produtos incentivados (receita × TIPI) − o que continua pagando no To Be (só produtos com
+IPI protegido e TIPI ≥ limite). Mostrada separada da diferença de carga própria.
+
+**D-025 — Carga de ICMS As Is.** Guia Prático: soma do E116 = ICMS a recolher + débitos especiais do
+E110. Premissa `carga_icms_as_is` (padrão `e110_mais_excesso_e116`): carga = ICMS a recolher +
+débitos especiais + o que o E116 informar além disso (ex.: fundos pagos à parte). Alternativas:
+`e110_mais_fundos` e `somente_e110`. A checagem Q12 mostra onde o E116 excede o E110. O crédito
+estímulo aproveitado é informativo (já reduz o ICMS a recolher).
+
+**D-026 — PIS/COFINS As Is.** M200/M600 `VL_TOT_CONT_REC`. A EFD Contribuições é da empresa inteira
+(pode incluir estabelecimentos fora do AM): por padrão o valor é rateado pela receita dos
+estabelecimentos do AM no mês (premissa `rateio_pis_cofins_am`; `nenhum` = valor inteiro). O mesmo
+rateio vale para o filtro por estabelecimento.
+
+**D-027 — Base de operações única (v_base_operacoes).** Uma linha por item ou consolidação; uma
+fonte por visão: saídas por produto da EFD Contribuições (C170 ou C181/C185, destino pelo C190+0150
+da Fiscal); entradas da EFD ICMS/IPI (C170; C190 se o documento não tem C170); serviços (A170/F100).
+Cancelados, denegados e inutilizados ficam fora (COD_SIT 02–05).
+
+**D-028 — Devoluções.** Devolução de venda (entradas 1201/2201/1203/1410...) abate a saída de origem;
+devolução de compra (saídas 5201/6201/5553/5556...) abate a entrada de origem. A operação de origem
+de cada CFOP fica em Parâmetros > CFOPs (coluna `devolucao_de`). Premissa `abater_devolucoes`.
+
+**D-029 — Transferências entre estabelecimentos.** Identificadas pelo CFOP (x151, x152...) e mostradas
+à parte (tela 4). Por padrão fora da base de CBS/IBS (premissa `transferencias_na_base_cbs_ibs`;
+conferir na LC 214/2025).
+
+**D-030 — Reconciliação R5 e ajuste de reconciliação.** A carga é recalculada trocando os débitos e
+créditos da apuração pelos da base de operações (ajustes do E111, deduções, saldo anterior e ajustes
+do bloco M — inclusive os de acréscimo de 2026, LC 224/2025 — continuam os da apuração). Se não
+fechar, a diferença `apuração − base` aparece como **ajuste de reconciliação** na tela 8 e na ponte,
+separada do efeito da reforma. Tolerância: R$ por estabelecimento/mês (ICMS/IPI) e % (PIS/COFINS, R3).
+
+**D-031 — Conciliações revisadas.** Q3 cobre também o C170 da Contribuições; Q7 (R4) compara
+documento a documento só as saídas (entradas sem crédito podem não constar da Contribuições);
+Q8 (R3) compara receitas da base × bloco M com tolerância de 0,5%; novas Q12 (E116 × E110) e Q13
+(C180 × C181/C185).
+
+**D-032 — C181 × C185 sem dupla contagem.** Na escrituração consolidada, a receita vem do C181 (PIS);
+o C185 (COFINS) é casado pela mesma linha (CFOP e valor). C185 sem par entra só com a COFINS. Só
+quando o C180 não tem nenhum C181 a receita vem do C185.
+
+**D-033 — Leitura.** (1) Valor que não é número/data válido (ex.: "100.000,00", data 32/01) gera aviso
+"conversão" com exemplo e linha, em vez de virar vazio calado. (2) CNPJ alfanumérico (a partir de
+jul/2026) e chave da NF-e são tratados como texto. (3) Leiaute 020 (2026) da EFD ICMS/IPI: sem campos
+novos no C170 nas fontes consultadas; o leiaute 021 (2027) muda tipos de campo (CNPJ e chave para
+alfanumérico), já compatível. Se aparecer aviso de "número de campos", o registro mudou de leiaute.
+
+**D-034 — 2027–2028.** CBS = referência − `reducao_cbs_2027_2028` (0,1 p.p.) e IBS de teste =
+`aliq_ibs_teste` (0,1%), sem créditos presumidos de entrada (fator 0) e sem o art. 450 de IBS antes
+de `ano_inicio_cp450_ibs` (2029). Substitui o "IBS = 0" da D-015.
+
+**D-035 — Teses.** Teses com status "ativa" já estão na apuração: não ajustam o As Is e seguem no To Be
+dentro do ICMS × fator. Teses "em discussão"/"simulação apenas" (com o filtro "Com teses") reduzem a
+carga As Is e a To Be (ICMS × fator; IPI × fator do IPI próprio; PIS/COFINS perdem efeito em 2027).
+
+**D-036 — Nível de apuração e ordem de dedução (agora lidos pelo motor).** `nivel_apuracao_cbs_ibs` =
+`raiz` (padrão) ou `estabelecimento`. `ordem_deducao_ibs` = CP de entrada antes do art. 450 (padrão)
+ou art. 450 antes.
+
+**D-037 — Filtros.** Barra lateral: empresas, período (meses de 2026; a anualização usa os meses do
+filtro), estabelecimentos (abre a empresa por CNPJ), com/sem teses. Telas com filtros próprios
+(CFOP, produto, NCM, UF, origem, natureza, tributo, cenário, ano, visão saídas/entradas).
+
+**D-038 — E116 com COD_OR 000.** É o ICMS próprio a recolher, não um ajuste: classificado como
+"outros". Código sem regra fica `nao_classificado` e gera alerta (Q11) até ser classificado.
+
 ---
 
 ## Perguntas pendentes
@@ -144,5 +222,10 @@ digitar a alíquota de referência de CBS/IBS por cenário (recalcula 2027–203
   (valores iniciais da SPEC mantidos).
 - **P-007** — Inclusão futura do XML das NF-e de saída.
 - **P-008** — Códigos IBGE de Presidente Figueiredo (1303536) e Rio Preto da Eva (1303569): conferir.
-- **P-009** — Confirmar o método da carga total (D-016).
+- **P-009** — ~~Método da carga total (D-016)~~ → substituído pelo método As Is × To Be (D-023).
 - **P-010** — Alíquota TIPI (31/12/2023) de cada produto incentivado.
+- **P-011** — Regra de centralização da apuração de CBS/IBS por raiz do CNPJ (LC 214/2025).
+- **P-012** — Composição da base de CBS/IBS na transição (LC 214/2025, art. 12).
+- **P-013** — Tratamento das transferências entre estabelecimentos na CBS/IBS.
+- **P-014** — Lista dos produtos com IPI mantido (art. 454, § 3º).
+- **P-015** — Onde as empresas registram as contribuições a FTI/UEA/FMPES (E111, E116 ou fora da EFD).

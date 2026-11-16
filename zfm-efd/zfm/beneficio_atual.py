@@ -1,4 +1,6 @@
-"""Beneficio atual (As Is) - SPEC 7.5. Beneficio = carga no regime geral − carga efetiva na ZFM.
+"""Beneficio ZFM hoje - INFORMATIVO (o resultado principal e a diferenca de carga To Be − As Is).
+Beneficio = carga no regime geral − carga efetiva na ZFM, sobre a base de operacoes
+(devolucoes de venda abatem a receita incentivada).
 
 IPI    = saidas de producao incentivada (CST IPI isenta) × aliquota TIPI do produto
 PIS    = receita incentivada × (1,65% − aliquota aplicada)
@@ -14,6 +16,7 @@ import duckdb
 import pandas as pd
 
 from . import params
+from .filtros import TODOS, Filtro
 
 TRIBUTOS = ["IPI", "PIS", "COFINS", "ICMS"]
 NAN = float("nan")
@@ -30,21 +33,21 @@ COLUNAS = ["raiz", "cnpj_estab", "mes", "cod_item", "tributo", "beneficio", "bas
            "rateado", "observacao"]
 
 
-def saidas_incentivadas(con: duckdb.DuckDBPyConnection, eliminar_intragrupo: bool = False) -> pd.DataFrame:
-    """Saidas de producao propria de produtos incentivados, estabelecimentos do AM,
-    exceto exportacao; uma linha por item da EFD Contribuicoes (ja rateada por destino)."""
-    df = con.execute("""
-        SELECT s.raiz, s.cnpj_estab, s.mes, s.cod_item, s.cfop, s.tipo_operacao, s.eh_grupo,
-               s.receita_r, CAST(s.aliq_pis AS DOUBLE) AS aliq_pis,
-               CAST(s.aliq_cofins AS DOUBLE) AS aliq_cofins, s.pis_r, s.cofins_r, s.icms_est_r,
-               s.cst_ipi, s.reg_origem, s.arquivo_id, s.linha_num, s.rateado,
-               coalesce(p.aliq_tipi_2026, p.aliq_tipi_2023) AS aliq_tipi,
+def saidas_incentivadas(con: duckdb.DuckDBPyConnection, eliminar_intragrupo: bool = False,
+                        f: Filtro = TODOS) -> pd.DataFrame:
+    """Saidas de producao propria de produtos incentivados, estabelecimentos do AM, exceto
+    exportacao, ja rateadas por destino; devolucoes de venda entram com valor negativo."""
+    df = con.execute(f"""
+        SELECT b.raiz, b.cnpj_estab, b.mes, b.cod_item, b.cfop, b.tipo_operacao, b.eh_grupo,
+               b.valor AS receita_r, b.valor_cofins AS receita_cofins_r, b.aliq_pis, b.aliq_cofins,
+               b.pis AS pis_r, b.cofins AS cofins_r, b.icms AS icms_est_r, b.cst_ipi, b.reg_origem,
+               b.arquivo_id, b.linha_num, b.rateado, b.aliq_tipi,
                p.tipo_bem, p.aliq_tipi_2023, p.produzido_zfm_2024, p.eh_tic, p.ipi_protegido,
                p.ce_100_em_2023, p.nivel_credito_estimulo
-        FROM v_saidas_dest s
-        JOIN param_produtos p ON p.raiz_cnpj = s.raiz AND p.cod_item = s.cod_item
-        WHERE p.incentivado AND s.categoria_cfop = 'venda_producao' AND s.estab_no_am
-          AND s.tipo_operacao <> 'exportacao'
+        FROM v_base_operacoes b
+        JOIN param_produtos p ON p.raiz_cnpj = b.raiz AND p.cod_item = b.cod_item
+        WHERE b.sentido = 'saida' AND b.incentivado AND b.tipo_operacao <> 'exportacao'
+          AND {f.sql('b.raiz', 'b.cnpj_estab', 'b.mes')}
     """).df()
     if eliminar_intragrupo and not df.empty:
         df = df[~df["eh_grupo"].fillna(False).astype(bool)]
@@ -58,8 +61,8 @@ def _aliq_geral() -> dict[str, float]:
 
 
 def calcular(con: duckdb.DuckDBPyConnection, com_teses: bool = False,
-             eliminar_intragrupo: bool = False) -> pd.DataFrame:
-    s = saidas_incentivadas(con, eliminar_intragrupo)
+             eliminar_intragrupo: bool = False, f: Filtro = TODOS) -> pd.DataFrame:
+    s = saidas_incentivadas(con, eliminar_intragrupo, f)
     geral = _aliq_geral()
     partes: list[pd.DataFrame] = []
     if not s.empty:
@@ -80,19 +83,19 @@ def calcular(con: duckdb.DuckDBPyConnection, com_teses: bool = False,
         ipi["observacao"] = obs
         partes.append(ipi)
         # ---- PIS / COFINS
-        for trib, col in (("PIS", "aliq_pis"), ("COFINS", "aliq_cofins")):
+        for trib, col, rec in (("PIS", "aliq_pis", "receita_r"), ("COFINS", "aliq_cofins", "receita_cofins_r")):
             a = s[col]
             dif = (geral[trib] - a.fillna(geral[trib])).clip(lower=0)
             partes.append(base.assign(
-                tributo=trib, base=s["receita_r"], aliq_regime_geral=geral[trib], aliq_aplicada=a,
-                beneficio=s["receita_r"] * dif / 100,
+                tributo=trib, base=s[rec], aliq_regime_geral=geral[trib], aliq_aplicada=a,
+                beneficio=s[rec] * dif / 100,
                 observacao=_onde(a.isna(), f"Sem registro de {trib} para o item", "")))
     # ---- ICMS (apuracao, alocado por receita incentivada)
-    ap = con.execute("""
+    ap = con.execute(f"""
         SELECT a.raiz, a.cnpj_estab, a.mes, a.credito_estimulo, a.fundos, a.arquivo_id, a.linha_num
         FROM v_apur_icms a
         JOIN v_estabelecimentos e ON e.cnpj = a.cnpj_estab AND e.no_amazonas
-        WHERE a.credito_estimulo <> 0 OR a.fundos <> 0""").df()
+        WHERE (a.credito_estimulo <> 0 OR a.fundos <> 0) AND {f.sql('a.raiz', 'a.cnpj_estab', 'a.mes')}""").df()
     if not ap.empty:
         ap["valor"] = ap["credito_estimulo"].astype(float) - ap["fundos"].astype(float)
         if not s.empty:
@@ -114,7 +117,7 @@ def calcular(con: duckdb.DuckDBPyConnection, com_teses: bool = False,
                                 "Crédito estímulo − fundos, alocado pela receita incentivada")})
         partes.append(icms)
     if com_teses:
-        partes.append(_teses_atual(con, s))
+        partes.append(_teses_atual(con, s, f))
     partes = [p for p in partes if not p.empty]
     if not partes:
         return pd.DataFrame(columns=COLUNAS)
@@ -125,13 +128,14 @@ def calcular(con: duckdb.DuckDBPyConnection, com_teses: bool = False,
     return out[COLUNAS]
 
 
-def _teses_atual(con: duckdb.DuckDBPyConnection, s: pd.DataFrame) -> pd.DataFrame:
+def _teses_atual(con: duckdb.DuckDBPyConnection, s: pd.DataFrame, f: Filtro = TODOS) -> pd.DataFrame:
     t = params.carregar("param_teses")
     if t.empty:
         return pd.DataFrame(columns=COLUNAS)
     ano = int(params.premissa_num("ano_base", 2026))
-    meses = con.execute("SELECT DISTINCT raiz, month(dt_ini) AS mes FROM arquivos "
-                        "WHERE ativo AND year(dt_ini) = ?", [ano]).df()
+    meses = con.execute(f"SELECT DISTINCT raiz, month(dt_ini) AS mes FROM arquivos "
+                        f"WHERE ativo AND year(dt_ini) = ? AND {f.sql('raiz', None, 'month(dt_ini)')}",
+                        [ano]).df()
     geral = _aliq_geral()
     linhas = []
     for tese in t.itertuples():
@@ -186,8 +190,9 @@ def resumo_por_empresa(det: pd.DataFrame, receita: pd.DataFrame | None = None) -
     return p.reset_index()
 
 
-def receita_incentivada(con: duckdb.DuckDBPyConnection, eliminar_intragrupo: bool = False) -> pd.DataFrame:
-    s = saidas_incentivadas(con, eliminar_intragrupo)
+def receita_incentivada(con: duckdb.DuckDBPyConnection, eliminar_intragrupo: bool = False,
+                        f: Filtro = TODOS) -> pd.DataFrame:
+    s = saidas_incentivadas(con, eliminar_intragrupo, f)
     if s.empty:
         return pd.DataFrame(columns=["raiz", "receita_incentivada"])
     return s.groupby("raiz", as_index=False)["receita_r"].sum().rename(
@@ -217,13 +222,14 @@ _DESCR_CST = {"30": "isenta/não tributada c/ ST", "40": "isenta", "41": "não t
               "75": "substituição tributária"}
 
 
-def entradas_desoneradas(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+def entradas_desoneradas(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
     """Compras com isencao, suspensao ou aliquota zero, por tributo e CST (informativo).
     Para PIS/COFINS estima o tributo nao cobrado pela aliquota do regime geral."""
-    e = con.execute("""SELECT raiz, cnpj_estab, mes, origem, regiao_origem, categoria_cfop, cst_icms,
+    e = con.execute(f"""SELECT raiz, cnpj_estab, mes, origem, regiao_origem, categoria_cfop, cst_icms,
                               cst_ipi, cst_pis, cst_cofins, CAST(valor AS DOUBLE) AS valor,
                               reg_origem, arquivo_id, linha_num
-                       FROM v_entradas_item""").df()
+                       FROM v_entradas_item WHERE devolucao_de NOT IN ('venda_producao', 'venda_revenda')
+                         AND {f.sql()}""").df()
     if e.empty:
         return pd.DataFrame(columns=["raiz", "mes", "tributo", "cst", "situacao", "origem",
                                      "valor_entradas", "tributo_nao_cobrado_estimado"])

@@ -90,25 +90,52 @@ def _expr_cast(coluna: str) -> str:
     return f'NULLIF("{coluna}", \'\')'
 
 
+def _read_csv(colunas: list[str], caminho_csv: str | Path) -> str:
+    defs = ", ".join(f"'{c}': 'VARCHAR'" for c in colunas)
+    caminho = str(caminho_csv).replace("'", "''")
+    return (f"read_csv('{caminho}', delim='|', quote='', escape='', header=false, "
+            f"auto_detect=false, encoding='utf-8', columns={{{defs}}})")
+
+
 def inserir_csv(con: duckdb.DuckDBPyConnection, tipo: str, reg: str,
-                campos: tuple[str, ...], caminho_csv: str | Path) -> None:
+                campos: tuple[str, ...], caminho_csv: str | Path) -> list[tuple[str, int, int, str]]:
     """Grava no banco um arquivo temporario (separado por |, texto cru) de um registro.
 
     A conversao de tipos e feita no SQL: decimais com virgula viram DECIMAL
     exato (sem ponto flutuante) e datas DDMMAAAA viram DATE.
+    Retorna as falhas de conversao: [(campo, quantidade, linha_exemplo, valor_exemplo)].
+    Valor que nao e numero/data valido vira vazio no banco e gera aviso (nunca some calado).
     """
     colunas = list(COLUNAS_CONTROLE) + list(campos)
-    defs = ", ".join(f"'{c}': 'VARCHAR'" for c in colunas)
-    caminho = str(caminho_csv).replace("'", "''")
+    fonte = _read_csv(colunas, caminho_csv)
+    falhas = verificar_conversao(con, campos, fonte)
     destino = ", ".join(list(COLUNAS_CONTROLE) + [f'"{c}"' for c in campos])
     origem = ", ".join(
         ["CAST(arquivo_id AS INTEGER)", "CAST(linha_num AS BIGINT)",
          "TRY_CAST(pai_linha AS BIGINT)", "cnpj_estab", "layout_versao"]
         + [_expr_cast(c) for c in campos])
-    con.execute(
-        f"INSERT INTO {tabela_raw(tipo, reg)} ({destino}) SELECT {origem} FROM read_csv("
-        f"'{caminho}', delim='|', quote='', escape='', header=false, auto_detect=false, "
-        f"encoding='utf-8', columns={{{defs}}})")
+    con.execute(f"INSERT INTO {tabela_raw(tipo, reg)} ({destino}) SELECT {origem} FROM {fonte}")
+    return falhas
+
+
+def verificar_conversao(con: duckdb.DuckDBPyConnection, campos: tuple[str, ...],
+                        fonte: str) -> list[tuple[str, int, int, str]]:
+    tipados = [c for c in campos if tipo_coluna(c) != "VARCHAR"]
+    if not tipados:
+        return []
+    exprs = []
+    for c in tipados:
+        falha = f'(NULLIF(TRIM("{c}"), \'\') IS NOT NULL AND {_expr_cast(c)} IS NULL)'
+        exprs += [f"count(*) FILTER (WHERE {falha})",
+                  f"min(CAST(linha_num AS BIGINT)) FILTER (WHERE {falha})",
+                  f'min("{c}") FILTER (WHERE {falha})']
+    linha = con.execute(f"SELECT {', '.join(exprs)} FROM {fonte}").fetchall()[0]
+    out = []
+    for i, c in enumerate(tipados):
+        n, ex_linha, ex_valor = linha[3 * i], linha[3 * i + 1], linha[3 * i + 2]
+        if n:
+            out.append((c, int(n), int(ex_linha), str(ex_valor)))
+    return out
 
 
 def consultar(con: duckdb.DuckDBPyConnection, sql: str, params: list | None = None) -> pd.DataFrame:

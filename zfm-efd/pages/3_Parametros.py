@@ -109,7 +109,7 @@ for aba, nome in zip(abas[1:], ordem):
             if nome == "param_codigos_ajuste_icms":
                 cfg["classe"] = st.column_config.SelectboxColumn(options=[
                     "credito_estimulo", "credito_presumido_entrada", "fundo_FTI", "fundo_UEA",
-                    "fundo_FMPES", "outros_beneficios", "outros"])
+                    "fundo_FMPES", "outros_beneficios", "outros", "nao_classificado"])
             if nome == "param_regras_entradas":
                 for c in ("tratamento_cbs", "tratamento_ibs"):
                     cfg[c] = st.column_config.SelectboxColumn(options=["tributada", "aliquota_zero", "suspensa"])

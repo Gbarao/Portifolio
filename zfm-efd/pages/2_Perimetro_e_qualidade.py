@@ -67,17 +67,29 @@ with ui.protegido("listar os avisos"):
     else:
         st.dataframe(av, hide_index=True, use_container_width=True)
 
-st.subheader("Q3 a Q11 – Conciliações")
-st.caption("Cada checagem lista onde não fecha (tolerância em Parâmetros > Premissas). "
-           "Abra a linha para ver o arquivo e a linha da EFD.")
+st.subheader("Conciliações (R1 a R5 e checagens Q3 a Q13)")
+st.caption("Cada linha abre a lista do que não fecha (tolerâncias em Parâmetros > Premissas). "
+           "R5 é a porta de entrada da simulação: prova que a base de operações explica a apuração.")
 with ui.protegido("rodar as conciliações"):
-    from zfm import conciliacoes
+    from zfm import as_is, conciliacoes
+    from zfm.filtros import Filtro
     ui.preparar(con)
+    filtro = Filtro(raizes=tuple(selecao)) if selecao is not None else None
     for cod, (titulo, func) in conciliacoes.CHECAGENS.items():
-        d = conciliacoes.filtrar(func(con), selecao)
+        d = conciliacoes.filtrar(func(con), filtro)
         rot = f"{cod} – {titulo}: " + ("OK" if d.empty else f"{len(d)} divergência(s)")
         with st.expander(("✅ " if d.empty else "⚠️ ") + rot):
             if d.empty:
                 st.caption("Nenhuma divergência.")
             else:
                 ui.tabela(d)
+                ui.baixar_csv(d, f"conciliacao_{cod}")
+    r5 = as_is.reconciliacao_r5(con, filtro or Filtro())
+    nao = r5[~r5["fecha"]] if not r5.empty else r5
+    rot = "R5 – Carga recalculada pela base de operações × carga da apuração: " + (
+        "OK" if nao.empty else f"{len(nao)} divergência(s)")
+    with st.expander(("✅ " if nao.empty else "⚠️ ") + rot):
+        st.caption("Troca os débitos e créditos da apuração pelos da base de operações (ajustes, deduções e "
+                   "saldos continuam os da apuração) e compara a carga. Se não fechar, a diferença entra "
+                   "no relatório como ajuste de reconciliação.")
+        ui.tabela(nao if not nao.empty else r5)

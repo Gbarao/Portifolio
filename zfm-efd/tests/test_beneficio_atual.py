@@ -35,7 +35,7 @@ def test_rastreabilidade(con_param):
     det = ba.calcular(con_param)
     assert det["arquivo_id"].notna().all() and det["linha_num"].notna().all()
     # cada linha de PIS aponta para um C181 existente
-    pis = det[(det.tributo == "PIS") & (det.raiz == "11111111")]
+    pis = det[(det.tributo == "PIS") & (det.raiz == "11111111") & (det.reg_origem == "C181/C185")]
     for a, l in pis[["arquivo_id", "linha_num"]].drop_duplicates().itertuples(index=False):
         assert con_param.execute("SELECT count(*) FROM raw_contrib_c181 WHERE arquivo_id = ? AND linha_num = ?",
                                  [int(a), int(l)]).fetchall()[0][0] == 1

@@ -44,7 +44,10 @@ def _sql_participantes(tabela: str, chave_estab: str) -> str:
                 THEN 'Exterior' ELSE u.regiao END AS regiao,
            (u.uf = 'AM' AND p.COD_MUN IN (SELECT cod_ibge FROM param_municipios_zfm)) AS municipio_zfm,
            (u.uf = 'AM' AND p.COD_MUN IN (SELECT cod_ibge FROM param_municipios_zfm)
-            AND nullif(p.SUFRAMA, '') IS NOT NULL AND nullif(p.CNPJ, '') IS NOT NULL) AS eh_zfm,
+            AND nullif(p.CNPJ, '') IS NOT NULL
+            AND (nullif(p.SUFRAMA, '') IS NOT NULL
+                 OR coalesce((SELECT lower(valor) FROM param_premissas WHERE chave = 'zfm_exige_suframa'),
+                             'sim') IN ('nao', 'não'))) AS eh_zfm,
            (nullif(p.CNPJ, '') IS NOT NULL AND (substr(p.CNPJ, 1, 8) IN (SELECT raiz_cnpj FROM param_empresas)
              OR substr(p.CNPJ, 1, 8) IN (SELECT raiz FROM arquivos))) AS eh_grupo
     FROM {tabela} p JOIN arquivos a USING (arquivo_id)
@@ -76,7 +79,8 @@ VIEWS: list[tuple[str, str]] = [
     ("v_saidas_doc", """
     SELECT v.*, c.linha_num, c.CFOP AS cfop, c.CST_ICMS AS cst_icms, c.ALIQ_ICMS AS aliq_icms,
            c.VL_OPR AS vl_opr, c.VL_BC_ICMS AS vl_bc_icms_c190, c.VL_ICMS AS vl_icms_c190,
-           c.VL_IPI AS vl_ipi_c190, coalesce(pc.categoria, 'outros') AS categoria_cfop,
+           c.VL_IPI AS vl_ipi_c190, c.VL_ICMS_ST AS vl_icms_st_c190,
+           coalesce(pc.categoria, 'outros') AS categoria_cfop, pc.devolucao_de,
            coalesce(pc.eh_receita, FALSE) AS eh_receita,
            CASE WHEN c.CFOP LIKE '7%' OR v.exterior THEN 'exportacao'
                 WHEN c.CFOP LIKE '6%' THEN 'interestadual'
@@ -94,7 +98,8 @@ VIEWS: list[tuple[str, str]] = [
                i.CST_PIS AS cst_pis, i.ALIQ_PIS AS aliq_pis, i.VL_PIS AS vl_pis,
                i.CST_COFINS AS cst_cofins, i.ALIQ_COFINS AS aliq_cofins, i.VL_COFINS AS vl_cofins,
                i.CST_IPI AS cst_ipi, i.VL_ICMS AS vl_icms, i.VL_IPI AS vl_ipi,
-               d.COD_PART AS cod_part, CAST(NULL AS VARCHAR) AS ncm_c180
+               i.VL_ITEM - coalesce(i.VL_DESC, 0) AS receita_cofins,
+               d.COD_PART AS cod_part, d.CHV_NFE AS chv_nfe, CAST(NULL AS VARCHAR) AS ncm_c180
         FROM raw_contrib_c170 i
         JOIN raw_contrib_c100 d ON d.arquivo_id = i.arquivo_id AND d.linha_num = i.pai_linha
         WHERE d.IND_OPER = '1' AND coalesce(d.COD_SIT, '00') NOT IN {_COD_SIT_CANCELADO}
@@ -103,28 +108,48 @@ VIEWS: list[tuple[str, str]] = [
                        coalesce(VL_DESC, 0) ORDER BY linha_num) AS rn FROM raw_contrib_c181),
     c185 AS (SELECT *, row_number() OVER (PARTITION BY arquivo_id, pai_linha, CFOP, VL_ITEM,
                        coalesce(VL_DESC, 0) ORDER BY linha_num) AS rn FROM raw_contrib_c185),
+    -- C181 (PIS) define a receita; o C185 (COFINS) e casado pela mesma linha (CFOP, valor).
+    -- C185 sem par entra so com a COFINS (receita 0), exceto se o C180 nao tiver nenhum C181:
+    -- assim a receita nunca e contada duas vezes (DECISOES D-023).
+    casados AS (
+        SELECT a.arquivo_id, a.linha_num, a.pai_linha, a.CFOP, a.VL_ITEM, coalesce(a.VL_DESC, 0) AS VL_DESC,
+               a.CST_PIS, a.ALIQ_PIS, a.VL_PIS, b.CST_COFINS, b.ALIQ_COFINS, b.VL_COFINS,
+               (b.linha_num IS NOT NULL) AS tem_cofins
+        FROM c181 a LEFT JOIN c185 b ON a.arquivo_id = b.arquivo_id AND a.pai_linha = b.pai_linha
+             AND a.CFOP = b.CFOP AND a.VL_ITEM = b.VL_ITEM
+             AND coalesce(a.VL_DESC, 0) = coalesce(b.VL_DESC, 0) AND a.rn = b.rn),
+    sobra185 AS (
+        SELECT b.* FROM c185 b WHERE NOT EXISTS (
+            SELECT 1 FROM c181 a WHERE a.arquivo_id = b.arquivo_id AND a.pai_linha = b.pai_linha
+              AND a.CFOP = b.CFOP AND a.VL_ITEM = b.VL_ITEM
+              AND coalesce(a.VL_DESC, 0) = coalesce(b.VL_DESC, 0) AND a.rn = b.rn)),
+    com_pis AS (SELECT DISTINCT arquivo_id, pai_linha FROM raw_contrib_c181),
     cons AS (
-        SELECT coalesce(a.arquivo_id, b.arquivo_id) AS arquivo_id,
-               coalesce(a.linha_num, b.linha_num) AS linha_num, 'C181/C185' AS reg_origem,
-               h.cnpj_estab, h.COD_ITEM AS cod_item, coalesce(a.CFOP, b.CFOP) AS cfop,
-               coalesce(a.VL_ITEM, b.VL_ITEM) AS vl_item, coalesce(a.VL_DESC, b.VL_DESC, 0) AS vl_desc,
+        SELECT a.arquivo_id, a.linha_num, 'C181/C185' AS reg_origem, h.cnpj_estab,
+               h.COD_ITEM AS cod_item, a.CFOP AS cfop, a.VL_ITEM AS vl_item, a.VL_DESC AS vl_desc,
                a.CST_PIS AS cst_pis, a.ALIQ_PIS AS aliq_pis, a.VL_PIS AS vl_pis,
-               b.CST_COFINS AS cst_cofins, b.ALIQ_COFINS AS aliq_cofins, b.VL_COFINS AS vl_cofins,
+               a.CST_COFINS AS cst_cofins, a.ALIQ_COFINS AS aliq_cofins, a.VL_COFINS AS vl_cofins,
+               CASE WHEN a.tem_cofins THEN a.VL_ITEM - a.VL_DESC ELSE 0 END AS receita_cofins,
                CAST(NULL AS VARCHAR) AS cst_ipi, CAST(NULL AS DECIMAL(18,2)) AS vl_icms,
                CAST(NULL AS DECIMAL(18,2)) AS vl_ipi, CAST(NULL AS VARCHAR) AS cod_part,
-               h.COD_NCM AS ncm_c180
-        FROM c181 a
-        FULL OUTER JOIN c185 b ON a.arquivo_id = b.arquivo_id AND a.pai_linha = b.pai_linha
-             AND a.CFOP = b.CFOP AND a.VL_ITEM = b.VL_ITEM
-             AND coalesce(a.VL_DESC, 0) = coalesce(b.VL_DESC, 0) AND a.rn = b.rn
-        JOIN raw_contrib_c180 h ON h.arquivo_id = coalesce(a.arquivo_id, b.arquivo_id)
-             AND h.linha_num = coalesce(a.pai_linha, b.pai_linha)
+               CAST(NULL AS VARCHAR) AS chv_nfe, h.COD_NCM AS ncm_c180
+        FROM casados a
+        JOIN raw_contrib_c180 h ON h.arquivo_id = a.arquivo_id AND h.linha_num = a.pai_linha
+        UNION ALL
+        SELECT b.arquivo_id, b.linha_num, 'C185', h.cnpj_estab, h.COD_ITEM, b.CFOP,
+               CASE WHEN cp.pai_linha IS NULL THEN b.VL_ITEM ELSE 0 END,
+               CASE WHEN cp.pai_linha IS NULL THEN coalesce(b.VL_DESC, 0) ELSE 0 END,
+               NULL, NULL, NULL, b.CST_COFINS, b.ALIQ_COFINS, b.VL_COFINS,
+               b.VL_ITEM - coalesce(b.VL_DESC, 0), NULL, NULL, NULL, NULL, NULL, h.COD_NCM
+        FROM sobra185 b
+        JOIN raw_contrib_c180 h ON h.arquivo_id = b.arquivo_id AND h.linha_num = b.pai_linha
+        LEFT JOIN com_pis cp ON cp.arquivo_id = b.arquivo_id AND cp.pai_linha = b.pai_linha
     ),
     u AS (SELECT * FROM c170 UNION ALL BY NAME SELECT * FROM cons)
     SELECT u.arquivo_id, u.linha_num, u.reg_origem, a.raiz, u.cnpj_estab,
            year(a.dt_ini) AS ano, month(a.dt_ini) AS mes, u.cod_item,
            coalesce(nullif(u.ncm_c180, ''), pp.ncm) AS ncm, u.cfop,
-           u.vl_item, u.vl_desc, u.vl_item - u.vl_desc AS receita,
+           u.vl_item, u.vl_desc, u.vl_item - u.vl_desc AS receita, u.receita_cofins, u.chv_nfe,
            u.cst_pis, u.aliq_pis, u.vl_pis, u.cst_cofins, u.aliq_cofins, u.vl_cofins,
            u.cst_ipi, u.vl_icms, u.vl_ipi,
            coalesce(pc.categoria, 'outros') AS categoria_cfop, coalesce(pc.eh_receita, FALSE) AS eh_receita,
@@ -175,6 +200,7 @@ VIEWS: list[tuple[str, str]] = [
            CAST(receita AS DOUBLE) * fator_rateio AS receita_r,
            CAST(coalesce(vl_pis, 0) AS DOUBLE) * fator_rateio AS pis_r,
            CAST(coalesce(vl_cofins, 0) AS DOUBLE) * fator_rateio AS cofins_r,
+           CAST(receita_cofins AS DOUBLE) * fator_rateio AS receita_cofins_r,
            CASE WHEN vl_icms IS NOT NULL THEN CAST(vl_icms AS DOUBLE)
                 ELSE CAST(receita AS DOUBLE) * r_icms END * fator_rateio AS icms_est_r,
            (vl_icms IS NULL) AS icms_estimado
@@ -186,12 +212,13 @@ VIEWS: list[tuple[str, str]] = [
                i.COD_ITEM AS cod_item, i.CFOP AS cfop, i.VL_ITEM AS vl_item,
                coalesce(i.VL_DESC, 0) AS vl_desc, i.CST_ICMS AS cst_icms, i.VL_ICMS AS vl_icms,
                i.CST_IPI AS cst_ipi, i.VL_IPI AS vl_ipi, i.CST_PIS AS cst_pis, i.VL_PIS AS vl_pis,
-               i.CST_COFINS AS cst_cofins, i.VL_COFINS AS vl_cofins
+               i.CST_COFINS AS cst_cofins, i.VL_COFINS AS vl_cofins,
+               i.ALIQ_PIS AS aliq_pis, i.ALIQ_COFINS AS aliq_cofins
         FROM raw_icms_c170 i
         UNION ALL
         SELECT c.arquivo_id, c.linha_num, 'C190', c.pai_linha, NULL, c.CFOP,
                c.VL_OPR - coalesce(c.VL_IPI, 0) - coalesce(c.VL_ICMS_ST, 0), 0, c.CST_ICMS,
-               c.VL_ICMS, NULL, c.VL_IPI, NULL, NULL, NULL, NULL
+               c.VL_ICMS, NULL, c.VL_IPI, NULL, NULL, NULL, NULL, NULL, NULL
         FROM raw_icms_c190 c
         WHERE NOT EXISTS (SELECT 1 FROM raw_icms_c170 x
                           WHERE x.arquivo_id = c.arquivo_id AND x.pai_linha = c.pai_linha)
@@ -199,7 +226,7 @@ VIEWS: list[tuple[str, str]] = [
     SELECT it.*, v.raiz, v.cnpj_estab, v.ano, v.mes, v.cod_part, v.nome_part, v.cnpj_part, v.chv_nfe,
            v.uf, v.regiao, v.exterior, v.eh_zfm, v.eh_grupo,
            it.vl_item - it.vl_desc AS valor,
-           coalesce(pc.categoria, 'outros') AS categoria_cfop,
+           coalesce(pc.categoria, 'outros') AS categoria_cfop, coalesce(pc.devolucao_de, '') AS devolucao_de,
            CASE WHEN it.cfop LIKE '3%' OR v.exterior THEN 'importacao'
                 WHEN v.eh_zfm THEN 'zfm'
                 WHEN v.uf = 'AM' THEN 'am_fora_zfm'
@@ -226,18 +253,108 @@ VIEWS: list[tuple[str, str]] = [
     FROM raw_contrib_f100 f JOIN arquivos a USING (arquivo_id)
     WHERE a.ativo AND f.IND_OPER = '0'
     """),
+    ("v_base_operacoes", """
+    -- Base de operacoes normalizada (uma linha por item ou consolidacao). Uma fonte por visao:
+    --   saidas por produto: EFD Contribuicoes (C170 ou C181/C185), destino pelo C190+0150 da Fiscal;
+    --   entradas: EFD ICMS/IPI (C170; C190 quando o documento nao tem C170);
+    --   devolucoes de venda (entradas 1201/2201...) abatem as saidas de origem (valores negativos);
+    --   devolucoes de compra (saidas 5201/6201...) abatem as entradas de origem (valores negativos).
+    WITH prm AS (
+        SELECT coalesce((SELECT lower(valor) FROM param_premissas WHERE chave = 'abater_devolucoes'),
+                        'sim') NOT IN ('nao', 'não') AS abater),
+    s AS (
+        SELECT 'saida' AS sentido, s.raiz, s.cnpj_estab, s.ano, s.mes, s.chv_nfe, s.reg_origem,
+               s.arquivo_id, s.linha_num, s.cfop, s.categoria_cfop, s.categoria_cfop AS categoria_origem,
+               s.eh_receita,
+               CASE WHEN s.categoria_cfop = 'transferencia' THEN 'transferencia'
+                    WHEN s.eh_receita AND s.tipo_operacao = 'exportacao' THEN 'exportacao'
+                    WHEN s.eh_receita THEN 'venda'
+                    WHEN s.categoria_cfop = 'remessa_retorno' THEN 'remessa'
+                    ELSE s.categoria_cfop END AS natureza,
+               s.cod_item, s.ncm, s.tipo_operacao, CAST(NULL AS VARCHAR) AS origem,
+               CAST(NULL AS BOOLEAN) AS sul_sudeste_exceto_es, s.uf_dest AS uf_part,
+               CAST(NULL AS VARCHAR) AS cnpj_part, coalesce(s.eh_grupo, FALSE) AS eh_grupo,
+               s.receita_r AS valor, s.receita_cofins_r AS valor_cofins, s.icms_est_r AS icms,
+               CAST(coalesce(s.vl_ipi, 0) AS DOUBLE) * s.fator_rateio AS ipi, s.pis_r AS pis,
+               s.cofins_r AS cofins, CAST(NULL AS VARCHAR) AS cst_icms, s.cst_ipi, s.cst_pis,
+               CAST(s.aliq_pis AS DOUBLE) AS aliq_pis, s.cst_cofins,
+               CAST(s.aliq_cofins AS DOUBLE) AS aliq_cofins, s.fator_rateio, s.rateado, s.icms_estimado
+        FROM v_saidas_dest s LEFT JOIN param_cfops pc ON pc.cfop = s.cfop
+        WHERE s.estab_no_am AND coalesce(pc.devolucao_de, '') = ''
+    ),
+    dv AS (
+        SELECT 'saida', e.raiz, e.cnpj_estab, e.ano, e.mes, e.chv_nfe, 'devolução ' || e.reg_origem,
+               e.arquivo_id, e.linha_num, e.cfop, e.categoria_cfop, e.devolucao_de, TRUE,
+               'devolucao_venda', e.cod_item, NULL,
+               CASE WHEN e.cfop LIKE '3%' OR e.exterior THEN 'exportacao'
+                    WHEN e.cfop LIKE '2%' THEN 'interestadual'
+                    WHEN e.eh_zfm THEN 'zfm_interna' ELSE 'interna' END,
+               NULL, NULL, e.uf, e.cnpj_part, e.eh_grupo,
+               -CAST(e.valor AS DOUBLE), -CAST(e.valor AS DOUBLE), -CAST(coalesce(e.vl_icms, 0) AS DOUBLE),
+               -CAST(coalesce(e.vl_ipi, 0) AS DOUBLE), -CAST(coalesce(e.vl_pis, 0) AS DOUBLE),
+               -CAST(coalesce(e.vl_cofins, 0) AS DOUBLE), e.cst_icms, e.cst_ipi, e.cst_pis,
+               CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE
+        FROM v_entradas_item e
+        WHERE e.devolucao_de IN ('venda_producao', 'venda_revenda') AND (SELECT abater FROM prm)
+    ),
+    en AS (
+        SELECT 'entrada', e.raiz, e.cnpj_estab, e.ano, e.mes, e.chv_nfe, e.reg_origem, e.arquivo_id,
+               e.linha_num, e.cfop, e.categoria_cfop, e.categoria_cfop, FALSE,
+               CASE WHEN e.origem = 'importacao' THEN 'importacao'
+                    WHEN e.categoria_cfop = 'transferencia' THEN 'transferencia'
+                    WHEN e.categoria_cfop = 'remessa_retorno' THEN 'remessa'
+                    ELSE e.categoria_cfop END,
+               e.cod_item, NULL, NULL, e.origem, e.sul_sudeste_exceto_es, e.uf, e.cnpj_part, e.eh_grupo,
+               CAST(e.valor AS DOUBLE), CAST(e.valor AS DOUBLE), CAST(coalesce(e.vl_icms, 0) AS DOUBLE),
+               CAST(coalesce(e.vl_ipi, 0) AS DOUBLE), CAST(coalesce(e.vl_pis, 0) AS DOUBLE),
+               CAST(coalesce(e.vl_cofins, 0) AS DOUBLE), e.cst_icms, e.cst_ipi, e.cst_pis,
+               CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE
+        FROM v_entradas_item e
+        WHERE e.devolucao_de NOT IN ('venda_producao', 'venda_revenda')
+    ),
+    dc AS (
+        SELECT 'entrada', d.raiz, d.cnpj_estab, d.ano, d.mes, d.chv_nfe, 'devolução C190', d.arquivo_id,
+               d.linha_num, d.cfop, d.categoria_cfop, d.devolucao_de, FALSE, 'devolucao_compra',
+               NULL, NULL, NULL,
+               CASE WHEN d.cfop LIKE '7%' OR d.exterior THEN 'importacao' WHEN d.eh_zfm THEN 'zfm'
+                    WHEN d.uf = 'AM' THEN 'am_fora_zfm' ELSE 'nacional_fora_zfm' END,
+               d.uf IN ('MG', 'RJ', 'SP', 'PR', 'SC', 'RS'), d.uf, d.cnpj_part, d.eh_grupo,
+               -CAST(d.vl_opr - coalesce(d.vl_ipi_c190, 0) - coalesce(d.vl_icms_st_c190, 0) AS DOUBLE),
+               -CAST(d.vl_opr - coalesce(d.vl_ipi_c190, 0) - coalesce(d.vl_icms_st_c190, 0) AS DOUBLE),
+               -CAST(coalesce(d.vl_icms_c190, 0) AS DOUBLE), -CAST(coalesce(d.vl_ipi_c190, 0) AS DOUBLE),
+               0.0, 0.0, d.cst_icms, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE
+        FROM v_saidas_doc d
+        WHERE coalesce(d.devolucao_de, '') IN ('compra_industrializacao', 'compra_revenda', 'ativo', 'uso_consumo')
+          AND d.uf_estab = 'AM' AND (SELECT abater FROM prm)
+    ),
+    sv AS (
+        SELECT 'entrada', v.raiz, v.cnpj_estab, v.ano, v.mes, NULL, v.reg_origem, v.arquivo_id,
+               v.linha_num, NULL, 'insumo_servico', 'insumo_servico', FALSE, 'servico_tomado', NULL, NULL,
+               NULL, 'servicos', FALSE, NULL, NULL, FALSE, CAST(v.valor AS DOUBLE), CAST(v.valor AS DOUBLE),
+               0.0, 0.0, 0.0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE
+        FROM v_entradas_servicos v
+        WHERE v.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)
+    ),
+    u AS (SELECT * FROM s UNION ALL SELECT * FROM dv UNION ALL SELECT * FROM en
+          UNION ALL SELECT * FROM dc UNION ALL SELECT * FROM sv)
+    SELECT u.*, coalesce(nullif(u.ncm, ''), p.ncm) AS ncm_produto,
+           coalesce(p.incentivado, FALSE) AND u.categoria_origem = 'venda_producao' AS incentivado,
+           p.tipo_bem, coalesce(p.aliq_tipi_2026, p.aliq_tipi_2023) AS aliq_tipi,
+           coalesce(p.ipi_protegido, FALSE) AS ipi_protegido
+    FROM u LEFT JOIN param_produtos p ON p.raiz_cnpj = u.raiz AND p.cod_item = u.cod_item
+    """),
     ("v_ajustes_icms", """
     SELECT a.arquivo_id, a.cnpj AS cnpj_estab, a.raiz, year(a.dt_ini) AS ano, month(a.dt_ini) AS mes,
            'E111' AS registro, e.COD_AJ_APUR AS codigo, e.DESCR_COMPL_AJ AS descricao,
            e.VL_AJ_APUR AS valor, coalesce(pc.classe, 'outros') AS classe,
-           (pc.codigo IS NULL) AS nao_classificado, e.linha_num
+           (pc.codigo IS NULL OR pc.classe = 'nao_classificado') AS nao_classificado, e.linha_num
     FROM raw_icms_e111 e JOIN arquivos a USING (arquivo_id)
     LEFT JOIN param_codigos_ajuste_icms pc ON pc.codigo = e.COD_AJ_APUR AND pc.registro = 'E111'
     WHERE a.ativo
     UNION ALL
     SELECT a.arquivo_id, a.cnpj, a.raiz, year(a.dt_ini), month(a.dt_ini), 'E116',
            coalesce(e.COD_REC, e.COD_OR), e.TXT_COMPL, e.VL_OR, coalesce(pc.classe, 'outros'),
-           (pc.codigo IS NULL), e.linha_num
+           (pc.codigo IS NULL OR pc.classe = 'nao_classificado'), e.linha_num
     FROM raw_icms_e116 e JOIN arquivos a USING (arquivo_id)
     LEFT JOIN param_codigos_ajuste_icms pc ON pc.codigo = coalesce(e.COD_REC, e.COD_OR)
          AND pc.registro = 'E116'

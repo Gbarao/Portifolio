@@ -13,18 +13,25 @@ def _alterar(pasta, nome, de, para):
     p.write_bytes(txt.replace(de, para, 1).encode("latin-1"))
 
 
-def test_q3_a_q6_e_q9_q10_q11_fecham(con_param):
-    for k in ("Q3", "Q4", "Q5", "Q6", "Q9", "Q10", "Q11"):
+def test_conciliacoes_fecham_nas_fixtures(con_param):
+    for k in ("Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10", "Q13"):
         assert c.CHECAGENS[k][1](con_param).empty, k
 
 
-def test_q7_q8_apontam_so_o_esperado(con_param):
-    # matriz da Gama esta em SP: receita dela entra no bloco M mas nao ha EFD ICMS/IPI do AM
-    q7 = c.q7_icms_x_contrib(con_param)
-    assert q7.empty
-    q8 = c.q8_receita_contrib_x_icms(con_param)
-    assert set(q8["raiz"]) == {"33333333"}
-    assert q8["observacao"].str.contains("fora do AM").all()
+def test_q11_aponta_so_codigo_sem_regra(con_param):
+    # AM009001 (ajuste de debito sem palavra-chave) fica 'nao_classificado' e gera alerta
+    q11 = c.q11_codigos_nao_classificados(con_param)
+    assert list(q11["codigo"]) == ["AM009001"]
+    # E116 com COD_OR 000 (ICMS proprio a recolher) nao e alerta
+    assert "1234" not in set(q11["codigo"])
+
+
+def test_q12_mostra_fundo_fora_da_apuracao(con_param):
+    # FTI informado no E116 alem do ICMS a recolher (Alfa 0001 e Gama filial, todos os meses)
+    q12 = c.q12_e116_x_e110(con_param)
+    assert set(q12["cnpj_estab"]) == {"11111111000191", "33333333000214"}
+    jan = q12[(q12.cnpj_estab == "11111111000191") & (q12.mes == 1)]
+    assert float(jan["diferenca"].iloc[0]) == 385.0
 
 
 def test_divergencias_detectadas(con, pasta_efd):
@@ -51,7 +58,7 @@ def test_divergencias_detectadas(con, pasta_efd):
     params.salvar("param_codigos_ajuste_icms", cod[cod.codigo != "FTI9"])
     visoes.preparar(con)
     q11 = c.q11_codigos_nao_classificados(con)
-    assert list(q11["codigo"]) == ["FTI9"]
+    assert set(q11["codigo"]) == {"FTI9", "AM009001"}
 
 
 def test_q10_cst_ipi_diferente_de_isento(con_param):
@@ -61,3 +68,30 @@ def test_q10_cst_ipi_diferente_de_isento(con_param):
     params.salvar("param_premissas", pr)
     q10 = c.q10_cst_ipi_incentivado(con_param)
     assert set(q10["raiz"]) == {"33333333"} and len(q10) == 3
+
+
+def test_r1_r5_detectam_base_incompleta(con, pasta_efd):
+    """ICMS de um C190 de saida alterado sem mexer no E110: R1 (Q5) e R5 apontam a diferenca."""
+    from zfm import as_is
+    _alterar(pasta_efd, "EFD_ICMS_IPI_22222222000122_202601.txt",
+             "|C190|000|6101|12,00|100000,00|100000,00|12000,00|",
+             "|C190|000|6101|12,00|100000,00|100000,00|12500,00|")
+    for p in sorted(pasta_efd.glob("*.txt")):
+        carregar_arquivo(con, p)
+    visoes.preparar(con)
+    assert len(c.q5_docs_x_e110(con)) == 1
+    r5 = as_is.reconciliacao_r5(con)
+    # Beta tem saldo credor de ICMS: +500 de debito so reduz o saldo, a carga continua zero
+    assert r5["fecha"].all()
+    # Na Alfa (ICMS a recolher) a mesma alteracao muda a carga recalculada
+    _alterar(pasta_efd, "EFD_ICMS_IPI_11111111000272_202601.txt",
+             "|C190|000|6101|12,00|150000,00|150000,00|18000,00|",
+             "|C190|000|6101|12,00|150000,00|150000,00|18300,00|")
+    from zfm import db
+    db.apagar_dados(con)
+    for p in sorted(pasta_efd.glob("*.txt")):
+        carregar_arquivo(con, p)
+    visoes.preparar(con)
+    r5 = as_is.reconciliacao_r5(con)
+    nao = r5[~r5.fecha]
+    assert list(nao["cnpj_estab"]) == ["11111111000272"] and float(nao["diferenca"].iloc[0]) == -300.0

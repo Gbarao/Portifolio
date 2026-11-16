@@ -1,15 +1,26 @@
-"""Conciliacoes Q3 a Q11 (SPEC 7.1). Cada funcao devolve as divergencias
-(DataFrame vazio = conciliado). Pressupoe visoes.preparar(con) executado."""
+"""Conciliacoes (etapa 5). Cada funcao devolve as divergencias (DataFrame vazio = conciliado).
+Pressupoe visoes.preparar(con) executado.
+
+Correspondencia com o roteiro de reconciliacao:
+  R1 = Q5 (documentos × E110)      R2 = Q6 (documentos × E520)
+  R3 = Q8 (receita × bloco M, tolerancia em %)   R4 = Q7 (mesmo documento nas duas EFDs)
+  R5 = zfm/as_is.reconciliacao_r5 (carga recalculada pela base × carga da apuracao)
+"""
 from __future__ import annotations
 
 import duckdb
 import pandas as pd
 
 from . import params
+from .filtros import Filtro
 
 
 def _tol() -> float:
     return params.premissa_num("tolerancia_conciliacao", 1.0)
+
+
+def _pct() -> float:
+    return params.premissa_num("tolerancia_receita_pct", 0.5) / 100
 
 
 def q3_c170_x_c100(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
@@ -26,7 +37,15 @@ def q3_c170_x_c100(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         WHERE NOT d.cancelado AND (abs(coalesce(d.vl_merc, 0) - s.itens) > ?
               OR abs(coalesce(d.vl_icms, 0) - coalesce(s.icms_itens, 0)) > ?
               OR abs(coalesce(d.vl_ipi, 0) - coalesce(s.ipi_itens, 0)) > ?)
-        ORDER BY 1, 2, 3""", [_tol()] * 3).df()
+        UNION ALL
+        SELECT a.raiz, d.cnpj_estab, month(a.dt_ini), d.NUM_DOC, d.CHV_NFE, d.arquivo_id, d.linha_num,
+               d.VL_MERC, x.itens, NULL, NULL, NULL, NULL
+        FROM raw_contrib_c100 d JOIN arquivos a USING (arquivo_id)
+        JOIN (SELECT arquivo_id, pai_linha, sum(VL_ITEM) AS itens FROM raw_contrib_c170 GROUP BY 1, 2) x
+             ON x.arquivo_id = d.arquivo_id AND x.pai_linha = d.linha_num
+        WHERE a.ativo AND coalesce(d.COD_SIT, '00') NOT IN ('02','03','04','05')
+          AND abs(coalesce(d.VL_MERC, 0) - x.itens) > ?
+        ORDER BY 1, 2, 3""", [_tol()] * 4).df()
 
 
 def q4_c190_x_c100(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
@@ -83,17 +102,19 @@ def q7_icms_x_contrib(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     por estabelecimento e mes (C180 x C190 da ICMS/IPI)."""
     detalhada = con.execute("""
         WITH ci AS (
-            SELECT raiz, cnpj_estab, mes, chv_nfe, num_doc, vl_doc, vl_pis, vl_cofins
+            SELECT raiz, cnpj_estab, mes, chv_nfe, num_doc, vl_doc, vl_pis, vl_cofins, sentido
             FROM v_docs WHERE NOT cancelado AND chv_nfe IS NOT NULL),
         cc AS (
             SELECT a.raiz, d.cnpj_estab, month(a.dt_ini) AS mes, d.CHV_NFE AS chv_nfe,
-                   d.NUM_DOC AS num_doc, d.VL_DOC AS vl_doc, d.VL_PIS AS vl_pis, d.VL_COFINS AS vl_cofins
+                   d.NUM_DOC AS num_doc, d.VL_DOC AS vl_doc, d.VL_PIS AS vl_pis, d.VL_COFINS AS vl_cofins,
+                   CASE d.IND_OPER WHEN '0' THEN 'entrada' ELSE 'saida' END AS sentido
             FROM raw_contrib_c100 d JOIN arquivos a USING (arquivo_id)
             WHERE a.ativo AND coalesce(d.COD_SIT, '00') NOT IN ('02','03','04','05')
               AND d.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)),
         estab_det AS (SELECT DISTINCT cnpj_estab, mes FROM cc)
         SELECT coalesce(ci.raiz, cc.raiz) AS raiz, coalesce(ci.cnpj_estab, cc.cnpj_estab) AS cnpj_estab,
-               coalesce(ci.mes, cc.mes) AS mes, coalesce(ci.chv_nfe, cc.chv_nfe) AS chv_nfe,
+               coalesce(ci.mes, cc.mes) AS mes, coalesce(ci.sentido, cc.sentido) AS sentido,
+               coalesce(ci.chv_nfe, cc.chv_nfe) AS chv_nfe,
                CASE WHEN cc.chv_nfe IS NULL THEN 'Só na EFD ICMS/IPI'
                     WHEN ci.chv_nfe IS NULL THEN 'Só na EFD Contribuições'
                     ELSE 'Valores diferentes' END AS problema,
@@ -101,8 +122,11 @@ def q7_icms_x_contrib(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
                ci.vl_pis AS pis_icms_ipi, cc.vl_pis AS pis_contrib,
                ci.vl_cofins AS cofins_icms_ipi, cc.vl_cofins AS cofins_contrib
         FROM ci FULL OUTER JOIN cc ON ci.chv_nfe = cc.chv_nfe
+        -- entradas sem credito podem nao constar da EFD Contribuicoes: so se aponta
+        -- entrada que esta na Contribuicoes e falta na Fiscal
         WHERE (ci.chv_nfe IS NULL OR EXISTS (SELECT 1 FROM estab_det e
                                           WHERE e.cnpj_estab = ci.cnpj_estab AND e.mes = ci.mes))
+          AND NOT (ci.sentido = 'entrada' AND cc.chv_nfe IS NULL)
           AND (ci.chv_nfe IS NULL OR cc.chv_nfe IS NULL
                OR abs(coalesce(ci.vl_doc, 0) - coalesce(cc.vl_doc, 0)) > ?
                OR abs(coalesce(ci.vl_pis, 0) - coalesce(cc.vl_pis, 0)) > ?
@@ -115,34 +139,52 @@ def q7_icms_x_contrib(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
             WHERE a.ativo AND h.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)
             GROUP BY ALL),
         icms AS (
-            SELECT cnpj_estab, mes, sum(vl_opr - coalesce(vl_ipi_c190, 0)) AS saidas_c190
+            SELECT cnpj_estab, mes,
+                   sum(vl_opr - coalesce(vl_ipi_c190, 0) - coalesce(vl_icms_st_c190, 0)) AS saidas_c190
             FROM v_saidas_doc WHERE emissao = 'propria' GROUP BY ALL)
-        SELECT c.raiz, c.cnpj_estab, c.mes, NULL AS chv_nfe,
+        SELECT c.raiz, c.cnpj_estab, c.mes, 'saida' AS sentido, NULL AS chv_nfe,
                'Total de saídas diferente (escrituração consolidada)' AS problema,
                i.saidas_c190 AS valor_icms_ipi, c.saidas_c180 AS valor_contrib
         FROM c180 c LEFT JOIN icms i USING (cnpj_estab, mes)
-        WHERE abs(coalesce(i.saidas_c190, 0) - c.saidas_c180) > ?""", [_tol()]).df()
+        WHERE abs(coalesce(i.saidas_c190, 0) - c.saidas_c180) > greatest(?, ? * abs(c.saidas_c180))""",
+                              [_tol(), _pct()]).df()
     return pd.concat([detalhada, consolidada], ignore_index=True)
 
 
 def q8_receita_contrib_x_icms(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """R3: receitas de venda da base × receitas do bloco M (M210/M610 + M400/M800), por
+    empresa e mes, tolerancia em % (premissa tolerancia_receita_pct).
+
+    As duas pontas sao da EFD Contribuicoes da empresa inteira (inclui estabelecimentos fora
+    do AM); a ponta "Fiscal" (C190 dos estabelecimentos do AM) e mostrada para referencia."""
     return con.execute("""
-        WITH c AS (
+        WITH m AS (
             SELECT raiz, mes, sum(receita_tributada + receita_nao_tributada_pis) AS receita_bloco_m
             FROM v_apur_pis_cofins GROUP BY ALL),
+        b AS (
+            SELECT raiz, mes, sum(v) AS receita_base FROM (
+                SELECT raiz, mes, CAST(receita AS DOUBLE) AS v FROM v_saidas_item WHERE eh_receita
+                UNION ALL
+                SELECT a.raiz, month(a.dt_ini), CAST(x.VL_DOC - coalesce(x.VL_DESC, 0) AS DOUBLE)
+                FROM raw_contrib_a100 x JOIN arquivos a USING (arquivo_id) WHERE a.ativo AND x.IND_OPER = '1'
+                UNION ALL
+                SELECT a.raiz, month(a.dt_ini), CAST(x.VL_OPER AS DOUBLE)
+                FROM raw_contrib_f100 x JOIN arquivos a USING (arquivo_id)
+                WHERE a.ativo AND x.IND_OPER IN ('1', '2')) GROUP BY ALL),
         i AS (
-            SELECT raiz, mes, sum(vl_opr - coalesce(vl_ipi_c190, 0)) AS receita_c190
+            SELECT raiz, mes, sum(vl_opr - coalesce(vl_ipi_c190, 0) - coalesce(vl_icms_st_c190, 0)) AS receita_c190_am
             FROM v_saidas_doc WHERE eh_receita GROUP BY ALL)
-        SELECT coalesce(c.raiz, i.raiz) AS raiz, coalesce(c.mes, i.mes) AS mes,
-               c.receita_bloco_m, i.receita_c190,
-               coalesce(c.receita_bloco_m, 0) - coalesce(i.receita_c190, 0) AS diferenca,
-               CASE WHEN coalesce(c.raiz, i.raiz) IN (SELECT raiz FROM v_estabelecimentos
-                                                      WHERE NOT no_amazonas)
-                    THEN 'Empresa tem estabelecimento fora do AM (o bloco M inclui a receita dele)'
-                    ELSE '' END AS observacao
-        FROM c FULL OUTER JOIN i ON c.raiz = i.raiz AND c.mes = i.mes
-        WHERE abs(coalesce(c.receita_bloco_m, 0) - coalesce(i.receita_c190, 0)) > ?
-        ORDER BY 1, 2""", [_tol()]).df()
+        SELECT coalesce(m.raiz, b.raiz) AS raiz, coalesce(m.mes, b.mes) AS mes,
+               m.receita_bloco_m, b.receita_base,
+               coalesce(m.receita_bloco_m, 0) - coalesce(b.receita_base, 0) AS diferenca,
+               i.receita_c190_am,
+               CASE WHEN coalesce(m.raiz, b.raiz) IN (SELECT raiz FROM v_estabelecimentos WHERE NOT no_amazonas)
+                    THEN 'Empresa tem estabelecimento fora do AM' ELSE '' END AS observacao
+        FROM m FULL OUTER JOIN b ON m.raiz = b.raiz AND m.mes = b.mes
+        LEFT JOIN i ON i.raiz = coalesce(m.raiz, b.raiz) AND i.mes = coalesce(m.mes, b.mes)
+        WHERE abs(coalesce(m.receita_bloco_m, 0) - coalesce(b.receita_base, 0))
+              > greatest(?, ? * abs(coalesce(m.receita_bloco_m, 0)))
+        ORDER BY 1, 2""", [_tol(), _pct()]).df()
 
 
 def q9_aliquotas_pis_cofins(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
@@ -183,20 +225,60 @@ def q11_codigos_nao_classificados(con: duckdb.DuckDBPyConnection) -> pd.DataFram
         FROM v_ajustes_icms WHERE nao_classificado GROUP BY 1, 2 ORDER BY valor_total DESC""").df()
 
 
+def q12_e116_x_e110(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Guia Pratico: soma do E116 = ICMS a recolher + debitos especiais do E110. Diferenca
+    positiva indica obrigacao informada alem da apuracao (ex.: fundos pagos a parte)."""
+    return con.execute("""
+        WITH e AS (SELECT arquivo_id, sum(VL_OR) AS e116 FROM raw_icms_e116 GROUP BY 1)
+        SELECT a.raiz, a.cnpj_estab, a.mes, a.arquivo_id,
+               a.icms_recolher + coalesce(a.debitos_especiais, 0) AS recolher_e110,
+               coalesce(e.e116, 0) AS soma_e116,
+               coalesce(e.e116, 0) - a.icms_recolher - coalesce(a.debitos_especiais, 0) AS diferenca
+        FROM v_apur_icms a LEFT JOIN e USING (arquivo_id)
+        WHERE abs(coalesce(e.e116, 0) - a.icms_recolher - coalesce(a.debitos_especiais, 0)) > ?
+        ORDER BY 1, 2, 3""", [_tol()]).df()
+
+
+def q13_c180_x_c181_c185(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """EFD Contribuicoes consolidada: soma do C181 (PIS) e do C185 (COFINS) = C180."""
+    return con.execute("""
+        WITH p AS (SELECT arquivo_id, pai_linha, sum(VL_ITEM) AS v FROM raw_contrib_c181 GROUP BY 1, 2),
+             c AS (SELECT arquivo_id, pai_linha, sum(VL_ITEM) AS v FROM raw_contrib_c185 GROUP BY 1, 2)
+        SELECT a.raiz, h.cnpj_estab, month(a.dt_ini) AS mes, h.COD_ITEM AS cod_item, h.arquivo_id,
+               h.linha_num, h.VL_TOT_ITEM AS total_c180, p.v AS soma_c181, c.v AS soma_c185
+        FROM raw_contrib_c180 h JOIN arquivos a USING (arquivo_id)
+        LEFT JOIN p ON p.arquivo_id = h.arquivo_id AND p.pai_linha = h.linha_num
+        LEFT JOIN c ON c.arquivo_id = h.arquivo_id AND c.pai_linha = h.linha_num
+        WHERE a.ativo AND (abs(h.VL_TOT_ITEM - coalesce(p.v, 0)) > ? OR abs(h.VL_TOT_ITEM - coalesce(c.v, 0)) > ?)
+        ORDER BY 1, 2, 3""", [_tol(), _tol()]).df()
+
+
 CHECAGENS = {
-    "Q3": ("C170 × C100 (itens × documento)", q3_c170_x_c100),
+    "Q3": ("C170 × C100 (itens × documento, nas duas EFDs)", q3_c170_x_c100),
     "Q4": ("C190 × C100 (analítico × documento)", q4_c190_x_c100),
-    "Q5": ("Documentos × E110 (ICMS)", q5_docs_x_e110),
-    "Q6": ("Documentos × E520 (IPI)", q6_docs_x_e520),
-    "Q7": ("EFD ICMS/IPI × EFD Contribuições", q7_icms_x_contrib),
-    "Q8": ("Receita do bloco M × saídas do C190", q8_receita_contrib_x_icms),
+    "Q5": ("R1 – Documentos × E110 (ICMS)", q5_docs_x_e110),
+    "Q6": ("R2 – Documentos × E520 (IPI)", q6_docs_x_e520),
+    "Q7": ("R4 – Mesmo documento nas duas EFDs (chave da NF-e)", q7_icms_x_contrib),
+    "Q8": ("R3 – Receitas da base × bloco M (M210/M610 + M400/M800)", q8_receita_contrib_x_icms),
     "Q9": ("Alíquotas de PIS/COFINS nas saídas incentivadas", q9_aliquotas_pis_cofins),
     "Q10": ("CST de IPI nas saídas incentivadas", q10_cst_ipi_incentivado),
     "Q11": ("Códigos de ajuste E111/E116 sem classificação", q11_codigos_nao_classificados),
+    "Q12": ("E116 × E110 (obrigações × ICMS a recolher)", q12_e116_x_e110),
+    "Q13": ("C180 × C181/C185 (Contribuições consolidada)", q13_c180_x_c181_c185),
 }
 
 
-def filtrar(df: pd.DataFrame, raizes: list[str] | None) -> pd.DataFrame:
-    if raizes is None or df.empty or "raiz" not in df.columns:
+def filtrar(df: pd.DataFrame, f: "Filtro | list[str] | None") -> pd.DataFrame:
+    """Aplica o filtro global (empresas, estabelecimentos, periodo) quando as colunas existem."""
+    if f is None or df.empty:
         return df
-    return df[df["raiz"].isin(raizes)]
+    if not isinstance(f, Filtro):
+        f = Filtro(raizes=tuple(f))
+    m = pd.Series(True, index=df.index)
+    if f.raizes is not None and "raiz" in df.columns:
+        m &= df["raiz"].isin(f.raizes)
+    if f.estabs is not None and "cnpj_estab" in df.columns:
+        m &= df["cnpj_estab"].isin(f.estabs) | df["cnpj_estab"].isna()
+    if "mes" in df.columns:
+        m &= df["mes"].between(f.mes_ini, f.mes_fim) | df["mes"].isna()
+    return df[m]

@@ -1,13 +1,15 @@
 # Manual do usuário — Programa ZFM × Reforma Tributária
 
-> Versão das Fases 0 a 7.
+> Versão: análise As Is (apuração atual) × To Be (2027–2033).
 
 ## 1. O que o programa faz
 
-O programa lê as EFD ICMS/IPI e EFD Contribuições de 2026 das empresas do grupo no Amazonas,
-confere se os arquivos estão completos e íntegros, calcula o benefício atual da Zona Franca de
-Manaus (IPI, PIS/COFINS e ICMS) e simula esse benefício depois da Reforma Tributária (CBS, IBS e
-IPI residual). Tudo roda **só no seu computador**: nenhum dado é enviado para a internet.
+O programa lê as EFD ICMS/IPI e EFD Contribuições de 2026 das empresas do grupo no Amazonas e
+compara a **carga atual** (As Is, lida da apuração) com a **carga simulada após a Reforma**
+(To Be, 2027 a 2033: CBS, IBS, ICMS residual, IPI e contribuição estadual do art. 457).
+O resultado principal é a **diferença To Be − As Is** por empresa, ano e tributo:
+**positivo = aumento de carga (perda); negativo = redução (ganho)**.
+Tudo roda **só no seu computador**: nenhum dado é enviado para a internet.
 
 ## 2. Primeiro uso (uma vez só)
 
@@ -69,18 +71,19 @@ Observações:
 ## 5. Conferir os arquivos (tela 2. Perímetro e qualidade)
 
 - **Q1 – Completude:** uma linha por estabelecimento do Amazonas e uma coluna por mês.
-  Verde *OK* = as duas EFDs existem. Vermelho = falta arquivo (a célula diz qual).
-  A EFD Contribuições é procurada pela empresa (raiz do CNPJ), porque é entregue pela matriz.
-- **Q2 – Integridade:** compara a quantidade de registros lidos com a informada no próprio arquivo
-  (registros 9900 e 9999). Divergência indica arquivo incompleto ou alterado.
-- **Q3 a Q11 – Conciliações:** cada linha abre a lista do que não fecha (documento × itens, documentos × apuração, EFD ICMS/IPI × EFD Contribuições, alíquotas de PIS/COFINS, CST de IPI, códigos sem classificação).
-- **Avisos de leitura:** linhas com formato diferente do esperado (o arquivo foi carregado,
-  mas convém conferir).
+  Verde *OK* = as duas EFDs existem. Vermelho = falta arquivo.
+- **Q2 – Integridade:** quantidade de registros lidos × informada no próprio arquivo (9900/9999).
+- **Conciliações:** cada linha abre a lista do que não fecha.
+  - R1 (Q5) documentos × E110; R2 (Q6) documentos × E520; R3 (Q8) receitas × bloco M (tolerância de
+    0,5%); R4 (Q7) mesmo documento nas duas EFDs; **R5** carga recalculada pela base de operações ×
+    carga da apuração. O R5 é a porta de entrada da simulação: se não fechar, a diferença aparece na
+    tela 8 como "ajuste de reconciliação", separada do efeito da reforma.
+  - Q3, Q4, Q9 a Q13: itens × documento, alíquotas de PIS/COFINS, CST de IPI, códigos de ajuste sem
+    classificação, E116 × E110 e C180 × C181/C185.
+- **Avisos de leitura:** linhas com formato diferente do esperado ou valores que não são número/data
+  válidos (o aviso mostra o exemplo e a linha do arquivo).
 
-**Seletor de empresas (barra lateral):** marcado *Todas as empresas (consolidado)* por padrão.
-Desmarque para escolher uma ou várias empresas. Vale para todas as telas.
-
-## 6. Preencher os parâmetros (tela 3. Parâmetros)
+## 6. Preencher os parâmetros (tela 3. Parâmetros e premissas)
 
 1. Depois de carregar as EFDs, clique em **Preencher a partir das EFDs**. O programa acrescenta
    empresas, produtos (registro 0200), CFOPs e códigos de ajuste do ICMS (E111/E116) encontrados nos
@@ -120,36 +123,45 @@ marque *revisado*.
 CBS 11,3% (TCU) e IBS 18,7% (premissa do Comitê Gestor) no cenário base. Edite quando o Senado
 fixar as alíquotas.
 
-## 7. Ler as telas de resultado
+## 7. Filtros e telas de resultado
 
-- **4. Saídas / 5. Entradas / 6. Apurações:** receitas, compras e apurações por empresa e mês.
-  Quando aparecer o aviso de *rateio*, o destino do produto foi estimado (EFD Contribuições
-  consolidada). A tela 6 mostra também os saldos credores no último mês (informação para a transição).
-- **7. Benefício atual:** quanto a ZFM reduz hoje de IPI, PIS, COFINS e ICMS
-  (benefício = imposto que seria pago fora da ZFM − imposto pago hoje). O percentual mostra o
-  benefício sobre a receita das vendas incentivadas. No fim da tela, escolha tributo, empresa e mês
-  para ver o arquivo e a linha da EFD de cada valor.
-- **8. Simulação e cenários:**
-  - *Benefício hoje (anualizado)*: benefício de 2026 levado para 12 meses.
-  - *Benefício pós-reforma*: benefício no ano e cenário escolhidos (CBS, IBS, ICMS residual,
-    IPI protegido, menos a contribuição estadual do art. 457).
-  - *Δ*: pós-reforma − hoje. Negativo = perda.
-  - *Ponte*: como se sai do benefício de hoje para o pós-reforma, tributo por tributo.
-  - *Teste de absorção*: crédito presumido gerado, usado e expirado. "Saldo credor estrutural" =
-    a empresa acumula crédito que não consegue usar (o crédito presumido vence em 5 anos e não é
-    devolvido).
-- **Filtros da barra lateral:** empresas, *Com teses* e *Eliminar operações entre empresas do grupo*.
-  Valem para todas as telas.
-- **Visão do benefício (telas 7 e 8):** *Completa*, *Só saídas* (efeito sobre as vendas) ou
-  *Só entradas* (efeito sobre as compras). Na tela 7, "Só entradas" mostra as compras com isenção,
-  suspensão ou alíquota zero (informativo). Na tela 8, saídas + entradas = benefício total.
-  As telas 4 (Saídas) e 5 (Entradas) mostram as operações de cada lado.
+**Barra lateral (vale para todas as telas):** empresas (uma, várias ou o consolidado), **período**
+(meses de 2026 — a anualização usa os meses escolhidos), **estabelecimentos** (abre a empresa por
+CNPJ completo; vazio = todos) e **Com teses**. Nas telas há filtros próprios (CFOP, produto, NCM, UF,
+origem, natureza, tributo, cenário, ano, visão).
 
-## 8. Exportar para o Excel (tela 9)
+- **4. Base de operações:** a base usada na simulação, uma linha por item. Devoluções aparecem com
+  valor negativo (abatem a operação de origem). Transferências entre estabelecimentos aparecem à parte.
+  Botão para baixar em CSV.
+- **5. Saídas / 6. Entradas:** só as saídas ou só as entradas, com filtros.
+- **7. Carga As Is (apuração):** ICMS, IPI, PIS e COFINS **lidos da apuração**, sem recálculo; carga
+  anualizada; composição saídas × entradas; crédito estímulo e fundos (informativo); saldos credores no
+  fim do período; resultado do R5.
+- **8. To Be e diferença:**
+  - escolha **cenário**, **ano**, **tributos** e a **visão** (Completa, Só saídas, Só entradas);
+  - cartões: carga As Is, carga To Be e diferença (vermelho = perda);
+  - **diferença por tributo** (uma coluna por empresa e o total);
+  - **ponte**: carga As Is → ajuste de reconciliação → efeito CBS (substitui PIS/COFINS) → efeito IBS →
+    ICMS residual → IPI → contribuição do art. 457 → carga To Be;
+  - **ranking** das empresas, da maior perda ao maior ganho;
+  - **duas métricas**: diferença de carga própria × perda de vantagem competitiva do IPI (IPI que o
+    concorrente de fora pagava e deixa de pagar), também por produto;
+  - **teste de absorção**: crédito presumido gerado, usado e expirado; carga teórica × realizável;
+    alerta de saldo credor estrutural.
+- **9. Benefício ZFM (informativo):** quanto a ZFM reduz hoje de IPI, PIS, COFINS e ICMS (regime
+  geral − ZFM). Não entra na diferença.
 
-Clique em **Gerar Excel** e depois em **Baixar Excel** (o arquivo vai para a pasta Downloads).
-O arquivo traz uma aba por visão (uma coluna por empresa e uma de total), as divergências das
-conciliações e a aba **Premissas** com todos os parâmetros usados.
+## 8. Exportar para o Excel (tela 10)
+
+Clique em **Gerar Excel** e depois em **Baixar Excel**. O arquivo usa os filtros da barra lateral e
+traz: diferença por tributo e por empresa, ponte, composição saídas × entradas, vantagem competitiva do
+IPI, absorção, carga As Is, R5, base de operações (resumo), benefício informativo, divergências das
+conciliações, **Premissas adotadas** (lista legível) e **Parâmetros (tabelas)**.
+
+**Depois de atualizar o programa:** abra 3. Parâmetros, clique em **Preencher a partir das EFDs**
+(acrescenta as colunas novas, como a operação de origem das devoluções) e, na aba "Premissas e
+alíquotas", clique em **Aplicar aos anos 2027–2033** (aplica o IBS de teste de 0,1% em 2027–2028).
+Não é preciso carregar as EFDs de novo.
 
 ## 9. Quando der erro
 

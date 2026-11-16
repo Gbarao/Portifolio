@@ -74,3 +74,33 @@ def classificar(cfop: str) -> tuple[str, bool]:
     if s[0] == "9" or s in ("501", "502", "504", "505"):
         return "remessa_retorno", False
     return "outros", False
+
+
+# Devolucoes: categoria da operacao de ORIGEM que a devolucao abate (editavel em param_cfops)
+_DEVOL_DE_VENDA_PROD = {"201", "203", "410"}     # entrada: devolucao de venda de producao
+_DEVOL_DE_VENDA_REV = {"202", "204", "411"}      # entrada: devolucao de venda de mercadoria adquirida
+_DEVOL_DE_COMPRA_IND = {"201", "410"}            # saida: devolucao de compra p/ industrializacao
+_DEVOL_DE_COMPRA_REV = {"202", "411"}            # saida: devolucao de compra p/ comercializacao
+
+
+def devolucao_de(cfop: str) -> str:
+    """Categoria da operacao de origem abatida pela devolucao ('' se nao for devolucao)."""
+    c = str(cfop or "").strip()
+    if len(c) != 4 or not c.isdigit():
+        return ""
+    d, s = c[0], c[1:]
+    if d in "123":
+        if s in _DEVOL_DE_VENDA_PROD:
+            return "venda_producao"
+        if s in _DEVOL_DE_VENDA_REV:
+            return "venda_revenda"
+        return ""
+    if s in _DEVOL_DE_COMPRA_IND:
+        return "compra_industrializacao"
+    if s in _DEVOL_DE_COMPRA_REV:
+        return "compra_revenda"
+    if s == "553":
+        return "ativo"
+    if s == "556":
+        return "uso_consumo"
+    return ""

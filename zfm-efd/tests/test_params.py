@@ -11,7 +11,7 @@ def test_modelos_iniciais_de_aliquotas():
     a = params.carregar("param_aliquotas_cenario")
     assert set(a["cenario"]) == {"base", "baixo", "alto", "adverso"}
     base = a[a.cenario == "base"].set_index("ano")
-    assert base.loc[2027, "aliq_cbs"] == 11.2 and base.loc[2027, "aliq_ibs"] == 0
+    assert base.loc[2027, "aliq_cbs"] == 11.2 and base.loc[2027, "aliq_ibs"] == 0.1
     assert base.loc[2033, "aliq_cbs"] == 11.3 and base.loc[2033, "aliq_ibs"] == 18.7
     assert base.loc[2029, "fator_icms"] == 0.9
     assert abs(base.loc[2029, "aliq_ibs"] - 1.87) < 1e-9
@@ -46,7 +46,9 @@ def test_classificacao_de_codigos():
     assert params.classificar_codigo("AM020005", "E111", "Crédito estímulo Lei 2826")[0] == "credito_estimulo"
     assert params.classificar_codigo("9999", "E116", "Contribuição FMPES")[0] == "fundo_FMPES"
     assert params.classificar_codigo("9998", "E116", "Recolhimento UEA")[0] == "fundo_UEA"
-    assert params.classificar_codigo("1234", "E116", "")[0] == "outros"
+    assert params.classificar_codigo("1234", "E116", "")[0] == "nao_classificado"
+    assert params.classificar_codigo("1234", "E116", "", cod_or="000")[0] == "outros"
+    assert params.classificar_codigo("AM009001", "E111", "Ajuste diverso")[0] == "nao_classificado"
 
 
 def test_classificacao_cfop():
@@ -91,7 +93,7 @@ def test_aplicar_aliquotas_de_referencia():
     params.aplicar_referencias(refs)
     a = params.carregar("param_aliquotas_cenario")
     b = a[a.cenario == "base"].set_index("ano")
-    assert b.loc[2027, "aliq_cbs"] == 9.9 and b.loc[2027, "aliq_ibs"] == 0
+    assert b.loc[2027, "aliq_cbs"] == 9.9 and b.loc[2027, "aliq_ibs"] == 0.1
     assert b.loc[2030, "aliq_ibs"] == 4.0 and b.loc[2033, "aliq_ibs"] == 20.0
     assert len(a[a.cenario == "novo"]) == 7
 
@@ -108,3 +110,39 @@ def test_premissa_nova_entra_em_arquivo_antigo():
     pr = params.carregar("param_premissas")
     params.salvar("param_premissas", pr[pr.chave != "cp449"])
     assert "cp449" in set(params.carregar("param_premissas")["chave"])
+
+
+def test_migracao_de_codigos_da_versao_anterior():
+    # versao anterior gravava 'outros' para codigo sem regra
+    df = pd.DataFrame([{"codigo": "X1", "registro": "E111", "classe": "outros", "descricao": "",
+                        "regra_automatica": "sem regra", "revisado": False},
+                       {"codigo": "X2", "registro": "E111", "classe": "outros", "descricao": "",
+                        "regra_automatica": "sem regra", "revisado": True}])
+    params.salvar("param_codigos_ajuste_icms", df)
+    c = params.carregar("param_codigos_ajuste_icms").set_index("codigo")
+    assert c.loc["X1", "classe"] == "nao_classificado"
+    assert c.loc["X2", "classe"] == "outros"  # revisado pelo usuario: mantido
+
+
+def test_devolucao_de():
+    from zfm.cfop import devolucao_de
+    assert devolucao_de("2201") == "venda_producao"
+    assert devolucao_de("1202") == "venda_revenda"
+    assert devolucao_de("6201") == "compra_industrializacao"
+    assert devolucao_de("5202") == "compra_revenda"
+    assert devolucao_de("5553") == "ativo"
+    assert devolucao_de("6556") == "uso_consumo"
+    assert devolucao_de("5101") == "" and devolucao_de("1556") == ""
+
+
+def test_banco_de_versao_anterior_e_atualizado(con_carregado):
+    """Banco criado por versao anterior (param_cfops sem 'devolucao_de') continua funcionando."""
+    from zfm import visoes
+    con_carregado.execute("DROP TABLE IF EXISTS param_cfops")
+    con_carregado.execute("CREATE TABLE param_cfops (cfop VARCHAR, categoria VARCHAR, eh_receita BOOLEAN, "
+                          "automatico BOOLEAN)")
+    visoes.preparar(con_carregado)
+    cols = [r[0] for r in con_carregado.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'param_cfops'").fetchall()]
+    assert "devolucao_de" in cols
+    assert con_carregado.execute("SELECT count(*) FROM v_base_operacoes").fetchall()[0][0] > 0

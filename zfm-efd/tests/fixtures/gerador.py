@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
+from zfm.cfop import classificar as _classificar_cfop
 from zfm.layouts import efd_contrib, efd_icms_ipi
 
 D = Decimal
@@ -28,6 +29,7 @@ COD_VER_CONTRIB = "006"  # sintetico
 COD_AJ_CREDITO_ESTIMULO = "AM040014"  # deducao (4o caractere = 4), padrao do AM
 COD_OR_FTI = "090"
 COD_REC_FTI = "FTI9"
+COD_AJ_SEM_REGRA = "AM009001"  # outros debitos, sem palavra-chave: deve ficar 'nao_classificado'
 
 
 def r2(v: Decimal) -> Decimal:
@@ -144,6 +146,7 @@ class Estab:
     docs: dict[int, list[Doc]] = field(default_factory=dict)  # mes -> docs
     ajustes_ce: dict[int, Decimal] = field(default_factory=dict)  # mes -> credito estimulo
     fundo_fti: dict[int, Decimal] = field(default_factory=dict)
+    ajuste_debito: dict[int, Decimal] = field(default_factory=dict)  # E111 sem regra (AM009001)
 
     @property
     def raiz(self) -> str:
@@ -232,12 +235,34 @@ def montar_cenario(meses: tuple[int, ...] = (1, 2, 3)) -> list[Empresa]:
             Doc("1", "0", C_MAO, n(), 15, [_saida_manaus("PROD01", r2(D("80000") * f))], False, a1.cnpj),
             intra,
         ]
+        if m == 2:
+            # Fevereiro: devolucao de venda (2201), devolucao de compra (6201), transferencia
+            # 0001 -> 0002 (5152/1152) e ajuste de debito com codigo sem regra (E111)
+            p_a2 = Part("GRP_A2", a2.nome, a2.cnpj, MANAUS, ie=a2.ie, suframa=a2.suframa)
+            transf = Doc("1", "0", p_a2, n(), 26, [ItemDoc("PROD01", D("5000"), "5152", "041", D("0"),
+                                                           "55", D("0"), "49", D("0"), "49", D("0"))],
+                         False, a1.cnpj)
+            a1.docs[m] += [
+                Doc("0", "1", C_SP, n(), 24, [ItemDoc("PROD01", D("40000"), "2201", "000", D("12"),
+                                                      "02", D("0"), "98", D("0.65"), "98", D("3"))],
+                    True, C_SP.cnpj),
+                Doc("1", "0", F_SP, n(), 25, [ItemDoc("INS01", D("10000"), "6201", "000", D("7"),
+                                                      "99", D("0"), "49", D("0"), "49", D("0"))],
+                    False, a1.cnpj),
+                transf,
+            ]
+            a1.ajuste_debito[m] = D("100")
         # --- A2: entrada SP e saida SP sem C170
         a2.docs[m] = [
             Doc("0", "1", F_SP, n(), 6, [_entrada("INS01", r2(D("40000") * f), "2101", D("7"))],
                 True, F_SP.cnpj),
             Doc("1", "0", C_SP, n(), 12, [_saida_icms_sp("PROD01", r2(D("150000") * f))], False, a2.cnpj),
         ]
+        if m == 2:
+            p_a1t = Part("GRP_A1", a1.nome, a1.cnpj, MANAUS, ie=a1.ie, suframa=a1.suframa)
+            a2.docs[m].append(Doc("0", "1", p_a1t, transf.num, transf.dia,
+                                  [ItemDoc("PROD01", D("5000"), "1152", "041", D("0"), "05", D("0"),
+                                           "98", D("0"), "98", D("0"))], True, a1.cnpj))
         # --- B1: entrada da A1 (grupo), entrada SP grande (gera saldo credor), saida SP
         entrada_grupo = Doc("0", "1", p_a1, intra.num, intra.dia,
                             [_entrada("PROD02", intra.itens[0].vl_item, "1101", D("20"))],
@@ -402,18 +427,22 @@ def gerar_icms(e: Estab, mes: int, retificadora: bool = False, extra_valor: Deci
     w.raw("E001", "0")
     w.add("E100", DT_INI=dt(1, mes), DT_FIN=dt(ultimo_dia(mes), mes))
     ant = sldo_ant.get("icms", D(0))
+    aj_deb = e.ajuste_debito.get(mes, D(0))
     cred_total = cred_icms + ant
-    sld_apurado = max(D(0), deb_icms - cred_total)
-    transp = max(D(0), cred_total - deb_icms)
+    sld_apurado = max(D(0), deb_icms + aj_deb - cred_total)
+    transp = max(D(0), cred_total - deb_icms - aj_deb)
     sldo_ant["icms"] = transp
     # Credito estimulo lancado como DEDUCAO (E110.VL_TOT_DED), limitado ao saldo apurado
     ce = min(e.ajustes_ce.get(mes, D(0)), sld_apurado)
     recolher = sld_apurado - ce
-    w.add("E110", VL_TOT_DEBITOS=deb_icms, VL_AJ_DEBITOS=D(0), VL_TOT_AJ_DEBITOS=D(0),
+    w.add("E110", VL_TOT_DEBITOS=deb_icms, VL_AJ_DEBITOS=D(0), VL_TOT_AJ_DEBITOS=aj_deb,
           VL_ESTORNOS_CRED=D(0), VL_TOT_CREDITOS=cred_icms, VL_AJ_CREDITOS=D(0),
           VL_TOT_AJ_CREDITOS=D(0), VL_ESTORNOS_DEB=D(0), VL_SLD_CREDOR_ANT=ant,
           VL_SLD_APURADO=sld_apurado, VL_TOT_DED=ce, VL_ICMS_RECOLHER=recolher,
           VL_SLD_CREDOR_TRANSPORTAR=transp, DEB_ESP=D(0))
+    if aj_deb:
+        w.add("E111", COD_AJ_APUR=COD_AJ_SEM_REGRA, DESCR_COMPL_AJ="Ajuste diverso (sintetico)",
+              VL_AJ_APUR=aj_deb)
     if ce:
         w.add("E111", COD_AJ_APUR=COD_AJ_CREDITO_ESTIMULO,
               DESCR_COMPL_AJ="Credito estimulo (sintetico)", VL_AJ_APUR=ce)
@@ -534,6 +563,8 @@ def gerar_contrib(emp: Empresa, mes: int) -> str:
                                       f"ALIQ_{sufixo}": (getattr(i, aliq_a), 4),
                                       f"VL_{sufixo}": getattr(i, val)[1]})
         for _, i in saidas:
+            if not _classificar_cfop(i.cfop)[1]:
+                continue  # bloco M: so receitas (devolucao de compra e transferencia nao sao receita)
             if i.aliq_pis > 0:
                 g = pis_grupos[i.aliq_pis]
                 g[0] += i.base
