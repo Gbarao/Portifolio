@@ -1,0 +1,59 @@
+@import '@fontsource-variable/inter/index.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 246 247 249;
+  --panel: 255 255 255;
+  --sunken: 241 243 246;
+  --line: 226 230 236;
+  --fg: 17 24 39;
+  --muted: 100 112 132;
+  --accent: 79 70 229;
+  --accent-fg: 255 255 255;
+  --ok: 22 163 74;
+  --warn: 202 138 4;
+  --bad: 220 38 38;
+  --info: 37 99 235;
+  color-scheme: light;
+}
+.dark {
+  --bg: 11 13 18;
+  --panel: 18 21 28;
+  --sunken: 24 28 36;
+  --line: 39 45 56;
+  --fg: 229 233 240;
+  --muted: 141 151 170;
+  --accent: 129 140 248;
+  --accent-fg: 15 17 26;
+  --ok: 74 222 128;
+  --warn: 250 204 21;
+  --bad: 248 113 113;
+  --info: 96 165 250;
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply bg-bg text-fg font-sans antialiased;
+  font-feature-settings: 'cv11', 'ss01', 'tnum';
+  font-size: 13.5px;
+}
+* { @apply border-line; }
+::selection { background: rgb(var(--accent) / 0.25); }
+
+/* barras de rolagem discretas */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--muted) / 0.35); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--muted) / 0.55); border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.num { font-variant-numeric: tabular-nums; }
+.focus-ring { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-0; }
+.skeleton { @apply relative overflow-hidden rounded bg-sunken; }
+.skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(var(--panel) / 0.6), transparent); animation: shimmer 1.4s infinite; }
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+.loading-bar { animation: slide 1.1s ease-in-out infinite; }

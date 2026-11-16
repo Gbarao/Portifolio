@@ -29,144 +29,59 @@ def _cli_import(paths: list[str]) -> None:
     print(f"Concluído em {summary.segundos:.1f}s; competências reconsolidadas: {summary.competencias_reconsolidadas}")
 
 
-def build_ui(native: bool) -> None:
-    from nicegui import app, ui
+def _free_port(start: int) -> int:
+    import socket
+    for port in range(start, start + 50):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sk:
+            try:
+                sk.bind((config.UI_HOST, port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError("Nenhuma porta livre encontrada")
 
-    from app.database import filter_builder as fb
-    from app.database import snapshots
-    from app.database.engine import get_db
-    from app.ui.analytics_view import AnalyticsView
-    from app.ui.audit_view import AuditView
-    from app.ui.common import AppState
-    from app.ui.data_hub_view import DataHubView
-    from app.ui.query_builder_ui import QueryBuilderView
 
-    db = get_db()
-    app._sped_native = native  # type: ignore[attr-defined]
-    app.on_shutdown(db.close)
+def run_app(native: bool) -> None:
+    """Sobe a API + interface em 127.0.0.1 e abre a janela nativa (pywebview) ou o navegador."""
+    import threading
+    import time
+    import webbrowser
 
-    @ui.page("/")
-    def index() -> None:
-        state = AppState.from_dict(db.session_get("ui_state"))
-        dark = ui.dark_mode(value=db.session_get("dark_mode", None))
-        ui.colors(primary="#1F3864", secondary="#2E75B6", accent="#00897B")
-        ui.add_css(".nicegui-content{padding:12px 16px} .q-tab{min-height:42px} "
-                   "@layer theme{.body--dark .text-primary{color:#9ec1ff !important} "
-                   ".body--dark .bg-blue-50{background:#1e293b !important}}")
+    import uvicorn
 
-        def save_state() -> None:
-            db.session_set("ui_state", state.to_dict())
+    from app.api.server import create_app
 
-        views: dict = {}
+    app = create_app(native=native)
+    port = _free_port(config.UI_PORT)
+    url = f"http://{config.UI_HOST}:{port}/"
+    server = uvicorn.Server(uvicorn.Config(app, host=config.UI_HOST, port=port, log_level="warning",
+                                           access_log=False, timeout_keep_alive=30))
+    print(f"Consolidação Fiscal SPED em {url}  (dados: {config.DATA_DIR})", flush=True)
+    if native:
+        import webview  # type: ignore
 
-        async def apply_to_analysis() -> None:
-            tabs.value = "analise"
-            state.tab = "analise"
-            state.path = []
-            save_state()
-            await views["analytics"].refresh()
-
-        async def apply_preset(f: dict) -> None:
-            d = f.get("definicao") or {}
-            state.rules = d.get("rules") or {"op": "AND", "rules": []}
-            if d.get("global") is not None:
-                state.global_filters = d.get("global") or {}
-                views["analytics"].set_filters(state.global_filters)
-            view = d.get("view") or {}
-            if view.get("hierarchy"):
-                state.hierarchy = view["hierarchy"]
-                views["analytics"].t_hier.value = list(state.hierarchy)
-            if view.get("mode"):
-                state.mode = view["mode"]
-                views["analytics"].t_mode.value = state.mode
-            if view.get("metrics"):
-                state.metrics = view["metrics"]
-            state.applied_filter_name = f.get("nome", "")
-            views["qb"].load_rules(state.rules)
-            ui.notify(f"Filtro aplicado: {state.applied_filter_name}", type="positive")
-            await apply_to_analysis()
-
-        async def reload_analysis() -> None:
-            await views["analytics"].reload_filter_options()
-            await views["analytics"].refresh()
-
-        def on_data_changed() -> None:
-            ui.timer(0.05, reload_analysis, once=True)
-            refresh_drawer()
-
-        # ---------------- cabeçalho
-        with ui.header(elevated=True).classes("items-center gap-3 px-4 py-1"):
-            ui.button(icon="menu", on_click=lambda: drawer.toggle()).props("flat round color=white")
-            ui.icon("account_balance").classes("text-2xl")
-            with ui.column().classes("gap-0"):
-                ui.label("Consolidação Fiscal de Entradas").classes("text-lg font-semibold leading-tight")
-                ui.label("SPED Fiscal (ICMS/IPI) × EFD-Contribuições (PIS/COFINS) — 100% local").classes(
-                    "text-xs opacity-80 leading-tight")
-            ui.space()
-            with ui.tabs(value=state.tab if state.tab in ("hub", "analise", "filtros", "auditoria") else "analise",
-                         on_change=lambda e: (setattr(state, "tab", e.value), save_state())) as tabs:
-                ui.tab("hub", label="Central de Arquivos", icon="folder_copy")
-                ui.tab("analise", label="Análise Consolidada", icon="table_view")
-                ui.tab("filtros", label="Filtros & Biblioteca", icon="tune")
-                ui.tab("auditoria", label="Auditoria", icon="fact_check")
-            ui.space()
-
-            def toggle_dark() -> None:
-                dark.value = not dark.value
-                db.session_set("dark_mode", dark.value)
-
-            ui.button(icon="dark_mode", on_click=toggle_dark).props("flat round color=white").tooltip(
-                "Tema claro/escuro")
-
-        # ---------------- lista lateral de acesso rápido
-        with ui.left_drawer(value=False, bordered=True).classes("p-3") as drawer:
-            drawer_col = ui.column().classes("w-full gap-1")
-
-        def refresh_drawer() -> None:
-            drawer_col.clear()
-            with drawer_col:
-                ui.label("Filtros salvos (1 clique)").classes("text-sm font-semibold")
-                fl = fb.list_filters(db)
-                if not fl:
-                    ui.label("—").classes("opacity-60")
-                for f in fl:
-                    ui.button(f"{f['nome']}", icon="bolt", on_click=lambda f=f: apply_preset(f)).props(
-                        "flat dense no-caps align=left").classes("w-full justify-start").tooltip(f["categoria"])
-                ui.separator()
-                ui.label("Snapshots").classes("text-sm font-semibold")
-                for s in snapshots.list_snapshots(db)[:50]:
-                    ui.button(f"#{s['id']} {s['nome']}", icon="ac_unit",
-                              on_click=lambda s=s: views["qb"].open_snapshot(s["id"])).props(
-                        "flat dense no-caps align=left").classes("w-full justify-start")
-
-        # ---------------- painéis
-        with ui.tab_panels(tabs, value=tabs.value).classes("w-full bg-transparent"):
-            with ui.tab_panel("hub").classes("p-0"):
-                views["hub"] = DataHubView(db, on_data_changed)
-                views["hub"].build()
-            with ui.tab_panel("analise").classes("p-0"):
-                views["analytics"] = AnalyticsView(db, state, save_state)
-                views["analytics"].build()
-            with ui.tab_panel("filtros").classes("p-0"):
-                views["qb"] = QueryBuilderView(db, state, save_state, apply_to_analysis, apply_preset)
-                views["qb"].build()
-            with ui.tab_panel("auditoria").classes("p-0"):
-                views["audit"] = AuditView(db, state)
-                views["audit"].build()
-
-        def after_snapshot() -> None:
-            views["qb"].refresh_library()
-            refresh_drawer()
-
-        views["analytics"].on_snapshot_saved = after_snapshot
-        refresh_drawer()
-        # dados carregados após a página abrir (nada de consulta pesada no construtor da página)
-        ui.timer(0.1, views["analytics"].refresh, once=True)
-        ui.timer(0.15, views["analytics"].reload_filter_options, once=True)
-
-    ui.run(title="Consolidação Fiscal SPED", host=config.UI_HOST, port=config.UI_PORT, reload=False,
-           native=native, window_size=(1600, 960) if native else None, show=not native, dark=None,
-           language="pt-BR", favicon="📊", show_welcome_message=True)
+        t = threading.Thread(target=server.run, daemon=True, name="api")
+        t.start()
+        for _ in range(200):
+            if server.started:
+                break
+            time.sleep(0.05)
+        try:
+            webview.settings["ALLOW_DOWNLOADS"] = True
+        except Exception:  # noqa: BLE001
+            pass
+        webview.create_window("Consolidação Fiscal SPED", url, width=1600, height=960, min_size=(1100, 700))
+        webview.start()
+        server.should_exit = True
+        t.join(timeout=5)
+    else:
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+        server.run()
+    try:
+        from app.database.engine import get_db
+        get_db().close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def main() -> None:
@@ -200,7 +115,7 @@ def main() -> None:
             native = True
         except ImportError:
             native = False
-    build_ui(native)
+    run_app(native)
 
 
 if __name__ == "__main__":

@@ -49,7 +49,8 @@ Variáveis de ambiente opcionais:
 | Filtros | `database/filter_builder.py`: regras JSON convertidas em SQL parametrizado, com whitelist de colunas e operadores |
 | Agregadas | `database/aggregates.py`: quatro tabelas pré-somadas (`agg_filial`, `agg_fornecedor`, `agg_produto`, `agg_item`) e o roteador que escolhe a menor capaz de responder cada consulta |
 | Análise | `database/analytics.py` (agregação multinível, mês a mês, drill-down) e `database/audit.py` (divergências e fechamento) |
-| Interface | NiceGUI + AG Grid Community (`ui/*.py`), com tema claro/escuro |
+| API local | `api/server.py`: FastAPI em 127.0.0.1; serve a interface e expõe o motor (consultas, importação em segundo plano, exportações) |
+| Interface | React + TypeScript + Tailwind (`frontend/`), compilada em `app/web` e distribuída pronta (não exige Node no seu computador). Grade virtualizada com árvore expansível sob demanda, tema claro/escuro, fonte Inter embutida |
 | Exportação | `exporter/excel_writer.py`: XLSX em streaming (divide em abas acima de 1.048.575 linhas), CSV no padrão BR (`;` e vírgula decimal) e Parquet |
 
 ## Regras de negócio implementadas
@@ -123,21 +124,27 @@ Regras de proteção na importação:
 
 ## Telas
 
-1. **Central de Arquivos**: importação por pasta (com subpastas) ou arrastando arquivos, com progresso. Também traz
-   a matriz de cobertura filial × mês (SF+EFD, só SF, só EFD ou ausente), a lista de arquivos com remoção, a remoção
-   por competência, o backup/restauração em `.zip`, a reconsolidação e o log.
-2. **Análise Consolidada**: filtros globais (período, filial, UF, fornecedor, raiz, razão social, CFOP, item, NCM),
-   hierarquia reordenável e três modos de grade:
-   - drill-down: duplo clique desce um nível; as migalhas de navegação voltam;
-   - visão plana: todas as dimensões juntas;
-   - mês a mês: uma competência por coluna.
+A interface é aberta em uma janela própria (com `pywebview`) ou no navegador, sempre em `127.0.0.1`. Menu lateral
+recolhível com acesso rápido aos filtros salvos, tema claro/escuro/sistema e estado salvo automaticamente (filtros,
+hierarquia, colunas e tela são restaurados ao reabrir).
 
-   A tela tem ainda indicadores, linha de totais, o painel de notas fiscais da linha clicada (com chave de 44
-   dígitos), exportações e o congelamento de snapshots.
-3. **Filtros & Biblioteca**: construtor de regras com E/OU e grupos aninhados, sobre qualquer coluna da fato.
-   Permite testar (contagem e valor), aplicar e salvar por categoria, e oferece a biblioteca com aplicação em 1 clique
-   e a lista de snapshots. O menu lateral (☰) dá acesso rápido aos mesmos itens.
-4. **Auditoria**: verificações exportáveis em uma pasta de trabalho:
+1. **Análise**:
+   - filtros globais em botões com busca instantânea (período, filial, fornecedor, CFOP, item, UF e "Mais":
+     razão social, raiz de CNPJ, descrição, prefixos de CFOP e NCM), aplicados na hora;
+   - indicadores (valor contábil, ICMS, ST + FCP, IPI, PIS, COFINS, recuperáveis, custo líquido, documentos) e
+     gráfico de evolução mensal;
+   - três visões: **Árvore** (Empresa ▸ Fornecedor ▸ CFOP ▸ Item na mesma tabela, cada nível carregado só ao
+     abrir), **Tabela** (todas as dimensões juntas) e **Mês a mês** (árvore com uma coluna por competência);
+   - hierarquia reordenável, escolha de colunas, ordenação por qualquer coluna, colunas redimensionáveis;
+   - clique em qualquer linha abre o painel de **notas fiscais** (com chave de 44 dígitos), redimensionável;
+   - exportação do resumo, dos itens detalhados (Excel, CSV, Parquet) e das notas; congelamento de snapshots.
+2. **Arquivos**: importação por pasta ou arrastando arquivos, com barra de progresso e resultado por arquivo;
+   matriz de cobertura filial × mês; lista de arquivos com remoção; remoção por competência; backup e restauração;
+   reconsolidação; log.
+3. **Regras e filtros**: construtor de regras E/OU com grupos aninhados, prévia do SQL, teste (linhas e valores),
+   modelos prontos, biblioteca de filtros salvos por categoria e visualizador de snapshots (com verificação de
+   integridade, exportação e restauração do contexto).
+4. **Auditoria**: verificações agrupadas, contadas automaticamente e exportáveis em uma pasta de trabalho:
    - **fechamento**: PIS/COFINS dos registros brutos da EFD × totalizador (deve ser sempre zero);
    - créditos somente na EFD (linhas `EC_SEM_PAR`);
    - diferença de valor do documento entre SF e EFD;
@@ -157,7 +164,7 @@ pip install -r requirements-opcional.txt
 python -m pytest -q tests
 ```
 
-São 40 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
+São 50 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
 - `tests/test_pipeline.py` (18): detecção, duplicidade, retificadora, fechamento C170 = C190, rateio de frete,
   N1/N3/DOC, Exceção 2, 0175, filtros, auditoria, cobertura, exportação, snapshot, backup e remoção.
 - `tests/test_cruzamento.py` (22): cenários em que os dois arquivos **não** são espelhos. Numeração de itens
@@ -165,6 +172,19 @@ São 40 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data
   ausente no SPED Fiscal, nota sem chave, CT-e sem D190, nota em meses diferentes e todos combinados. Em todos,
   o total de PIS e COFINS da EFD é igual ao do totalizador. Inclui a prova de que as tabelas agregadas devolvem
   exatamente o mesmo resultado da fato linha a linha.
+- `tests/test_api.py` (10): todos os endpoints usados pela interface — importação por pasta e por envio de
+  arquivos, árvore nível a nível, totais, mês a mês, notas, filtros salvos, snapshots, migração do estado salvo
+  pela versão anterior, exportações e downloads, auditoria, backup, remoção e reconsolidação.
+
+### Alterar a interface (opcional, para desenvolvedores)
+
+A pasta `app/web` já contém a interface compilada. Só é preciso Node.js para modificá-la:
+
+```bash
+cd frontend
+npm install
+npm run build      # gera app/web
+```
 
 ### Como o relatório fica rápido
 
@@ -175,8 +195,9 @@ São 40 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data
 - Visões com muitas linhas são resolvidas em duas fases: primeiro as N maiores chaves, depois as métricas
   completas só para elas.
 - A fato é gravada em ordem de filial/fornecedor/item, o que permite ao DuckDB pular blocos nos filtros.
-- Na tela, grade e indicadores são consultados em paralelo; as listas dos filtros e a contagem de documentos
-  carregam depois, sem segurar a grade.
+- Na tela, a árvore busca só o nível aberto; grade, indicadores e gráfico são consultados em paralelo; a
+  contagem de documentos chega depois, sem segurar a tela; as linhas são desenhadas de forma virtualizada (só as
+  visíveis), então milhares de linhas rolam sem travar.
 
 ### Medições (ambiente de desenvolvimento, 4 vCPUs)
 
@@ -207,13 +228,24 @@ desfavorável: os itens são sorteados, então quase não há repetição de for
 | Regra por linha, 1 filial + 3 meses | fato | 49 ms |
 | Contagem de documentos distintos | fato | 0,15 s |
 | Drill-down até as notas | fato | 17–38 ms |
-| Abrir o programa até a grade preenchida (navegador) | — | 0,8 s |
-| Visão plana na tela (consulta + envio + desenho da grade) | — | 2,3 s |
+
+Na interface (navegador, mesma base de 28,8 milhões de linhas, tempo até o conteúdo aparecer na tela):
+
+| Ação | Tempo |
+|---|---|
+| Abrir o programa até a árvore preenchida | 0,22 s |
+| Abrir uma filial (500 fornecedores) | 0,10 s |
+| Abrir um fornecedor (CFOPs) / um CFOP (itens) | 0,08 s / 0,12 s |
+| Clicar em uma linha até as notas fiscais aparecerem | 0,14 s |
+| Buscar na lista de fornecedores do filtro | 0,08 s |
+| Marcar um fornecedor e recalcular a árvore | 0,27 s |
+| Trocar para Mês a mês | 0,07 s |
+| Trocar para Tabela com 4 dimensões (5 mil maiores linhas) | 1,4 s |
 
 ## Premissas e limites conhecidos
 
-- **Agrupamento da grade.** O agrupamento hierárquico é feito no servidor (drill-down, visão plana e mês a mês).
-  O *row grouping* e o *pivot* nativos do AG Grid são recursos Enterprise, que exigem licença, e não são usados.
+- **Linhas por nível.** Cada nível da árvore traz até 5.000 linhas na raiz e 2.000 por item aberto (os maiores
+  por valor); a linha Total sempre considera todas. Acima disso, refine os filtros ou exporte.
 - **Derivação de `NAT_BC_CRED`.** A tabela CFOP → `NAT_BC_CRED` (`ref_cfop_nat_bc_cred`) é uma derivação
   parametrizável e não um mapeamento oficial. Ela só é aplicada quando o registro de origem não informa a natureza
   (C170 da EFD-Contribuições), e a coluna `nat_bc_cred_origem` indica `INFORMADO` ou `DERIVADO_CFOP`.

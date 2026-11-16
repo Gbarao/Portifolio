@@ -2,5 +2,8 @@
 duckdb==2.0.0
 pyarrow==26.0.1
 polars==2.1.0
-nicegui==4.0.0
 xlsxwriter==3.2.9
+fastapi==0.162.5
+starlette==1.10.0
+uvicorn==0.54.0
+python-multipart==0.0.32
