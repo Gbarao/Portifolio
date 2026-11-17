@@ -116,7 +116,7 @@ def q7_icms_x_contrib(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         SELECT c.raiz, c.cnpj_estab, c.mes, 'saida' AS sentido, 'Fiscal × Contribuições' AS fonte,
                'Total de saídas diferente (escrituração consolidada C180 × C190)' AS problema,
                NULL AS num_doc, NULL AS chv_nfe, NULL AS participante,
-               i.saidas_c190 AS valor_fiscal_ou_contrib, c.saidas_c180 AS valor_outra_efd
+               i.saidas_c190 AS valor_fiscal, c.saidas_c180 AS valor_contrib
         FROM c180 c LEFT JOIN icms i USING (cnpj_estab, mes)
         WHERE abs(coalesce(i.saidas_c190, 0) - c.saidas_c180) > greatest(?, ? * abs(c.saidas_c180))""",
                               [_tol(), _pct()]).df()
@@ -242,6 +242,13 @@ CHECAGENS = {
     "Q16": ("Documento repetido na mesma EFD (outros períodos)", lambda con: _cz().repetidos(con)),
     "Q17": ("Cobertura: EFD ICMS/IPI × EFD Contribuições por estabelecimento e mês",
             lambda con: _cz().q17_cobertura(con)),
+    "Q18": ("Fechamento: PIS/COFINS das entradas na EFD Contribuições × base (deve ser zero)",
+            lambda con: _cz().fechamento_pis_cofins(con)),
+    "Q19": ("Créditos somente na EFD Contribuições (sem correspondência no SPED Fiscal)",
+            lambda con: _cz().creditos_so_na_efd(con)),
+    "Q20": ("Insumo/revenda com crédito de ICMS/IPI sem crédito de PIS/COFINS, e o inverso",
+            lambda con: _cz().credito_icms_x_pis(con)),
+    "Q21": ("Mesmo item + CFOP com CST diferente entre estabelecimentos", lambda con: _cz().cst_divergente_filiais(con)),
 }
 
 

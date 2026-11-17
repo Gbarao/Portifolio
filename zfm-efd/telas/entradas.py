@@ -65,6 +65,15 @@ with ui.protegido("montar a tela de entradas"):
         ui.tabela(ui.por_empresa(q("SELECT mes, raiz, sum(valor) AS valor FROM e WHERE origem = 'importacao' "
                                    "GROUP BY ALL ORDER BY 1"), ["mes"], "valor", nomes))
     with t3:
+        ui.secao("PIS/COFINS das entradas por nível de cruzamento",
+                 "Vem da EFD Contribuições, ligado ao item do SPED Fiscal (ver Qualidade > Fiscal × Contribuições).")
+        from zfm.vinculo import NIVEIS
+        nv = con.execute(f"""SELECT nivel_cruzamento, count(*) AS linhas, sum(valor) AS valor,
+                                    sum(coalesce(vl_pis, 0)) AS pis, sum(coalesce(vl_cofins, 0)) AS cofins
+                             FROM v_entradas_item WHERE {f.sql()} GROUP BY ALL ORDER BY linhas DESC""").df()
+        if not nv.empty:
+            nv.insert(1, "descricao", nv["nivel_cruzamento"].map(NIVEIS).fillna(""))
+        ui.tabela(nv, moeda=["valor", "pis", "cofins"])
         ui.secao("CST nas entradas")
         ui.tabela(q("SELECT cst_icms, cst_ipi, cst_pis, cst_cofins, sum(valor) AS valor FROM e GROUP BY ALL "
                     "ORDER BY valor DESC"), moeda=["valor"])

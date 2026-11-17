@@ -94,12 +94,23 @@ No topo, quatro cartões resumem a situação (OK ou quantidade de divergências
 - **Conciliações:** lista das checagens com a situação. Escolha uma na caixa *Ver divergências de* para ver
   as linhas que não fecham. R1 (Q5) documentos × E110; R2 (Q6) documentos × E520; R3 (Q8) receitas × bloco M
   (0,5%); R4 (Q7) mesmo documento nas duas EFDs; Q3, Q4, Q9 a Q13.
-- **Fiscal × Contribuições:** cada documento (C100) é procurado na outra EFD pela chave da NF-e (sem chave:
-  modelo, série, número, data e CNPJ do participante), por estabelecimento e entrada/saída. A tabela mostra
-  quantos documentos estão *nas duas EFDs*, *só numa* (divergência), *sem contrapartida* (a outra EFD do mês
-  não foi carregada), na *Contribuições consolidada* ou *repetidos*. Abaixo, a cobertura das escriturações.
-  Divergências detalhadas: Q7 (documento), Q15 (CFOP e itens do mesmo documento), Q16 (repetidos), Q14 (C170
-  × C190), Q17 (escrituração faltando).
+- **Fiscal × Contribuições:** mesma mecânica do sistema de consolidação SPED Fiscal × EFD Contribuições:
+  - *Vínculo dos documentos:* cada nota é ligada à da outra EFD uma única vez — pela chave da NF-e (mesmo que
+    esteja em meses diferentes) ou, sem chave, por estabelecimento, mês, fornecedor, modelo, série e número. A
+    tabela mostra quantas notas estão nas duas EFDs (coluna *Vínculo*: CHAVE ou NUMERO), só numa, sem
+    contrapartida, na Contribuições consolidada ou repetidas.
+  - *Diagnóstico do cruzamento de PIS/COFINS:* o PIS/COFINS das entradas vem sempre da EFD Contribuições, ligado
+    ao item do SPED Fiscal por nível — N1 (mesmo item, posição e valor), N1V (mesma posição e valor, código
+    diferente), N2 (mesmo código e CFOP na nota), N3 (escrituração consolidada: mês, fornecedor, CFOP e código),
+    "só na EFD" e "sem crédito". Olhe primeiro esta tabela com os arquivos reais: muito "sem par" indica códigos
+    de item ou CFOPs diferentes entre as duas EFDs.
+  - *Fechamento:* mensagem verde quando todo o PIS/COFINS das entradas da EFD Contribuições está na base uma vez
+    só (Q18).
+  - *Cobertura:* a grade das EFDs por estabelecimento e mês.
+  Divergências detalhadas em Conciliações: Q7 (nota só numa EFD ou valor/data/fornecedor diferentes), Q15 (item
+  na mesma posição com código/CFOP/valor diferente; CFOP só de um lado), Q16 (repetidas), Q14 (item sem C190),
+  Q17 (escrituração faltando), Q18 (fechamento), Q19 (crédito só na EFD), Q20 (crédito de ICMS/IPI sem PIS/COFINS
+  e o inverso), Q21 (CST diferente entre estabelecimentos).
 - **Reconciliação R5:** carga recalculada pela base de operações × carga da apuração. Se não fechar, a
   diferença aparece como "ajuste de reconciliação", separada do efeito da reforma.
 - **Avisos de leitura:** linhas com formato diferente do esperado (com exemplo e linha do arquivo).

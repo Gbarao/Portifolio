@@ -29,7 +29,7 @@ with ui.protegido("verificar a qualidade"):
     n_div = sum(len(d) > 0 for d in resultados.values())
     ui.cartoes({"Completude (Q1)": ("OK" if faltas == 0 else f"{faltas} falta(s)", "estabelecimento × mês"),
                 "Integridade (Q2)": ("OK" if q2.empty else f"{len(q2)} divergência(s)", "bloco 9 × lido"),
-                "Conciliações Q3–Q17": ("OK" if n_div == 0 else f"{n_div} com divergência",
+                "Conciliações Q3–Q21": ("OK" if n_div == 0 else f"{n_div} com divergência",
                                         f"{len(resultados)} checagens"),
                 "Reconciliação R5": ("OK" if r5_nao.empty else f"{len(r5_nao)} não fecham",
                                      "base de operações × apuração")})
@@ -37,22 +37,23 @@ with ui.protegido("verificar a qualidade"):
     t1, tfc, t2, t3, t4 = st.tabs(["Completude e integridade", "Fiscal × Contribuições", "Conciliações",
                                    "Reconciliação R5", "Avisos de leitura"])
     with tfc:
-        ui.secao("Pareamento dos documentos entre as duas EFDs",
-                 "Cada C100 é procurado na outra EFD por estabelecimento + entrada/saída + chave da NF-e (sem chave: "
-                 "modelo, série, número, data e CNPJ do participante). Só 'Só na EFD ICMS/IPI' e 'Só na EFD "
-                 "Contribuições' são divergências; as demais situações são esperadas e explicadas abaixo.")
+        ui.secao("Vínculo dos documentos entre as duas EFDs",
+                 "Vínculo 1:1 (um documento de uma EFD nunca alimenta dois da outra): pela chave da NF-e, em qualquer "
+                 "competência; sem chave num dos lados, por estabelecimento + competência + fornecedor (CNPJ/CPF do "
+                 "0150) + modelo + série + número. Só 'Só na EFD ICMS/IPI' e 'Só na EFD Contribuições' são "
+                 "divergências; as demais situações são esperadas e explicadas abaixo.")
         pr = ui.calcular("pareamento", f)
         pr = pr[pr["raiz"].isin(ctx.raizes)] if not pr.empty else pr
         if pr.empty:
             ui.vazio("Sem documentos C100 nas EFDs")
         else:
-            piv = pr.pivot_table(index=["fonte", "sentido", "situacao"], values=["documentos", "valor"],
+            piv = pr.pivot_table(index=["fonte", "sentido", "situacao", "vinculo"], values=["documentos", "valor"],
                                  aggfunc="sum").reset_index()
             ui.tabela(piv, moeda=["valor"])
             with st.expander("O que significa cada situação"):
                 st.markdown(
-                    "- **Nas duas EFDs:** documento encontrado nas duas; valores, data e participante conferidos (Q7) "
-                    "e CFOPs/itens conferidos (Q15).\n"
+                    "- **Nas duas EFDs:** documento vinculado (coluna Vínculo: CHAVE ou NUMERO); valor do documento e "
+                    "da mercadoria, data e fornecedor conferidos (Q7); itens e CFOPs conferidos (Q15).\n"
                     "- **Só na EFD ICMS/IPI / Só na EFD Contribuições:** as duas EFDs do mês estão carregadas e o "
                     "documento está só numa. Divergência (Q7).\n"
                     "- **Só na EFD ICMS/IPI (entrada sem crédito?):** entrada sem PIS/COFINS a creditar pode não constar "
@@ -61,6 +62,26 @@ with ui.protegido("verificar a qualidade"):
                     "documento); a conferência é pelo total (C180 × C190, Q7).\n"
                     "- **Sem contrapartida:** a outra EFD daquele mês não foi carregada (ver cobertura).\n"
                     "- **Repetido na mesma EFD:** segunda ocorrência do documento (Q16).")
+        ui.secao("Diagnóstico do cruzamento de PIS/COFINS das entradas",
+                 "O PIS/COFINS das entradas vem sempre da EFD Contribuições. Mostra quanto casou item a item (N1), "
+                 "quanto precisou de rateio (N1V, N2, N3) e quanto ficou sem par. É a primeira coisa a olhar com "
+                 "arquivos reais. Fechamento (Q18): todo PIS/COFINS da EFD termina em exatamente uma linha da base.")
+        dg = ui.calcular("diagnostico", f)
+        dg = dg[dg["raiz"].isin(ctx.raizes) & dg["mes"].between(f.mes_ini, f.mes_fim)] if not dg.empty else dg
+        if dg.empty:
+            ui.vazio("Sem entradas no período")
+        else:
+            tot = dg.groupby(["nivel_cruzamento", "descricao"], as_index=False)[["linhas", "valor", "pis", "cofins"]].sum()
+            tot["pct_linhas"] = 100 * tot["linhas"] / tot["linhas"].sum()
+            ui.tabela(tot.sort_values("linhas", ascending=False), moeda=["valor", "pis", "cofins"], pct=["pct_linhas"])
+            fe = ui.calcular("conciliacao", f, q="Q18")
+            if fe.empty:
+                st.success("Fechamento: todo o PIS/COFINS das entradas da EFD Contribuições está na base, uma vez só.",
+                           icon=":material/check_circle:")
+            else:
+                st.error("Fechamento não bate: veja Q18 em Conciliações.", icon=":material/error:")
+            with st.expander("Por estabelecimento e mês"):
+                ui.tabela(dg, moeda=["valor", "pis", "cofins"], pct=["pct_linhas"])
         ui.secao("Cobertura: EFD ICMS/IPI de cada estabelecimento × EFD Contribuições da empresa")
         cob = ui.calcular("cobertura", f)
         cob = cob[cob["raiz"].isin(ctx.raizes)] if not cob.empty else cob

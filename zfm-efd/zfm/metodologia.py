@@ -14,8 +14,10 @@ from . import params
 # Fontes comuns
 # ---------------------------------------------------------------------------
 F_ENTRADA = ("EFD ICMS/IPI do estabelecimento: C100 (IND_OPER = 0; COD_SIT 02–05 fora) + C170 (CFOP, COD_ITEM, "
-             "VL_ITEM − VL_DESC, CST, ICMS, IPI, PIS, COFINS). Documento sem C170: C190 (VL_OPR − IPI − ST). "
-             "Fornecedor: 0150 do mesmo arquivo (CNPJ, UF pelo COD_MUN, COD_PAIS, SUFRAMA, IE).")
+             "VL_ITEM − VL_DESC, CST, ICMS, IPI). Documento sem C170: itens do C170 da EFD Contribuições do documento "
+             "vinculado, com valor/ICMS/IPI rateados ao C190 do mesmo CFOP (Exceção 2); sem itens nos dois, o C190. "
+             "PIS/COFINS: sempre da EFD Contribuições, ligado ao item por nível (N1, N1V, N2, N3). Fornecedor: 0150 "
+             "do mesmo arquivo (CNPJ, UF pelo COD_MUN, COD_PAIS, SUFRAMA, IE).")
 F_SAIDA = ("Produto e receita: EFD Contribuições — C170 (detalhada) ou C180 + C181/C185 (consolidada): COD_ITEM, "
            "CFOP, VL_ITEM − VL_DESC, CST/alíquota/valor de PIS e COFINS. Destino: C190 + 0150 da EFD ICMS/IPI do "
            "mesmo estabelecimento, mês e CFOP (destinatário exato pelo COD_PART na detalhada; rateado pela "
@@ -25,8 +27,8 @@ F_TIPO_PART = ("Tipo ZFM do participante: Parâmetros > Empresas ZFM (CNPJ); sem
                "se AM + município da ZFM (Parâmetros > Municípios ZFM) + CNPJ + SUFRAMA no 0150.")
 F_SERV = "EFD Contribuições: A100/A170 (IND_OPER = 0) e F100 (IND_OPER = 0) dos estabelecimentos do AM."
 
-AS_IS_ENT = ("Crédito escriturado na própria operação (valor negativo): ICMS e IPI do C170/C190; PIS/COFINS só "
-             "com CST 50 a 66.")
+AS_IS_ENT = ("Crédito escriturado na própria operação (valor negativo): ICMS e IPI do C170/C190 da EFD ICMS/IPI; "
+             "PIS/COFINS da EFD Contribuições (C170 ou C191/C195 ligados ao item), só com CST 50 a 66.")
 AS_IS_SAI = ("Débito escriturado na própria operação: ICMS, IPI, PIS e COFINS do item (ICMS estimado pela proporção "
              "do C190 quando a Contribuições não traz o ICMS do item).")
 AS_IS_C4 = (AS_IS_SAI + " Crédito estímulo e fundos do ICMS (E111/E116 classificados em Parâmetros > Códigos de "
@@ -167,24 +169,42 @@ CRUZAMENTOS = [
      "Arquivo + linha do C100 (pai do C170)", "tolerancia_conciliacao", "Item faltando ou valor divergente no documento."),
     ("Q4", "Analítico × documento", "Soma do C190 (VL_OPR, VL_ICMS, VL_IPI)", "C100 (VL_DOC, VL_ICMS, VL_IPI)",
      "Arquivo + linha do C100", "tolerancia_conciliacao", "O C190 alimenta o destino das saídas e as entradas sem C170."),
-    ("Q14", "Itens × analítico por CFOP", "Soma do C170 por CFOP (BC ICMS, ICMS, IPI)", "C190 do mesmo CFOP",
-     "Documento + CFOP", "tolerancia_conciliacao", "CFOP do item diferente do analítico muda a classificação."),
+    ("Q14", "Itens × analítico", "Soma do C170 (BC ICMS, ICMS, IPI)", "C190 do mesmo CST + CFOP + alíquota",
+     "Documento + CST + CFOP + alíquota", "tolerancia_conciliacao",
+     "Item sem C190 correspondente ou valores diferentes: CFOP/CST do item diferente do analítico."),
     ("Q5", "R1 – Documentos × apuração do ICMS", "ICMS do C190 (saídas e entradas)", "E110 (débitos e créditos)",
      "Arquivo (estabelecimento × mês)", "tolerancia_conciliacao", "Ajustes fora dos documentos ou documento faltando."),
     ("Q6", "R2 – Documentos × apuração do IPI", "IPI do C190", "E520", "Arquivo", "tolerancia_conciliacao",
      "Idem para o IPI."),
-    ("Q7", "R4 – Pareamento Fiscal × Contribuições", "C100 da EFD ICMS/IPI (+0150)", "C100 da EFD Contribuições (+0150)",
-     "Estabelecimento + sentido + chave da NF-e (44 posições) ou, sem chave, modelo|série|número|data|CNPJ do participante",
-     "tolerancia_conciliacao",
-     "Documento só numa EFD (com as duas carregadas) ou com valor, data, participante ou PIS/COFINS diferentes. "
-     "Sem contrapartida (a outra EFD do mês não foi carregada), Contribuições consolidada e entrada sem crédito "
-     "aparecem no resumo, não como erro. Na consolidada: total do C180 × C190 de saídas."),
-    ("Q15", "CFOP e itens do mesmo documento", "C190 (CFOPs) e C170 da EFD ICMS/IPI", "C170 da EFD Contribuições",
-     "Documento pareado + CFOP; item pelo NUM_ITEM", "tolerancia_conciliacao",
-     "O CFOP liga o produto (Contribuições) ao destino (Fiscal). CFOP diferente leva o destino ao rateio ou à regra "
-     "geral e pode mudar o cenário."),
+    ("Q7", "R4 – Vínculo de documentos Fiscal × Contribuições", "C100 da EFD ICMS/IPI (+0150)",
+     "C100 da EFD Contribuições (+0150)",
+     "1:1. 1º chave da NF-e (qualquer competência); 2º sem chave num dos lados: estabelecimento + competência + "
+     "fornecedor (CNPJ/CPF) + modelo + série + número", "tolerancia_conciliacao",
+     "Documento só numa EFD (com as duas carregadas) ou vinculado com valor do documento/mercadoria, data, fornecedor "
+     "ou (saídas) PIS/COFINS diferentes. Sem contrapartida, Contribuições consolidada e entrada sem crédito aparecem no "
+     "resumo, não como erro. Consolidada: total do C180 × C190 de saídas."),
+    ("N1–N3", "Cruzamento item a item do PIS/COFINS (entradas)", "Item do SPED Fiscal (C170)",
+     "Item da EFD Contribuições (C170) ou consolidação (C190/C191/C195)",
+     "N1: posição + código + valor; N1V: posição + valor + CFOP; N2: código + CFOP no documento (rateio); "
+     "N3: estabelecimento + mês + fornecedor + CFOP + código", "R$ 0,01 no valor do item",
+     "Define o PIS/COFINS de cada entrada. O que não casa entra como 'só na EFD' (EC_SEM_PAR, valor zero) ou "
+     "'exclusivo' (sem SPED Fiscal do mês); a linha do SPED Fiscal sem par fica 'sem crédito'."),
+    ("Q18", "Fechamento do PIS/COFINS", "PIS/COFINS de entrada da EFD (C170, C191/C195, A170, F100)",
+     "PIS/COFINS das entradas na base de operações", "Estabelecimento do AM × mês", "R$ 0,01",
+     "Deve ser zero: nada some, nada duplica."),
+    ("Q19", "Créditos só na EFD Contribuições", "Itens/consolidações da EFD sem par", "SPED Fiscal do mesmo mês",
+     "Níveis N1–N3", "—", "Crédito de PIS/COFINS sem item correspondente no SPED Fiscal (EC_SEM_PAR)."),
+    ("Q20", "Crédito de ICMS/IPI × PIS/COFINS", "Insumo/revenda (TIPO_ITEM do 0200) com crédito de ICMS/IPI",
+     "Crédito de PIS/COFINS (CST 50–66)", "Item", "—",
+     "Crédito num tributo e não no outro. Compras com CST de PIS 70–75 (sem crédito, normal na ZFM) não são apontadas."),
+    ("Q21", "CST entre estabelecimentos", "Item + CFOP num estabelecimento", "O mesmo item + CFOP em outro",
+     "Empresa + código do item + CFOP", "—", "Tratamento diferente para a mesma operação dentro da empresa."),
+    ("Q15", "Itens e CFOP do mesmo documento", "C170 e C190 (CFOPs) da EFD ICMS/IPI", "C170 da EFD Contribuições",
+     "Documento vinculado; item pelo NUM_ITEM; CFOP do documento", "tolerancia_conciliacao",
+     "Item na mesma posição com código, CFOP ou valor diferente; CFOP só de um lado. O CFOP liga o produto "
+     "(Contribuições) ao destino (Fiscal): CFOP diferente leva o destino ao rateio e pode mudar o cenário."),
     ("Q16", "Documento repetido", "C100 de uma EFD", "C100 da mesma EFD em outro arquivo/período",
-     "Estabelecimento + sentido + chave", "—", "Documento escriturado duas vezes: a segunda ocorrência aparece aqui."),
+     "Estabelecimento + sentido + chave", "—", "Documento escriturado duas vezes: a segunda ocorrência fica fora do vínculo."),
     ("Q8", "R3 – Receitas × bloco M", "Receita da base (C170/C181, A100, F100 de saída)", "M210/M610 + M400/M800",
      "Empresa × mês", "tolerancia_receita_pct (%)", "Receita não explicada pelos documentos."),
     ("Q13", "Consolidação da Contribuições", "C181 (PIS) e C185 (COFINS)", "C180 (VL_TOT_ITEM)", "Linha do C180",
@@ -221,8 +241,10 @@ FONTES = [
      "COD_ITEM, CFOP, VL_ITEM, VL_DESC, CST/ALIQ/VL de PIS e COFINS", "Base de CBS/IBS das saídas (C4), C5"),
     ("Destino das saídas", "ICMS/IPI", "C100 + C190 + 0150", "CFOP, VL_OPR, VL_ICMS, participante",
      "Tipo de operação (ZFM, interestadual, exportação), contribuinte; rateio na consolidada"),
-    ("Entradas", "ICMS/IPI", "C100 + C170 (ou C190) + 0150", "CFOP, VL_ITEM − VL_DESC, CSTs, ICMS, IPI, PIS, COFINS",
-     "Cenários C1–C3, créditos presumidos 447/449/444"),
+    ("Entradas (valor, ICMS, IPI)", "ICMS/IPI", "C100 + C170 (ou C170 da Contribuições + C190) + 0150",
+     "CFOP, VL_ITEM − VL_DESC, CST, ICMS, IPI", "Cenários C1–C3, créditos presumidos 447/449/444"),
+    ("Entradas (PIS/COFINS)", "Contribuições", "C170 (detalhada) ou C190/C191/C195 (consolidada), A170, F100",
+     "CST, alíquota e valor de PIS e COFINS", "As Is das entradas por cenário; ligado ao item pelos níveis N1–N3"),
     ("Serviços tomados", "Contribuições", "A100/A170, F100", "VL_ITEM, VL_OPER", "Cenário SRV"),
     ("Devoluções", "ICMS/IPI", "C190/C170 com CFOP de devolução", "CFOP (Parâmetros > CFOPs > devolucao_de)",
      "Abatem a operação de origem"),

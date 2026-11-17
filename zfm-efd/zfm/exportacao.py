@@ -112,6 +112,7 @@ def gerar_excel(con: duckdb.DuckDBPyConnection, f: Filtro | list[str] | None = N
     pr = cruzamentos.resumo_pareamento(con)
     abas["Pareamento Fiscal x Contrib"] = filtra(pr) if not pr.empty else pr
     abas["Cobertura das EFDs"] = filtra(cruzamentos.cobertura_banco(con))
+    abas["Diagnóstico do cruzamento"] = filtra(cruzamentos.diagnostico_niveis(con))
     asis = as_is.carga_anual(con, f, com_teses)
     if not asis.empty:
         abas["Carga As Is (anual)"] = _por_empresa(

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import duckdb
 
-from . import params
+from . import params, vinculo
 from .empresas import SQL_ESTABELECIMENTOS
 
 UFS = {
@@ -220,50 +220,79 @@ VIEWS: list[tuple[str, str]] = [
            (vl_icms IS NULL) AS icms_estimado
     FROM base
     """),
+    ("v_doc_par", vinculo.V_DOC_PAR),
+    ("v_entradas_linhas", vinculo.V_ENTRADAS_LINHAS),
+    ("v_entradas_pc", vinculo.V_ENTRADAS_PC),
     ("v_entradas_item", f"""
-    WITH it AS (
-        SELECT i.arquivo_id, i.linha_num, 'C170' AS reg_origem, i.pai_linha AS doc_linha,
-               i.COD_ITEM AS cod_item, i.CFOP AS cfop, i.VL_ITEM AS vl_item,
-               coalesce(i.VL_DESC, 0) AS vl_desc, i.CST_ICMS AS cst_icms, i.VL_ICMS AS vl_icms,
-               i.CST_IPI AS cst_ipi, i.VL_IPI AS vl_ipi, i.CST_PIS AS cst_pis, i.VL_PIS AS vl_pis,
-               i.CST_COFINS AS cst_cofins, i.VL_COFINS AS vl_cofins,
-               i.ALIQ_PIS AS aliq_pis, i.ALIQ_COFINS AS aliq_cofins
-        FROM raw_icms_c170 i
-        UNION ALL
-        SELECT c.arquivo_id, c.linha_num, 'C190', c.pai_linha, NULL, c.CFOP,
-               c.VL_OPR - coalesce(c.VL_IPI, 0) - coalesce(c.VL_ICMS_ST, 0), 0, c.CST_ICMS,
-               c.VL_ICMS, NULL, c.VL_IPI, NULL, NULL, NULL, NULL, NULL, NULL
-        FROM raw_icms_c190 c
-        WHERE NOT EXISTS (SELECT 1 FROM raw_icms_c170 x
-                          WHERE x.arquivo_id = c.arquivo_id AND x.pai_linha = c.pai_linha)
-    )
-    SELECT it.*, v.raiz, v.cnpj_estab, v.ano, v.mes, v.cod_part, v.nome_part, v.cnpj_part, v.chv_nfe,
-           v.uf, v.regiao, v.exterior, v.eh_zfm, v.eh_grupo, v.contribuinte, v.tipo_zfm, v.regime_part,
-           it.vl_item - it.vl_desc AS valor,
+    -- Entradas: linhas do SPED Fiscal (C170; Excecao 2; C190) com PIS/COFINS da EFD Contribuicoes por nivel
+    -- de cruzamento (zfm/vinculo.py) + linhas que so existem na EFD Contribuicoes (EC_EXCLUSIVO/EC_SEM_PAR)
+    WITH pc AS (SELECT * FROM v_entradas_pc),
+    pcp AS (SELECT DISTINCT ON (arquivo_id, cnpj_estab, cod_part) * FROM v_participantes_contrib
+            ORDER BY arquivo_id, cnpj_estab, cod_part),
+    pcc AS (SELECT DISTINCT ON (arquivo_id, cnpj_estab, k) *
+            FROM (SELECT *, regexp_replace(coalesce(cnpj_part, ''), '[^0-9A-Za-z]', '', 'g') AS k
+                  FROM v_participantes_contrib) ORDER BY arquivo_id, cnpj_estab, k),
+    lin AS (
+        SELECT l.arquivo_id, l.linha_num, l.reg_origem, l.doc_linha, l.ec_arquivo_id, l.num_item, l.cod_item, l.cfop,
+               l.vl_item, l.vl_desc, l.cst_icms, l.vl_icms, l.cst_ipi, l.vl_ipi,
+               p.cst_pis, p.vl_pis, p.cst_cofins, p.vl_cofins, p.aliq_pis, p.aliq_cofins,
+               coalesce(p.nivel, 'SEM_CREDITO') AS nivel_cruzamento, l.valor,
+               v.raiz, v.cnpj_estab, v.ano, v.mes, v.cod_part, v.nome_part, v.cnpj_part, v.chv_nfe, v.uf, v.regiao,
+               v.exterior, v.eh_zfm, v.eh_grupo, v.contribuinte, v.tipo_zfm, v.regime_part
+        FROM v_entradas_linhas l JOIN v_docs v ON v.arquivo_id = l.arquivo_id AND v.doc_linha = l.doc_linha
+        LEFT JOIN (SELECT * FROM pc WHERE tipo = 'linha') p ON p.lk = l.lk),
+    so AS (
+        SELECT s.ec_arquivo_id AS arquivo_id, coalesce(s.ec_linha, 0) AS linha_num,
+               'EFD Contribuições ' || s.reg AS reg_origem, s.ec_doc AS doc_linha, s.ec_arquivo_id, s.num_item,
+               s.cod_item, s.cfop,
+               CASE WHEN s.nivel = 'EC_EXCLUSIVO' THEN s.vl_item ELSE 0.0 END AS vl_item,
+               CASE WHEN s.nivel = 'EC_EXCLUSIVO' THEN s.vl_desc ELSE 0.0 END AS vl_desc,
+               CAST(NULL AS VARCHAR) AS cst_icms,
+               CASE WHEN s.nivel = 'EC_EXCLUSIVO' THEN s.vl_icms ELSE 0.0 END AS vl_icms,
+               CAST(NULL AS VARCHAR) AS cst_ipi,
+               CASE WHEN s.nivel = 'EC_EXCLUSIVO' THEN s.vl_ipi ELSE 0.0 END AS vl_ipi,
+               s.cst_pis, s.vl_pis, s.cst_cofins, s.vl_cofins, s.aliq_pis, s.aliq_cofins, s.nivel AS nivel_cruzamento,
+               CASE WHEN s.nivel = 'EC_EXCLUSIVO' THEN coalesce(s.vl_item, 0) - coalesce(s.vl_desc, 0) ELSE 0.0 END AS valor,
+               s.raiz, s.cnpj_estab, s.ano, s.mes, d.COD_PART AS cod_part,
+               coalesce(p.nome_part, q.nome_part) AS nome_part, coalesce(p.cnpj_part, q.cnpj_part, s.forn) AS cnpj_part,
+               d.CHV_NFE AS chv_nfe, coalesce(p.uf, q.uf) AS uf, coalesce(p.regiao, q.regiao) AS regiao,
+               coalesce(p.exterior, q.exterior, FALSE) AS exterior, coalesce(p.eh_zfm, q.eh_zfm, FALSE) AS eh_zfm,
+               coalesce(p.eh_grupo, q.eh_grupo, FALSE) AS eh_grupo,
+               coalesce(p.contribuinte, q.contribuinte, FALSE) AS contribuinte,
+               coalesce(p.tipo_zfm, q.tipo_zfm, 'nao_habilitado') AS tipo_zfm,
+               coalesce(p.regime_part, q.regime_part, 'regular') AS regime_part
+        FROM (SELECT * FROM pc WHERE tipo = 'so_efd') s
+        LEFT JOIN raw_contrib_c100 d ON d.arquivo_id = s.ec_arquivo_id AND d.linha_num = s.ec_doc
+        LEFT JOIN pcp p ON p.arquivo_id = s.ec_arquivo_id AND p.cnpj_estab = s.cnpj_estab AND p.cod_part = d.COD_PART
+        LEFT JOIN pcc q ON s.ec_doc IS NULL AND q.arquivo_id = s.ec_arquivo_id AND q.cnpj_estab = s.cnpj_estab
+             AND q.k = s.forn
+        WHERE s.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)),
+    it AS (SELECT * FROM lin UNION ALL BY NAME SELECT * FROM so)
+    SELECT it.*,
            coalesce(pc.categoria, 'outros') AS categoria_cfop, coalesce(pc.devolucao_de, '') AS devolucao_de,
-           CASE WHEN it.cfop LIKE '3%' OR v.exterior THEN 'importacao'
-                WHEN v.eh_zfm THEN 'zfm'
-                WHEN v.uf = 'AM' THEN 'am_fora_zfm'
+           CASE WHEN it.cfop LIKE '3%' OR it.exterior THEN 'importacao'
+                WHEN it.eh_zfm THEN 'zfm'
+                WHEN it.uf = 'AM' THEN 'am_fora_zfm'
                 ELSE 'nacional_fora_zfm' END AS origem,
-           CASE WHEN it.cfop LIKE '3%' OR v.exterior THEN 'Importação'
-                WHEN v.eh_zfm THEN 'ZFM'
-                WHEN v.uf IN {SUL_SUDESTE_EXCETO_ES} THEN 'Sul/Sudeste exceto ES'
-                WHEN v.uf = 'AM' THEN 'Amazonas fora da ZFM'
+           CASE WHEN it.cfop LIKE '3%' OR it.exterior THEN 'Importação'
+                WHEN it.eh_zfm THEN 'ZFM'
+                WHEN it.uf IN {SUL_SUDESTE_EXCETO_ES} THEN 'Sul/Sudeste exceto ES'
+                WHEN it.uf = 'AM' THEN 'Amazonas fora da ZFM'
                 ELSE 'Norte, Nordeste, Centro-Oeste e ES' END AS regiao_origem,
-           (v.uf IN {SUL_SUDESTE_EXCETO_ES}) AS sul_sudeste_exceto_es
-    FROM it JOIN v_docs v ON v.arquivo_id = it.arquivo_id AND v.doc_linha = it.doc_linha
-    LEFT JOIN param_cfops pc ON pc.cfop = it.cfop
-    WHERE v.sentido = 'entrada' AND NOT v.cancelado AND v.uf_estab = 'AM'
+           (it.uf IN {SUL_SUDESTE_EXCETO_ES}) AS sul_sudeste_exceto_es
+    FROM it LEFT JOIN param_cfops pc ON pc.cfop = it.cfop
     """),
-    ("v_entradas_servicos", """
+    ("v_entradas_servicos", f"""
     SELECT a.raiz, i.cnpj_estab, year(a.dt_ini) AS ano, month(a.dt_ini) AS mes, i.arquivo_id,
-           i.linha_num, 'A170' AS reg_origem, i.VL_ITEM - coalesce(i.VL_DESC, 0) AS valor
+           i.linha_num, 'A170' AS reg_origem, i.VL_ITEM - coalesce(i.VL_DESC, 0) AS valor,
+           i.CST_PIS AS cst_pis, CAST(i.VL_PIS AS DOUBLE) AS vl_pis, i.CST_COFINS AS cst_cofins,
+           CAST(i.VL_COFINS AS DOUBLE) AS vl_cofins
     FROM raw_contrib_a170 i JOIN raw_contrib_a100 d ON d.arquivo_id = i.arquivo_id AND d.linha_num = i.pai_linha
     JOIN arquivos a ON a.arquivo_id = i.arquivo_id
-    WHERE a.ativo AND d.IND_OPER = '0'
+    WHERE a.ativo AND d.IND_OPER = '0' AND coalesce(d.COD_SIT, '00') NOT IN {_COD_SIT_CANCELADO}
     UNION ALL
     SELECT a.raiz, f.cnpj_estab, year(a.dt_ini), month(a.dt_ini), f.arquivo_id, f.linha_num, 'F100',
-           f.VL_OPER
+           f.VL_OPER, f.CST_PIS, CAST(f.VL_PIS AS DOUBLE), f.CST_COFINS, CAST(f.VL_COFINS AS DOUBLE)
     FROM raw_contrib_f100 f JOIN arquivos a USING (arquivo_id)
     WHERE a.ativo AND f.IND_OPER = '0'
     """),
@@ -349,7 +378,8 @@ VIEWS: list[tuple[str, str]] = [
         SELECT 'entrada', v.raiz, v.cnpj_estab, v.ano, v.mes, NULL, v.reg_origem, v.arquivo_id,
                v.linha_num, NULL, 'insumo_servico', 'insumo_servico', FALSE, 'servico_tomado', NULL, NULL,
                NULL, 'servicos', FALSE, NULL, NULL, FALSE, CAST(v.valor AS DOUBLE), CAST(v.valor AS DOUBLE),
-               0.0, 0.0, 0.0, 0.0, NULL, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE,
+               0.0, 0.0, coalesce(v.vl_pis, 0.0), coalesce(v.vl_cofins, 0.0), NULL, NULL, v.cst_pis, NULL,
+               v.cst_cofins, NULL, 1.0, FALSE, FALSE,
                NULL, NULL, NULL
         FROM v_entradas_servicos v
         WHERE v.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)
@@ -521,10 +551,11 @@ VIEWS: list[tuple[str, str]] = [
 
 # Visoes pesadas viram TABELAS (materializadas) apos a carga/alteracao de parametros:
 # as telas leem tabelas prontas em vez de recalcular a cadeia de visoes a cada clique.
-MATERIALIZAR = ["v_estabelecimentos", "v_participantes", "v_participantes_contrib", "v_docs",
-                "v_saidas_doc", "v_saidas_item", "v_saidas_dest", "v_entradas_item",
+MATERIALIZAR = ["v_estabelecimentos", "v_participantes", "v_participantes_contrib", "v_docs", "v_doc_par",
+                "v_saidas_doc", "v_saidas_item", "v_saidas_dest", "v_entradas_linhas", "v_entradas_pc",
+                "v_entradas_item",
                 "v_entradas_servicos", "v_base_operacoes", "v_cenarios"]
-VERSAO_CODIGO = "5"  # mudar quando o SQL das visoes mudar (forca reconstrucao)
+VERSAO_CODIGO = "6"  # mudar quando o SQL das visoes mudar (forca reconstrucao)
 
 
 def criar(con: duckdb.DuckDBPyConnection) -> None:

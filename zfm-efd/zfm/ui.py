@@ -195,6 +195,9 @@ def _executar(nome: str, f: Filtro, teses: bool, extra: tuple):
     if nome == "pareamento":
         from . import cruzamentos
         return cruzamentos.resumo_pareamento(con)
+    if nome == "diagnostico":
+        from . import cruzamentos
+        return cruzamentos.diagnostico_niveis(con)
     if nome == "cobertura":
         from . import cruzamentos
         return cruzamentos.cobertura_banco(con, kw.get("so_am", True))
@@ -344,7 +347,8 @@ ROTULOS = {
     "cp_ibs_pct": "CP IBS (%)", "tipo_bem": "Tipo de bem", "beneficio": "Benefício (R$)",
     "situacao": "Situação", "estabelecimentos": "Estabelecimentos", "meses": "Meses", "faltando": "Faltando",
     "o_que_fazer": "O que fazer", "fonte": "Fonte", "problema": "Problema", "participante": "Participante",
-    "num_doc": "Número", "chv_nfe": "Chave NF-e", "cnpj_part": "CNPJ participante", "uf_part": "UF participante",
+    "num_doc": "Número", "chv_nfe": "Chave NF-e", "nivel_cruzamento": "Nível do cruzamento", "vinculo": "Vínculo",
+    "pct_linhas": "% das linhas", "pis": "PIS (R$)", "cofins": "COFINS (R$)", "cnpj_part": "CNPJ participante", "uf_part": "UF participante",
 }
 
 

@@ -1,18 +1,13 @@
-"""Cruzamentos EFD ICMS/IPI (Fiscal) × EFD Contribuicoes e cobertura das escrituracoes.
+"""Cruzamentos SPED Fiscal (EFD ICMS/IPI) × EFD Contribuicoes e cobertura das escrituracoes.
 
-Mecanica (a mesma do Consolidador EFD):
-- Empresa = raiz do CNPJ (a EFD Contribuicoes e da empresa; a Fiscal, de cada estabelecimento).
-- Participante = CNPJ/CPF do 0150 de cada arquivo (COD_PART e codigo interno e nao e comparado).
-- Documento = chave da NF-e (44 posicoes); sem chave, a chave composta
-  estabelecimento | modelo | serie | numero | data | CNPJ do participante.
-- O pareamento e por estabelecimento + sentido + chave: a NF-e de transferencia aparece como saida
-  num estabelecimento e entrada em outro, e isso nao e repeticao.
-- O mesmo documento escriturado mais de uma vez na mesma EFD (ex.: em dois periodos) conta uma
-  vez: a primeira ocorrencia vale; as demais sao listadas como repetidas.
-- Situacao do documento: nas duas EFDs / so numa / sem contrapartida (a outra EFD daquele
-  periodo nao foi carregada) / Contribuicoes consolidada (C180/C190, sem documento).
-- Itens: CFOPs do documento (C190 da Fiscal × C170 da Contribuicoes) e, quando as duas tem C170,
-  item a item pelo NUM_ITEM (CFOP, codigo do item e valor).
+Mecanica do sped_analytics_app (branch claude/wonderful-rubin-5qi5sj): ver zfm/vinculo.py.
+- Empresa = raiz do CNPJ; filial = CNPJ do 0000 (Fiscal) e do 0140/C010 (Contribuicoes).
+- Fornecedor = CNPJ/CPF do 0150 de cada arquivo (COD_PART e codigo interno e nao e comparado).
+- Documentos vinculados 1:1 (v_doc_par): pela chave (qualquer competencia) ou, sem chave num dos lados,
+  filial + competencia + fornecedor + modelo + serie + numero.
+- PIS/COFINS das entradas vem da EFD Contribuicoes por nivel (N1_ITEM, N1V_POSICAO_VALOR, N2_ITEM_CFOP,
+  N3_CONSOLIDADO_C190, EC_EXCLUSIVO, EC_SEM_PAR) e o fechamento prova que nada some e nada duplica.
+Auditorias (mesma lista do sped_analytics_app, app/database/audit.py), adaptadas a entradas e saidas.
 """
 from __future__ import annotations
 
@@ -23,6 +18,7 @@ import duckdb
 import pandas as pd
 
 from . import params
+from .vinculo import NIVEIS
 
 CANCELADOS = "('02','03','04','05')"
 NAS_DUAS = "Nas duas EFDs"
@@ -32,8 +28,9 @@ SO_CONTRIB = "Só na EFD Contribuições"
 SEM_CONTRIB = "Sem contrapartida: EFD Contribuições do mês não carregada"
 SEM_FISCAL = "Sem contrapartida: EFD ICMS/IPI do estabelecimento/mês não carregada"
 CONSOLIDADA = "Contribuições consolidada (C180/C190, sem documento)"
-REPETIDO = "Repetido na mesma EFD (fora da contagem)"
-SITUACOES_PROBLEMA = (SO_FISCAL, SO_CONTRIB)
+REPETIDO = "Repetido na mesma EFD (fora do vínculo)"
+CST_CRED = "('50','51','52','53','54','55','56','60','61','62','63','64','65','66')"
+TIPO_INSUMO_REVENDA = "('00','01','02','03','04','05','06','10')"
 
 
 def _tol() -> float:
@@ -41,7 +38,7 @@ def _tol() -> float:
 
 
 # ---------------------------------------------------------------------------
-# Documentos das duas EFDs com chave de pareamento
+# Documentos das duas EFDs e situacao do vinculo
 # ---------------------------------------------------------------------------
 SQL_DOCS = f"""
 WITH f AS (
@@ -49,36 +46,33 @@ WITH f AS (
            CASE d.IND_OPER WHEN '0' THEN 'entrada' ELSE 'saida' END AS sentido,
            d.COD_MOD AS cod_mod, d.SER AS ser, d.NUM_DOC AS num_doc, d.CHV_NFE AS chv_nfe, d.DT_DOC AS dt_doc,
            coalesce(nullif(p.cnpj_part, ''), nullif(p.cpf_part, ''), 'COD:' || d.COD_PART) AS participante,
-           CAST(d.VL_DOC AS DOUBLE) AS vl_doc, CAST(d.VL_PIS AS DOUBLE) AS vl_pis,
+           CAST(d.VL_DOC AS DOUBLE) AS vl_doc, CAST(d.VL_MERC AS DOUBLE) AS vl_merc, CAST(d.VL_PIS AS DOUBLE) AS vl_pis,
            CAST(d.VL_COFINS AS DOUBLE) AS vl_cofins, d.arquivo_id, d.linha_num
     FROM raw_icms_c100 d JOIN arquivos a USING (arquivo_id)
-    LEFT JOIN v_participantes p ON p.arquivo_id = d.arquivo_id AND p.cod_part = d.COD_PART
+    LEFT JOIN (SELECT DISTINCT ON (arquivo_id, cod_part) * FROM v_participantes) p
+         ON p.arquivo_id = d.arquivo_id AND p.cod_part = d.COD_PART
     WHERE a.ativo AND coalesce(d.COD_SIT, '00') NOT IN {CANCELADOS}),
 c AS (
     SELECT 'Contribuições', a.raiz, d.cnpj_estab, year(a.dt_ini), month(a.dt_ini),
            CASE d.IND_OPER WHEN '0' THEN 'entrada' ELSE 'saida' END,
            d.COD_MOD, d.SER, d.NUM_DOC, d.CHV_NFE, d.DT_DOC,
            coalesce(nullif(p.cnpj_part, ''), nullif(p.cpf_part, ''), 'COD:' || d.COD_PART),
-           CAST(d.VL_DOC AS DOUBLE), CAST(d.VL_PIS AS DOUBLE), CAST(d.VL_COFINS AS DOUBLE),
+           CAST(d.VL_DOC AS DOUBLE), CAST(d.VL_MERC AS DOUBLE), CAST(d.VL_PIS AS DOUBLE), CAST(d.VL_COFINS AS DOUBLE),
            d.arquivo_id, d.linha_num
     FROM raw_contrib_c100 d JOIN arquivos a USING (arquivo_id)
-    LEFT JOIN v_participantes_contrib p ON p.arquivo_id = d.arquivo_id AND p.cnpj_estab = d.cnpj_estab
-         AND p.cod_part = d.COD_PART
+    LEFT JOIN (SELECT DISTINCT ON (arquivo_id, cnpj_estab, cod_part) * FROM v_participantes_contrib) p
+         ON p.arquivo_id = d.arquivo_id AND p.cnpj_estab = d.cnpj_estab AND p.cod_part = d.COD_PART
     WHERE a.ativo AND coalesce(d.COD_SIT, '00') NOT IN {CANCELADOS}),
 u AS (
     SELECT *, CASE WHEN regexp_full_match(upper(coalesce(chv_nfe, '')), '[0-9A-Z]{{44}}') THEN upper(chv_nfe)
-                   ELSE 'K|' || cnpj_estab || '|' || coalesce(cod_mod, '') || '|' || coalesce(ser, '') || '|'
-                        || coalesce(ltrim(num_doc, '0'), '') || '|' || coalesce(strftime(dt_doc, '%Y%m%d'), '')
-                        || '|' || participante END AS chave
+                   ELSE 'K|' || coalesce(cod_mod, '') || '|' || ltrim(coalesce(ser, ''), '0') || '|'
+                        || ltrim(coalesce(num_doc, ''), '0') || '|' || participante END AS chave
     FROM (SELECT * FROM f UNION ALL SELECT * FROM c)),
 o AS (
     SELECT *, row_number() OVER (PARTITION BY fonte, cnpj_estab, sentido, chave
                                  ORDER BY ano, mes, arquivo_id, linha_num) AS ocorrencia,
               count(*) OVER (PARTITION BY fonte, cnpj_estab, sentido, chave) AS n_ocorrencias
     FROM u),
-fontes AS (
-    SELECT cnpj_estab, sentido, chave, bool_or(fonte = 'Fiscal') AS tf, bool_or(fonte = 'Contribuições') AS tc
-    FROM o WHERE ocorrencia = 1 GROUP BY ALL),
 cobf AS (SELECT DISTINCT cnpj, year(dt_ini) AS ano, month(dt_ini) AS mes FROM arquivos
          WHERE ativo AND tipo = 'ICMS_IPI'),
 cobc AS (SELECT DISTINCT raiz, year(dt_ini) AS ano, month(dt_ini) AS mes FROM arquivos
@@ -86,10 +80,12 @@ cobc AS (SELECT DISTINCT raiz, year(dt_ini) AS ano, month(dt_ini) AS mes FROM ar
 cons AS (SELECT DISTINCT x.cnpj_estab, year(a.dt_ini) AS ano, month(a.dt_ini) AS mes
          FROM raw_contrib_c010 x JOIN arquivos a USING (arquivo_id)
          WHERE a.ativo AND x.IND_ESCRI = '1'),
+par AS (SELECT sf_arquivo_id AS arquivo_id, sf_linha AS linha_num, 'Fiscal' AS fonte, via FROM v_doc_par
+        UNION ALL SELECT ec_arquivo_id, ec_linha, 'Contribuições', via FROM v_doc_par),
 docs AS (
-    SELECT o.*,
-           CASE WHEN o.ocorrencia > 1 THEN '{REPETIDO}'
-                WHEN fo.tf AND fo.tc THEN '{NAS_DUAS}'
+    SELECT o.*, pr.via,
+           CASE WHEN pr.via IS NOT NULL THEN '{NAS_DUAS}'
+                WHEN o.ocorrencia > 1 THEN '{REPETIDO}'
                 WHEN o.fonte = 'Fiscal' AND cc.raiz IS NULL THEN '{SEM_CONTRIB}'
                 WHEN o.fonte = 'Fiscal' AND co.cnpj_estab IS NOT NULL THEN '{CONSOLIDADA}'
                 WHEN o.fonte = 'Fiscal' AND o.sentido = 'entrada' THEN '{SO_FISCAL_ENTRADA}'
@@ -97,7 +93,7 @@ docs AS (
                 WHEN cf.cnpj IS NULL THEN '{SEM_FISCAL}'
                 ELSE '{SO_CONTRIB}' END AS situacao
     FROM o
-    LEFT JOIN fontes fo ON fo.cnpj_estab = o.cnpj_estab AND fo.sentido = o.sentido AND fo.chave = o.chave
+    LEFT JOIN par pr ON pr.arquivo_id = o.arquivo_id AND pr.linha_num = o.linha_num AND pr.fonte = o.fonte
     LEFT JOIN cobc cc ON cc.raiz = o.raiz AND cc.ano = o.ano AND cc.mes = o.mes
     LEFT JOIN cobf cf ON cf.cnpj = o.cnpj_estab AND cf.ano = o.ano AND cf.mes = o.mes
     LEFT JOIN cons co ON co.cnpj_estab = o.cnpj_estab AND co.ano = o.ano AND co.mes = o.mes)
@@ -106,93 +102,92 @@ docs AS (
 
 def documentos(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return con.execute(SQL_DOCS + """
-        SELECT fonte, situacao, sentido, raiz, cnpj_estab, ano, mes, cod_mod, ser, num_doc, chv_nfe, dt_doc,
-               participante, vl_doc, vl_pis, vl_cofins, ocorrencia, n_ocorrencias, arquivo_id, linha_num, chave
+        SELECT fonte, situacao, via AS vinculo, sentido, raiz, cnpj_estab, ano, mes, cod_mod, ser, num_doc, chv_nfe,
+               dt_doc, participante, vl_doc, vl_pis, vl_cofins, ocorrencia, n_ocorrencias, arquivo_id, linha_num
         FROM docs""").df()
 
 
 def resumo_pareamento(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Documentos por fonte, sentido e situacao (quantidade e valor)."""
+    """Documentos por fonte, sentido e situacao do vinculo (quantidade e valor)."""
     return con.execute(SQL_DOCS + """
-        SELECT raiz, fonte, sentido, situacao, count(*) AS documentos, sum(vl_doc) AS valor
+        SELECT raiz, fonte, sentido, situacao, coalesce(via, '') AS vinculo, count(*) AS documentos, sum(vl_doc) AS valor
         FROM docs GROUP BY ALL ORDER BY raiz, fonte, sentido, situacao""").df()
 
 
 def pareamento_divergencias(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """R4: documento so numa EFD (com as duas carregadas) ou com cabecalho diferente nas duas."""
+    """R4: documento so numa EFD (com as duas carregadas) ou vinculado com valor do documento/mercadoria,
+    data, fornecedor ou (nas saidas) PIS/COFINS diferentes."""
     tol = _tol()
     so_um = con.execute(SQL_DOCS + f"""
         SELECT raiz, cnpj_estab, mes, sentido, fonte, situacao AS problema, num_doc, chv_nfe, participante,
-               vl_doc AS valor_fiscal_ou_contrib, NULL::DOUBLE AS valor_outra_efd, arquivo_id, linha_num
+               vl_doc AS valor_fiscal, NULL::DOUBLE AS valor_contrib, arquivo_id, linha_num
         FROM docs WHERE situacao IN ('{SO_FISCAL}', '{SO_CONTRIB}')""").df()
     dif = con.execute(SQL_DOCS + f"""
-        , p AS (SELECT * FROM docs WHERE ocorrencia = 1 AND situacao = '{NAS_DUAS}')
-        SELECT f.raiz, f.cnpj_estab, f.mes, f.sentido, 'Fiscal × Contribuições' AS fonte,
-               concat_ws('; ',
+        , df AS (SELECT * FROM docs WHERE fonte = 'Fiscal'), dc AS (SELECT * FROM docs WHERE fonte = 'Contribuições')
+        SELECT f.raiz, f.cnpj_estab, f.mes, f.sentido, 'Vínculo por ' || lower(m.via) AS fonte,
+               'Diferente nas duas EFDs: ' || concat_ws(', ',
                    CASE WHEN abs(coalesce(f.vl_doc, 0) - coalesce(c.vl_doc, 0)) > {tol} THEN 'valor do documento' END,
+                   CASE WHEN abs(coalesce(f.vl_merc, 0) - coalesce(c.vl_merc, 0)) > {tol} THEN 'valor da mercadoria' END,
                    CASE WHEN f.dt_doc IS DISTINCT FROM c.dt_doc THEN 'data' END,
                    CASE WHEN f.participante <> c.participante AND f.participante NOT LIKE 'COD:%'
-                             AND c.participante NOT LIKE 'COD:%' THEN 'participante (CNPJ)' END,
+                             AND c.participante NOT LIKE 'COD:%' THEN 'fornecedor/cliente (CNPJ)' END,
                    CASE WHEN f.sentido = 'saida' AND (abs(coalesce(f.vl_pis, 0) - coalesce(c.vl_pis, 0)) > {tol}
                              OR abs(coalesce(f.vl_cofins, 0) - coalesce(c.vl_cofins, 0)) > {tol})
                         THEN 'PIS/COFINS' END) AS problema,
                f.num_doc, f.chv_nfe, f.participante, f.vl_doc, c.vl_doc, f.arquivo_id, f.linha_num
-        FROM (SELECT * FROM p WHERE fonte = 'Fiscal') f
-        JOIN (SELECT * FROM p WHERE fonte = 'Contribuições') c
-          ON c.cnpj_estab = f.cnpj_estab AND c.sentido = f.sentido AND c.chave = f.chave
-        WHERE abs(coalesce(f.vl_doc, 0) - coalesce(c.vl_doc, 0)) > {tol} OR f.dt_doc IS DISTINCT FROM c.dt_doc
+        FROM v_doc_par m
+        JOIN df f ON f.arquivo_id = m.sf_arquivo_id AND f.linha_num = m.sf_linha
+        JOIN dc c ON c.arquivo_id = m.ec_arquivo_id AND c.linha_num = m.ec_linha
+        WHERE abs(coalesce(f.vl_doc, 0) - coalesce(c.vl_doc, 0)) > {tol}
+           OR abs(coalesce(f.vl_merc, 0) - coalesce(c.vl_merc, 0)) > {tol}
+           OR f.dt_doc IS DISTINCT FROM c.dt_doc
            OR (f.participante <> c.participante AND f.participante NOT LIKE 'COD:%' AND c.participante NOT LIKE 'COD:%')
            OR (f.sentido = 'saida' AND (abs(coalesce(f.vl_pis, 0) - coalesce(c.vl_pis, 0)) > {tol}
                OR abs(coalesce(f.vl_cofins, 0) - coalesce(c.vl_cofins, 0)) > {tol}))""").df()
-    if not dif.empty:
-        dif["problema"] = "Diferente nas duas EFDs: " + dif["problema"]
     dif.columns = so_um.columns
     return pd.concat([so_um, dif], ignore_index=True)
 
 
 def divergencias_itens(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Documentos nas duas EFDs: CFOP so de um lado (C190 da Fiscal × C170 da Contribuicoes) e itens
-    (mesmo NUM_ITEM) com CFOP, codigo do item ou valor diferentes. O CFOP liga o produto (Contribuicoes)
-    ao destino (C190 + 0150 da Fiscal); CFOP diferente leva o destino ao rateio ou a regra geral."""
+    """Documentos vinculados: (a) itens na mesma posicao (NUM_ITEM) com codigo, CFOP ou valor diferente
+    (C170 Fiscal × C170 Contribuicoes); (b) CFOP so de um lado (C190 da Fiscal × C170 da Contribuicoes) —
+    o CFOP liga o produto (Contribuicoes) ao destino (Fiscal)."""
     tol = _tol()
-    return con.execute(SQL_DOCS + f"""
-        , p AS (SELECT * FROM docs WHERE ocorrencia = 1 AND situacao = '{NAS_DUAS}'),
-        fcfop AS (SELECT p.raiz, p.cnpj_estab || p.sentido || p.chave AS chave, c.CFOP AS cfop, sum(CAST(c.VL_OPR AS DOUBLE)) AS v
-                  FROM p JOIN raw_icms_c190 c ON c.arquivo_id = p.arquivo_id AND c.pai_linha = p.linha_num
-                  WHERE p.fonte = 'Fiscal' GROUP BY ALL),
-        ccfop AS (SELECT p.raiz, p.cnpj_estab || p.sentido || p.chave AS chave, i.CFOP AS cfop, sum(CAST(i.VL_ITEM - coalesce(i.VL_DESC, 0) AS DOUBLE)) AS v
-                  FROM p JOIN raw_contrib_c170 i ON i.arquivo_id = p.arquivo_id AND i.pai_linha = p.linha_num
-                  WHERE p.fonte = 'Contribuições' GROUP BY ALL),
-        cf AS (
-            SELECT coalesce(a.raiz, b.raiz) AS raiz, coalesce(a.chave, b.chave) AS chave,
-                   coalesce(a.cfop, b.cfop) AS cfop, a.v AS valor_fiscal, b.v AS valor_contrib,
-                   CASE WHEN b.cfop IS NULL THEN 'CFOP só na EFD ICMS/IPI (C190)'
-                        ELSE 'CFOP só na EFD Contribuições (C170)' END AS problema
-            FROM fcfop a FULL JOIN ccfop b ON a.raiz = b.raiz AND a.chave = b.chave AND a.cfop = b.cfop
-            WHERE a.cfop IS NULL OR b.cfop IS NULL),
-        cf_ok AS (SELECT * FROM cf WHERE chave IN (SELECT chave FROM ccfop) AND chave IN (SELECT chave FROM fcfop)),
-        fi AS (SELECT p.raiz, p.cnpj_estab || p.sentido || p.chave AS chave, i.NUM_ITEM AS num_item, any_value(i.CFOP) AS cfop, any_value(i.COD_ITEM) AS cod_item,
-                      any_value(CAST(i.VL_ITEM AS DOUBLE)) AS vl_item
-               FROM p JOIN raw_icms_c170 i ON i.arquivo_id = p.arquivo_id AND i.pai_linha = p.linha_num
-               WHERE p.fonte = 'Fiscal' GROUP BY ALL HAVING count(*) = 1),
-        ci AS (SELECT p.raiz, p.cnpj_estab || p.sentido || p.chave AS chave, i.NUM_ITEM AS num_item, any_value(i.CFOP) AS cfop, any_value(i.COD_ITEM) AS cod_item,
-                      any_value(CAST(i.VL_ITEM AS DOUBLE)) AS vl_item
-               FROM p JOIN raw_contrib_c170 i ON i.arquivo_id = p.arquivo_id AND i.pai_linha = p.linha_num
-               WHERE p.fonte = 'Contribuições' GROUP BY ALL HAVING count(*) = 1),
-        it AS (
-            SELECT fi.raiz, fi.chave, fi.cfop, fi.vl_item AS valor_fiscal, ci.vl_item AS valor_contrib,
-                   'Item ' || fi.num_item || ' diferente: ' || concat_ws(', ',
-                       CASE WHEN fi.cfop <> ci.cfop THEN 'CFOP ' || fi.cfop || ' × ' || ci.cfop END,
-                       CASE WHEN fi.cod_item <> ci.cod_item THEN 'produto ' || fi.cod_item || ' × ' || ci.cod_item END,
-                       CASE WHEN abs(fi.vl_item - ci.vl_item) > {tol} THEN 'valor' END) AS problema
-            FROM fi JOIN ci ON ci.raiz = fi.raiz AND ci.chave = fi.chave AND ci.num_item = fi.num_item
-            WHERE fi.cfop <> ci.cfop OR fi.cod_item <> ci.cod_item OR abs(fi.vl_item - ci.vl_item) > {tol}),
-        x AS (SELECT * FROM cf_ok UNION ALL BY NAME SELECT * FROM it)
-        SELECT f.raiz, f.cnpj_estab, f.mes, f.sentido, x.problema, x.cfop, f.num_doc, f.chv_nfe,
-               x.valor_fiscal, x.valor_contrib, f.arquivo_id, f.linha_num
-        FROM x JOIN (SELECT * FROM p WHERE fonte = 'Fiscal') f
-          ON f.cnpj_estab || f.sentido || f.chave = x.chave
-        ORDER BY 1, 2, 3""").df()
+    return con.execute(f"""
+        WITH m AS (SELECT p.*, d.raiz, d.cnpj_estab, d.mes, d.sentido, d.num_doc, d.chv_nfe
+                   FROM v_doc_par p JOIN v_docs d ON d.arquivo_id = p.sf_arquivo_id AND d.doc_linha = p.sf_linha),
+        fi AS (SELECT m.sf_arquivo_id, m.sf_linha, i.NUM_ITEM AS num_item, any_value(i.CFOP) AS cfop,
+                      any_value(i.COD_ITEM) AS cod_item, any_value(CAST(i.VL_ITEM AS DOUBLE)) AS vl_item
+               FROM m JOIN raw_icms_c170 i ON i.arquivo_id = m.sf_arquivo_id AND i.pai_linha = m.sf_linha
+               GROUP BY ALL HAVING count(*) = 1),
+        ci AS (SELECT m.sf_arquivo_id, m.sf_linha, i.NUM_ITEM AS num_item, any_value(i.CFOP) AS cfop,
+                      any_value(i.COD_ITEM) AS cod_item, any_value(CAST(i.VL_ITEM AS DOUBLE)) AS vl_item
+               FROM m JOIN raw_contrib_c170 i ON i.arquivo_id = m.ec_arquivo_id AND i.pai_linha = m.ec_linha
+               GROUP BY ALL HAVING count(*) = 1),
+        it AS (SELECT fi.sf_arquivo_id, fi.sf_linha, fi.cfop, fi.vl_item AS valor_fiscal, ci.vl_item AS valor_contrib,
+                      'Item ' || fi.num_item || ' na mesma posição com ' || concat_ws(', ',
+                          CASE WHEN fi.cod_item <> ci.cod_item THEN 'código ' || fi.cod_item || ' × ' || ci.cod_item END,
+                          CASE WHEN coalesce(fi.cfop, '') <> coalesce(ci.cfop, '') THEN 'CFOP ' || fi.cfop || ' × ' || ci.cfop END,
+                          CASE WHEN abs(fi.vl_item - ci.vl_item) > {tol} THEN 'valor diferente' END) AS problema
+               FROM fi JOIN ci USING (sf_arquivo_id, sf_linha, num_item)
+               WHERE fi.cod_item <> ci.cod_item OR coalesce(fi.cfop, '') <> coalesce(ci.cfop, '')
+                  OR abs(fi.vl_item - ci.vl_item) > {tol}),
+        fc AS (SELECT m.sf_arquivo_id, m.sf_linha, c.CFOP AS cfop, sum(CAST(c.VL_OPR AS DOUBLE)) AS v
+               FROM m JOIN raw_icms_c190 c ON c.arquivo_id = m.sf_arquivo_id AND c.pai_linha = m.sf_linha GROUP BY ALL),
+        cc AS (SELECT m.sf_arquivo_id, m.sf_linha, i.CFOP AS cfop, sum(CAST(i.VL_ITEM - coalesce(i.VL_DESC, 0) AS DOUBLE)) AS v
+               FROM m JOIN raw_contrib_c170 i ON i.arquivo_id = m.ec_arquivo_id AND i.pai_linha = m.ec_linha GROUP BY ALL),
+        cf AS (SELECT coalesce(a.sf_arquivo_id, b.sf_arquivo_id) AS sf_arquivo_id, coalesce(a.sf_linha, b.sf_linha) AS sf_linha,
+                      coalesce(a.cfop, b.cfop) AS cfop, a.v AS valor_fiscal, b.v AS valor_contrib,
+                      CASE WHEN b.cfop IS NULL THEN 'CFOP só na EFD ICMS/IPI (C190)'
+                           ELSE 'CFOP só na EFD Contribuições (C170)' END AS problema
+               FROM fc a FULL JOIN cc b ON a.sf_arquivo_id = b.sf_arquivo_id AND a.sf_linha = b.sf_linha AND a.cfop = b.cfop
+               WHERE (a.cfop IS NULL OR b.cfop IS NULL)),
+        cf_ok AS (SELECT * FROM cf WHERE (sf_arquivo_id, sf_linha) IN (SELECT sf_arquivo_id, sf_linha FROM cc)
+                                    AND (sf_arquivo_id, sf_linha) IN (SELECT sf_arquivo_id, sf_linha FROM fc)),
+        x AS (SELECT * FROM it UNION ALL BY NAME SELECT * FROM cf_ok)
+        SELECT m.raiz, m.cnpj_estab, m.mes, m.sentido, x.problema, x.cfop, m.num_doc, m.chv_nfe,
+               x.valor_fiscal, x.valor_contrib, m.sf_arquivo_id AS arquivo_id, m.sf_linha AS linha_num
+        FROM x JOIN m USING (sf_arquivo_id, sf_linha) ORDER BY 1, 2, 3""").df()
 
 
 def repetidos(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
@@ -205,30 +200,139 @@ def repetidos(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
 
 def c170_x_c190(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """EFD ICMS/IPI: soma dos itens C170 × analitico C190, por documento e CFOP."""
+    """EFD ICMS/IPI: itens C170 × analitico C190 por documento + CST + CFOP + aliquota (item sem C190
+    correspondente, ou BC/ICMS/IPI diferentes)."""
     tol = _tol()
     return con.execute(f"""
-        WITH i AS (SELECT arquivo_id, pai_linha, CFOP AS cfop, sum(coalesce(VL_BC_ICMS, 0)) AS bc,
+        WITH i AS (SELECT arquivo_id, pai_linha, coalesce(CST_ICMS, '') AS cst, coalesce(CFOP, '') AS cfop,
+                          round(coalesce(ALIQ_ICMS, 0), 2) AS aliq, sum(coalesce(VL_BC_ICMS, 0)) AS bc,
                           sum(coalesce(VL_ICMS, 0)) AS icms, sum(coalesce(VL_IPI, 0)) AS ipi
                    FROM raw_icms_c170 GROUP BY ALL),
-             a AS (SELECT arquivo_id, pai_linha, CFOP AS cfop, sum(coalesce(VL_BC_ICMS, 0)) AS bc,
+             a AS (SELECT arquivo_id, pai_linha, coalesce(CST_ICMS, '') AS cst, coalesce(CFOP, '') AS cfop,
+                          round(coalesce(ALIQ_ICMS, 0), 2) AS aliq, sum(coalesce(VL_BC_ICMS, 0)) AS bc,
                           sum(coalesce(VL_ICMS, 0)) AS icms, sum(coalesce(VL_IPI, 0)) AS ipi
                    FROM raw_icms_c190
                    WHERE (arquivo_id, pai_linha) IN (SELECT DISTINCT arquivo_id, pai_linha FROM raw_icms_c170)
                    GROUP BY ALL),
              c AS (SELECT coalesce(i.arquivo_id, a.arquivo_id) AS arquivo_id,
-                          coalesce(i.pai_linha, a.pai_linha) AS doc_linha, coalesce(i.cfop, a.cfop) AS cfop,
+                          coalesce(i.pai_linha, a.pai_linha) AS doc_linha, coalesce(i.cst, a.cst) AS cst_icms,
+                          coalesce(i.cfop, a.cfop) AS cfop, coalesce(i.aliq, a.aliq) AS aliq_icms,
+                          CASE WHEN a.cfop IS NULL THEN 'Item C170 sem C190 correspondente (CST/CFOP/alíquota)'
+                               WHEN i.cfop IS NULL THEN 'C190 sem item C170 correspondente'
+                               ELSE 'Valores do C170 diferentes do C190' END AS problema,
                           coalesce(i.bc, 0) AS bc_icms_c170, coalesce(a.bc, 0) AS bc_icms_c190,
                           coalesce(i.icms, 0) AS icms_c170, coalesce(a.icms, 0) AS icms_c190,
                           coalesce(i.ipi, 0) AS ipi_c170, coalesce(a.ipi, 0) AS ipi_c190
-                   FROM i FULL JOIN a ON i.arquivo_id = a.arquivo_id AND i.pai_linha = a.pai_linha AND i.cfop = a.cfop)
-        SELECT d.raiz, d.cnpj_estab, d.mes, d.sentido, d.num_doc, d.chv_nfe, c.cfop,
+                   FROM i FULL JOIN a ON i.arquivo_id = a.arquivo_id AND i.pai_linha = a.pai_linha AND i.cst = a.cst
+                        AND i.cfop = a.cfop AND i.aliq = a.aliq)
+        SELECT d.raiz, d.cnpj_estab, d.mes, d.sentido, d.num_doc, d.chv_nfe, c.problema, c.cst_icms, c.cfop, c.aliq_icms,
                c.bc_icms_c170, c.bc_icms_c190, c.icms_c170, c.icms_c190, c.ipi_c170, c.ipi_c190,
                c.arquivo_id, c.doc_linha
         FROM c JOIN v_docs d ON d.arquivo_id = c.arquivo_id AND d.doc_linha = c.doc_linha
-        WHERE NOT d.cancelado AND (abs(c.bc_icms_c170 - c.bc_icms_c190) > {tol}
-              OR abs(c.icms_c170 - c.icms_c190) > {tol} OR abs(c.ipi_c170 - c.ipi_c190) > {tol})
+        WHERE NOT d.cancelado AND (c.problema <> 'Valores do C170 diferentes do C190'
+              OR abs(c.bc_icms_c170 - c.bc_icms_c190) > {tol} OR abs(c.icms_c170 - c.icms_c190) > {tol}
+              OR abs(c.ipi_c170 - c.ipi_c190) > {tol})
         ORDER BY 1, 2, 3""").df()
+
+
+# ---------------------------------------------------------------------------
+# Fechamento e auditorias do cruzamento de PIS/COFINS (entradas)
+# ---------------------------------------------------------------------------
+def fechamento_pis_cofins(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """PIS/COFINS das entradas na EFD Contribuicoes (C170 de entrada, C191/C195, A170, F100) × o que entrou
+    na base de operacoes, por estabelecimento do AM e mes. Deve ser sempre zero (nada some, nada duplica)."""
+    tol = 0.01
+    return con.execute(f"""
+        WITH am AS (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas),
+        bruto AS (
+            SELECT d.cnpj_estab, a.raiz, month(a.dt_ini) AS mes, sum(i.VL_PIS) AS pis, sum(i.VL_COFINS) AS cofins
+            FROM raw_contrib_c170 i JOIN raw_contrib_c100 d ON d.arquivo_id = i.arquivo_id AND d.linha_num = i.pai_linha
+            JOIN arquivos a ON a.arquivo_id = i.arquivo_id
+            WHERE a.ativo AND d.IND_OPER = '0' AND coalesce(d.COD_SIT, '00') NOT IN {CANCELADOS} GROUP BY ALL
+            UNION ALL
+            SELECT h.cnpj_estab, a.raiz, month(a.dt_ini), sum(x.VL_PIS), 0 FROM raw_contrib_c191 x
+            JOIN raw_contrib_c190 h ON h.arquivo_id = x.arquivo_id AND h.linha_num = x.pai_linha
+            JOIN arquivos a ON a.arquivo_id = x.arquivo_id WHERE a.ativo GROUP BY ALL
+            UNION ALL
+            SELECT h.cnpj_estab, a.raiz, month(a.dt_ini), 0, sum(x.VL_COFINS) FROM raw_contrib_c195 x
+            JOIN raw_contrib_c190 h ON h.arquivo_id = x.arquivo_id AND h.linha_num = x.pai_linha
+            JOIN arquivos a ON a.arquivo_id = x.arquivo_id WHERE a.ativo GROUP BY ALL
+            UNION ALL
+            SELECT cnpj_estab, raiz, mes, sum(vl_pis), sum(vl_cofins) FROM v_entradas_servicos GROUP BY ALL),
+        e AS (SELECT cnpj_estab, raiz, mes, CAST(sum(pis) AS DOUBLE) AS pis, CAST(sum(cofins) AS DOUBLE) AS cofins
+              FROM bruto WHERE cnpj_estab IN (SELECT cnpj FROM am) GROUP BY ALL),
+        b AS (SELECT cnpj_estab, raiz, mes, sum(coalesce(vl_pis, 0)) AS pis, sum(coalesce(vl_cofins, 0)) AS cofins
+              FROM (SELECT cnpj_estab, raiz, mes, vl_pis, vl_cofins FROM v_entradas_item
+                    UNION ALL SELECT cnpj_estab, raiz, mes, vl_pis, vl_cofins FROM v_entradas_servicos
+                    WHERE cnpj_estab IN (SELECT cnpj FROM am)) GROUP BY ALL)
+        SELECT coalesce(e.raiz, b.raiz) AS raiz, coalesce(e.cnpj_estab, b.cnpj_estab) AS cnpj_estab,
+               coalesce(e.mes, b.mes) AS mes, coalesce(e.pis, 0) AS pis_efd, coalesce(b.pis, 0) AS pis_base,
+               coalesce(e.pis, 0) - coalesce(b.pis, 0) AS dif_pis, coalesce(e.cofins, 0) AS cofins_efd,
+               coalesce(b.cofins, 0) AS cofins_base, coalesce(e.cofins, 0) - coalesce(b.cofins, 0) AS dif_cofins
+        FROM e FULL JOIN b ON b.cnpj_estab = e.cnpj_estab AND b.mes = e.mes
+        WHERE abs(coalesce(e.pis, 0) - coalesce(b.pis, 0)) > {tol} OR abs(coalesce(e.cofins, 0) - coalesce(b.cofins, 0)) > {tol}
+        ORDER BY 1, 2, 3""").df()
+
+
+def creditos_so_na_efd(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Creditos da EFD Contribuicoes sem correspondencia no SPED Fiscal (linhas EC_SEM_PAR)."""
+    return con.execute("""
+        SELECT raiz, cnpj_estab, mes, reg_origem, chv_nfe, cnpj_part, cod_item, cfop, cst_pis, vl_pis, cst_cofins,
+               vl_cofins, arquivo_id, linha_num
+        FROM v_entradas_item WHERE nivel_cruzamento = 'EC_SEM_PAR'
+        ORDER BY coalesce(vl_pis, 0) + coalesce(vl_cofins, 0) DESC""").df()
+
+
+def credito_icms_x_pis(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Insumo/revenda (TIPO_ITEM do 0200) com credito de ICMS/IPI e sem credito de PIS/COFINS, e o inverso.
+    Entradas com CST de PIS 70 a 75 (sem direito a credito: suspensao, aliquota zero, isencao) nao sao
+    apontadas, porque e a situacao normal das compras com beneficio da ZFM."""
+    return con.execute(f"""
+        WITH t AS (SELECT DISTINCT ON (arquivo_id, COD_ITEM) arquivo_id, COD_ITEM AS cod_item, TIPO_ITEM AS tipo_item
+                   FROM raw_icms_0200 ORDER BY arquivo_id, COD_ITEM),
+        e AS (SELECT e.*, t.tipo_item,
+                     (coalesce(e.vl_icms, 0) > 0 OR (coalesce(e.cst_ipi, '') IN ('00', '49', '50') AND coalesce(e.vl_ipi, 0) > 0))
+                         AS cred_icms,
+                     (coalesce(e.cst_pis, '') IN {CST_CRED} AND coalesce(e.vl_pis, 0) + coalesce(e.vl_cofins, 0) > 0) AS cred_pis
+              FROM v_entradas_item e LEFT JOIN t ON t.arquivo_id = e.arquivo_id AND t.cod_item = e.cod_item
+              WHERE e.reg_origem = 'C170' AND e.devolucao_de NOT IN ('venda_producao', 'venda_revenda'))
+        SELECT raiz, cnpj_estab, mes,
+               CASE WHEN cred_icms THEN 'Crédito de ICMS/IPI sem crédito de PIS/COFINS'
+                    ELSE 'Crédito de PIS/COFINS sem crédito de ICMS/IPI' END AS problema,
+               chv_nfe, cnpj_part, cod_item, tipo_item, cfop, cst_icms, cst_ipi, cst_pis, nivel_cruzamento, valor,
+               vl_icms, vl_ipi, vl_pis, vl_cofins, arquivo_id, linha_num
+        FROM e WHERE tipo_item IN {TIPO_INSUMO_REVENDA} AND cred_icms <> cred_pis
+          -- CST 70 a 75 (aquisicao sem credito: suspensao, aliquota zero, isencao...) e o esperado na ZFM
+          AND NOT (cred_icms AND coalesce(cst_pis, '') BETWEEN '70' AND '75')
+        ORDER BY valor DESC""").df()
+
+
+def cst_divergente_filiais(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Mesmo item + CFOP com CST diferente entre estabelecimentos da mesma empresa (entradas)."""
+    return con.execute("""
+        WITH b AS (SELECT raiz, cod_item, cfop, cnpj_estab,
+                          string_agg(DISTINCT coalesce(cst_icms, '-'), '/' ORDER BY coalesce(cst_icms, '-')) AS cst_icms,
+                          string_agg(DISTINCT coalesce(cst_pis, '-'), '/' ORDER BY coalesce(cst_pis, '-')) AS cst_pis,
+                          string_agg(DISTINCT coalesce(cst_cofins, '-'), '/' ORDER BY coalesce(cst_cofins, '-')) AS cst_cofins,
+                          sum(valor) AS valor, min(mes) AS mes
+                   FROM v_entradas_item WHERE reg_origem = 'C170' AND cod_item IS NOT NULL GROUP BY ALL),
+        d AS (SELECT raiz, cod_item, cfop FROM b GROUP BY ALL
+              HAVING count(DISTINCT cnpj_estab) > 1
+                 AND (count(DISTINCT cst_icms) > 1 OR count(DISTINCT cst_pis) > 1 OR count(DISTINCT cst_cofins) > 1))
+        SELECT b.* FROM b JOIN d USING (raiz, cod_item, cfop) ORDER BY b.raiz, b.cod_item, b.cfop, b.cnpj_estab""").df()
+
+
+def diagnostico_niveis(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Informativo: distribuicao das linhas de entrada e do PIS/COFINS por nivel de cruzamento."""
+    d = con.execute("""
+        SELECT raiz, cnpj_estab, mes, nivel_cruzamento, count(*) AS linhas, sum(valor) AS valor,
+               sum(coalesce(vl_pis, 0)) AS pis, sum(coalesce(vl_cofins, 0)) AS cofins
+        FROM v_entradas_item GROUP BY ALL ORDER BY raiz, cnpj_estab, mes, linhas DESC""").df()
+    if not d.empty:
+        d.insert(4, "descricao", d["nivel_cruzamento"].map(NIVEIS).fillna(""))
+        tot = d.groupby(["cnpj_estab", "mes"])["linhas"].transform("sum")
+        d["pct_linhas"] = 100 * d["linhas"] / tot
+    return d
 
 
 # ---------------------------------------------------------------------------

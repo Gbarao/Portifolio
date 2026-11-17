@@ -280,7 +280,7 @@ roteiro e pendências, cartões, abas e tabelas com números no formato do naveg
 locais (nenhum recurso da internet; conferido no navegador: zero requisições externas). A tabela
 `param_regras_entradas` foi substituída por `param_regras_cenario` (fica no arquivo, sem uso).
 
-**D-050 — Pareamento Fiscal × Contribuições (R4/Q7).** Mecânica do Consolidador EFD: empresa = raiz do CNPJ;
+**D-050 — Pareamento Fiscal × Contribuições (R4/Q7).** *Substituída pela D-054.* Mecânica do Consolidador EFD: empresa = raiz do CNPJ;
 participante = CNPJ/CPF do 0150 de cada arquivo (COD_PART não é comparado); documento = estabelecimento +
 entrada/saída + chave da NF-e (44 posições) ou, sem chave, modelo|série|número|data|CNPJ do participante. A
 NF-e de transferência aparece como saída num estabelecimento e entrada no outro e não é repetição. Situações:
@@ -305,6 +305,29 @@ banco), depois da importação e no Painel.
 e campos capturados, As Is, To Be (texto montado a partir dos parâmetros em uso), conferências, cruzamentos
 e base legal; registros capturados com arquivo e linha; catálogo de cruzamentos com a situação atual; origem
 de cada dado. As mesmas tabelas vão para o Excel.
+
+**D-054 — Cruzamento SPED Fiscal × EFD Contribuições (mecânica do sped_analytics_app).** Fonte: branch
+`claude/wonderful-rubin-5qi5sj`, `sped_analytics_app/app/database/queries_join.sql` e `audit.py`.
+(1) Vínculo de documentos estritamente 1:1 (`v_doc_par`): pela chave da NF-e em qualquer competência; sem chave
+num dos lados, por estabelecimento + competência + entrada/saída + fornecedor (CNPJ/CPF do 0150) + modelo + série +
+número (k-ésimo com k-ésimo). (2) Itens de entrada: C170 do SPED Fiscal; sem C170 (Exceção 2), C170 da EFD
+Contribuições do documento vinculado, com valor/ICMS/IPI rateados ao C190 do mesmo CFOP; sem itens, o C190.
+(3) PIS/COFINS das entradas vem sempre da EFD Contribuições (antes vinha do C170 da Fiscal), por nível:
+N1_ITEM (posição + código + valor, tolerância R$ 0,01), N1V_POSICAO_VALOR (posição + valor + CFOP),
+N2_ITEM_CFOP (código + CFOP no documento, saldo rateado pelo VL_ITEM), N3_CONSOLIDADO_C190 (estabelecimento +
+mês + fornecedor + CFOP + código, C190/C191/C195), EC_EXCLUSIVO (sem SPED Fiscal do mês: entra com o valor) e
+EC_SEM_PAR (sem par: valor zero, todo o PIS/COFINS). Linha do SPED Fiscal sem par = sem crédito. (4) Garantias,
+com testes: nada some (Q18, fechamento por estabelecimento e mês), nada duplica (cada item da EFD usado uma vez),
+nada vai para o item errado (posição sozinha não casa). (5) Serviços tomados (A170/F100) passam a levar o
+PIS/COFINS. Diferenças em relação ao original: vale para entradas e saídas no vínculo de documentos (o original só
+lê entradas); fornecedor estrangeiro sem CNPJ casa no N3 pelo CNPJ vazio; não há rateio do C190 sobre os itens do
+C170 da Fiscal (a base de CBS/IBS continua VL_ITEM − VL_DESC); C500/D100/D500 e F120/F130 não são lidos (P-021).
+
+**D-055 — Auditorias do cruzamento.** Mesma lista do `audit.py`: fechamento (Q18), créditos só na EFD (Q19),
+valor do documento e da mercadoria nos documentos vinculados (Q7), item na mesma posição com código/CFOP/valor
+diferente (Q15), crédito de ICMS/IPI sem PIS/COFINS e o inverso para insumo/revenda (Q20 — sem apontar compras com
+CST de PIS 70–75, situação normal na ZFM), CST divergente entre estabelecimentos para o mesmo item e CFOP (Q21),
+item sem C190 (Q14, agora por CST + CFOP + alíquota), NF só na EFD (Q7) e diagnóstico por nível (Qualidade).
 
 ---
 
@@ -336,3 +359,5 @@ de cada dado. As mesmas tabelas vão para o Excel.
 - **P-019** — Tipo ZFM (indústria incentivada/habilitado) e regime dos participantes: confirmar na aba
   Empresas ZFM; a classificação automática usa SUFRAMA e município do 0150.
 - **P-020** — Documentos repetidos na mesma EFD (Q16): manter na base (padrão) ou excluir a segunda ocorrência.
+- **P-021** — Ler C500/D100/D500 (energia, frete, telecom) e F120/F130 (ativo) da EFD Contribuições, como no
+  sped_analytics_app, para que os créditos dessas operações também entrem na base.

@@ -94,20 +94,26 @@ with ui.protegido("montar a metodologia"):
             "ligacao": st.column_config.TextColumn("Ligação (chave)", width="medium"),
             "tolerancia": "Tolerância",
             "o_que_indica": st.column_config.TextColumn("O que indica / impacto", width="large")})
-        with st.expander("Como as duas EFDs são ligadas"):
+        with st.expander("Como as duas EFDs são ligadas (mecânica do sped_analytics_app)", expanded=True):
             st.markdown(
-                "- **Empresa:** raiz do CNPJ (8 dígitos). A EFD Contribuições é da empresa; a EFD ICMS/IPI, de cada "
-                "estabelecimento.\n"
-                "- **Participante:** CNPJ/CPF do 0150 de cada arquivo. O COD_PART é um código interno de cada arquivo "
-                "e não é comparado entre as EFDs.\n"
-                "- **Documento:** estabelecimento + entrada/saída + chave da NF-e (44 posições). Sem chave: modelo, "
-                "série, número, data e CNPJ do participante. A NF-e de transferência aparece como saída num "
-                "estabelecimento e entrada no outro; isso não é repetição.\n"
-                "- **Repetição:** o mesmo documento escriturado duas vezes na mesma EFD conta uma vez (Q16).\n"
-                "- **Produto × destino:** a receita por produto vem da Contribuições e o destino do C190 + 0150 da "
-                "Fiscal, ligados por estabelecimento, mês e CFOP (Q15 confere o CFOP nas duas EFDs).\n"
-                "- **Sem contrapartida:** quando a outra EFD do mês não foi carregada, o documento não é tratado como "
-                "divergência; a falta aparece na cobertura (Q17) e na Importação.")
+                "1. **Empresa e filial:** empresa = raiz do CNPJ. Filial = CNPJ do 0000 na EFD ICMS/IPI e do "
+                "0140/C010 na EFD Contribuições.\n"
+                "2. **Fornecedor/cliente:** CNPJ/CPF do 0150 de cada arquivo (o COD_PART é interno e não é comparado).\n"
+                "3. **Documento, vínculo 1:1:** 1º pela chave da NF-e, em qualquer competência; 2º sem chave num dos "
+                "lados, por filial + competência + fornecedor + modelo + série + número. Um documento de uma EFD nunca "
+                "alimenta dois da outra.\n"
+                "4. **Itens das entradas:** C170 do SPED Fiscal; se a nota não tem C170 (Exceção 2), os itens do C170 da "
+                "EFD Contribuições do documento vinculado, com valor, ICMS e IPI rateados ao C190 do mesmo CFOP.\n"
+                "5. **PIS/COFINS das entradas** vem sempre da EFD Contribuições, por nível:")
+            from zfm.vinculo import NIVEIS
+            st.dataframe([{"Nível": k, "Como casa": v} for k, v in NIVEIS.items()], hide_index=True, width="stretch")
+            st.markdown(
+                "6. **Garantias:** nada some (Q18: todo PIS/COFINS da EFD termina em exatamente uma linha da base), "
+                "nada duplica (cada item da EFD é usado no máximo uma vez), nada vai para o item errado (a posição "
+                "sozinha não basta para casar).\n"
+                "7. **Saídas:** produto e receita da EFD Contribuições; destino do C190 + 0150 da EFD ICMS/IPI, ligados por "
+                "estabelecimento, mês e CFOP (Q15 confere os CFOPs do documento vinculado).\n"
+                "8. **Não lido nesta versão:** C500/D100/D500 (energia, frete, telecom) e F120/F130 (ativo).")
     with abas[3]:
         ui.secao("De onde vem cada dado usado nos cálculos")
         st.dataframe(metodologia.fontes(), hide_index=True, width="stretch", column_config={
