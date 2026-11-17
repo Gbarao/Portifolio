@@ -139,7 +139,23 @@ hierarquia, colunas e tela são restaurados ao reabrir).
    - hierarquia reordenável, escolha de colunas, ordenação por qualquer coluna, colunas redimensionáveis;
    - clique em qualquer linha abre o painel de **notas fiscais** (com chave de 44 dígitos), redimensionável;
    - exportação do resumo, dos itens detalhados (Excel, CSV, Parquet) e das notas; congelamento de snapshots.
-2. **SPED Fiscal** e **EFD-Contribuições** (seção "Arquivos como estão"): o conteúdo dos arquivos exatamente como
+2. **Relatório dinâmico**: monte o relatório livremente, sempre sobre o **consolidado SPED Fiscal +
+   EFD-Contribuições** (a mesma base da Análise, em que cada valor é contado uma única vez):
+   - arraste os campos para **Linhas** (ex.: Unidade, Fornecedor, CFOP, Descrição do item), **Colunas**
+     (opcional, ex.: Competência — uma coluna por mês, com total) e **Valores** (Valor contábil, ICMS, ICMS-ST +
+     FCP, IPI, PIS, COFINS, recuperáveis, custo líquido, quantidades…); incluir, retirar ou reordenar um campo
+     recalcula o relatório na hora;
+   - ordenação por qualquer valor (**maior → menor** ou **menor → maior**) ou por dimensão (A→Z / Z→A), também
+     clicando no cabeçalho;
+   - filtro por **texto** (busca em códigos e descrições das dimensões das linhas), **filtros por valor** sobre
+     cada linha do relatório (ex.: PIS > 0, ICMS igual a zero), quantidade de linhas exibidas e os mesmos filtros
+     globais da Análise;
+   - **subtotais** por grupo, modelos prontos e modelos salvos pelo usuário;
+   - clique em uma linha para ver as notas fiscais que a compõem;
+   - exportação para Excel com linha de total e aba de parâmetros.
+   O total é sempre calculado na base (não somando as linhas da tela); com filtro por valor ativo, sobre as linhas
+   que passam no filtro.
+3. **SPED Fiscal** e **EFD-Contribuições** (seção "Arquivos como estão"): o conteúdo dos arquivos exatamente como
    importado, **sem nenhum cruzamento** — inclusive saídas, notas canceladas, apuração (E110, M100, M200…),
    inventário e qualquer outro registro:
    - lista de registros presentes, agrupada por bloco, com descrição e quantidade de linhas;
@@ -153,13 +169,13 @@ hierarquia, colunas e tela são restaurados ao reabrir).
      campo (igual, contém, começa com, lista, maior/menor, vazio);
    - modo **Arquivo**: o TXT inteiro na ordem original, com filtro por registro e texto;
    - exportação de tudo o que estiver filtrado para Excel (com aba de parâmetros) ou CSV.
-3. **Arquivos**: importação por pasta ou arrastando arquivos, com barra de progresso e resultado por arquivo;
+4. **Arquivos**: importação por pasta ou arrastando arquivos, com barra de progresso e resultado por arquivo;
    matriz de cobertura filial × mês; lista de arquivos com remoção; remoção por competência; backup e restauração;
    reconsolidação; log.
-4. **Regras e filtros**: construtor de regras E/OU com grupos aninhados, prévia do SQL, teste (linhas e valores),
+5. **Regras e filtros**: construtor de regras E/OU com grupos aninhados, prévia do SQL, teste (linhas e valores),
    modelos prontos, biblioteca de filtros salvos por categoria e visualizador de snapshots (com verificação de
    integridade, exportação e restauração do contexto).
-5. **Auditoria**: verificações agrupadas, contadas automaticamente e exportáveis em uma pasta de trabalho:
+6. **Auditoria**: verificações agrupadas, contadas automaticamente e exportáveis em uma pasta de trabalho:
    - **fechamento**: PIS/COFINS dos registros brutos da EFD × totalizador (deve ser sempre zero);
    - créditos somente na EFD (linhas `EC_SEM_PAR`);
    - diferença de valor do documento entre SF e EFD;
@@ -179,7 +195,7 @@ pip install -r requirements-opcional.txt
 python -m pytest -q tests
 ```
 
-São 60 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
+São 124 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
 - `tests/test_pipeline.py` (18): detecção, duplicidade, retificadora, fechamento C170 = C190, rateio de frete,
   N1/N3/DOC, Exceção 2, 0175, filtros, auditoria, cobertura, exportação, snapshot, backup e remoção.
 - `tests/test_cruzamento.py` (22): cenários em que os dois arquivos **não** são espelhos. Numeração de itens
@@ -194,6 +210,10 @@ São 60 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data
 - `tests/test_raw.py` (10): telas SPED Fiscal / EFD-Contribuições — todas as linhas guardadas idênticas ao TXT,
   saídas e canceladas presentes, contexto do documento-pai, unidade por estabelecimento na EFD, filtros e
   condições, registro fora do catálogo, modo arquivo e paginação, exportação e indexação de arquivos antigos.
+- `tests/test_report.py` (64): relatório dinâmico — para 60 combinações de dimensões, a soma das linhas exibidas é
+  igual ao total da base e ao total devolvido, sem chave repetida (nenhum valor duplicado); PIS do relatório igual
+  ao PIS bruto da EFD; colunas por competência somam a coluna total; ordenação, limite, texto, filtros por valor,
+  API e exportação.
 
 ### Alterar a interface (opcional, para desenvolvedores)
 
@@ -260,6 +280,18 @@ Na interface (navegador, mesma base de 28,8 milhões de linhas, tempo até o con
 | Marcar um fornecedor e recalcular a árvore | 0,27 s |
 | Trocar para Mês a mês | 0,07 s |
 | Trocar para Tabela com 4 dimensões (5 mil maiores linhas) | 1,4 s |
+
+Relatório dinâmico (fato com 1,2 milhão de linhas, 8 valores, consulta já aquecida):
+
+| Relatório | Tabela usada | Tempo |
+|---|---|---|
+| Unidade | `agg_filial` | 13 ms |
+| Unidade + Fornecedor (2 mil linhas) | `agg_fornecedor` | 21 ms |
+| Unidade + Fornecedor + CFOP + Descrição (1 milhão de grupos, 5 mil maiores) | `agg_item` | 0,21 s |
+| idem, ordenado A→Z por fornecedor | `agg_item` | 0,17 s |
+| idem + filtro por texto | `agg_item` | 0,43 s |
+| idem + filtro por valor (PIS > 0) | `agg_item` | 0,34 s |
+| Fornecedor × Competência (colunas por mês) | `agg_fornecedor` | 22 ms |
 
 Telas SPED Fiscal / EFD-Contribuições (base de 3,6 milhões de linhas originais):
 

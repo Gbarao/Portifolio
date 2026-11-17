@@ -1,4 +1,4 @@
-import { BarChart3, ChevronsLeft, FileCode2, Layers3, ReceiptText, ChevronsRight, FolderInput, Lock, Monitor, Moon, ShieldCheck, Sun, Wand2, Zap } from 'lucide-react'
+import { BarChart3, ChevronsLeft, FileCode2, Grid3x3, Layers3, ReceiptText, ChevronsRight, FolderInput, Lock, Monitor, Moon, ShieldCheck, Sun, Wand2, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { Toaster } from 'sonner'
 import { cx, Menu, MenuItem, Tip, TipProvider } from './components/ui'
@@ -8,10 +8,12 @@ import { AnalysisPage } from './pages/AnalysisPage'
 import { AuditPage } from './pages/AuditPage'
 import { FilesPage } from './pages/FilesPage'
 import { RawPage } from './pages/RawPage'
+import { ReportPage } from './pages/ReportPage'
 import { RulesPage } from './pages/RulesPage'
 
 const PAGES: { key: Page; label: string; icon: any; title: string; subtitle: string; section?: string }[] = [
   { key: 'analise', label: 'Análise', icon: BarChart3, title: 'Análise consolidada de entradas', subtitle: 'SPED Fiscal × EFD-Contribuições por empresa, fornecedor, CFOP e item' },
+  { key: 'relatorio', label: 'Relatório dinâmico', icon: Grid3x3, title: 'Relatório dinâmico', subtitle: 'Monte linhas, colunas e valores livremente — sempre o consolidado SPED Fiscal + EFD-Contribuições, sem duplicidade' },
   { key: 'sped', label: 'SPED Fiscal', icon: FileCode2, section: 'Arquivos como estão', title: 'SPED Fiscal (EFD ICMS/IPI)', subtitle: 'Conteúdo dos arquivos exatamente como importado, registro a registro — sem cruzamentos' },
   { key: 'efd', label: 'EFD-Contribuições', icon: ReceiptText, title: 'EFD-Contribuições (PIS/Cofins)', subtitle: 'Conteúdo dos arquivos exatamente como importado, registro a registro — sem cruzamentos' },
   { key: 'arquivos', label: 'Arquivos', icon: FolderInput, section: 'Gestão', title: 'Central de arquivos', subtitle: 'Importação, cobertura fiscal, gestão da base e backup' },
@@ -101,8 +103,9 @@ export default function App() {
               <p className="truncate text-[12px] text-muted">{page.subtitle}</p>
             </div>
           </header>
-          <div className={cx('min-h-0 flex-1', ['analise', 'auditoria', 'sped', 'efd'].includes(state.page) ? 'overflow-hidden' : 'overflow-auto')}>
+          <div className={cx('min-h-0 flex-1', ['analise', 'relatorio', 'auditoria', 'sped', 'efd'].includes(state.page) ? 'overflow-hidden' : 'overflow-auto')}>
             {state.page === 'analise' && <AnalysisPage />}
+            {state.page === 'relatorio' && <ReportPage />}
             {state.page === 'sped' && <RawPage key="sf" tipo="ICMS_IPI" />}
             {state.page === 'efd' && <RawPage key="ec" tipo="CONTRIB" />}
             {state.page === 'arquivos' && <FilesPage />}

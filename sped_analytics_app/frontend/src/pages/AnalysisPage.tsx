@@ -12,7 +12,7 @@ import { fmtBRL, fmtCnpj, fmtComp, fmtCompact, fmtInt } from '../lib/format'
 import { useApp } from '../lib/store'
 import type { ColType, RuleGroup, Table } from '../lib/types'
 
-type PathItem = [string, any, string]
+export type PathItem = [string, any, string]
 interface Node { id: string; level: number; path: PathItem[]; code: any; desc?: string; cells: Record<string, any> }
 interface Bucket { status: 'loading' | 'done' | 'error'; nodes: Node[]; truncated?: boolean; error?: string }
 
@@ -22,12 +22,12 @@ const metricType = (t: string): ColType => (({ money: 'money', qty: 'qty', price
 
 export const hasRules = (r?: RuleGroup | null) => !!r && Array.isArray(r.rules) && r.rules.length > 0
 
-function codeLabel(dim: string, code: any) {
+export function codeLabel(dim: string, code: any) {
   if (code == null || code === '') return '(vazio)'
   return CNPJ_DIMS.has(dim) ? fmtCnpj(code) : String(code)
 }
 
-function DimCell({ dim, code, desc }: { dim: string; code: any; desc?: string }) {
+export function DimCell({ dim, code, desc }: { dim: string; code: any; desc?: string }) {
   const c = codeLabel(dim, code)
   if (!desc || desc === code) return <span className={cx(code == null && 'italic text-muted')}>{c}</span>
   return (
@@ -365,7 +365,7 @@ function TrendCard({ trend }: { trend: Table | null }) {
   )
 }
 
-function RulesChip() {
+export function RulesChip() {
   const { state, set } = useApp()
   const [desc, setDesc] = useState('')
   const active = hasRules(state.rules)
@@ -385,7 +385,7 @@ function RulesChip() {
   )
 }
 
-function DocsPanel({ path, base, ctx, onClose, onExport }: { path: PathItem[]; base: any; ctx: any; onClose: () => void; onExport: (u: string, b: any, l: string) => void }) {
+export function DocsPanel({ path, base, ctx, onClose, onExport }: { path: PathItem[]; base: any; ctx: any; onClose: () => void; onExport: (u: string, b: any, l: string) => void }) {
   const { dimLabel } = useApp()
   const [t, setT] = useState<Table | null>(null)
   const [loading, setLoading] = useState(true)

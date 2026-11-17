@@ -23,12 +23,17 @@ USO (menu à esquerda)
   2. "Análise": filtros no topo (aplicados na hora). Na visão Árvore, clique na seta ▸ (ou dê duplo clique) para
      abrir Empresa > Fornecedor > CFOP > Item; um clique simples em qualquer linha lista as notas fiscais no painel
      de baixo. Também há as visões Tabela e Mês a mês, a escolha de colunas e a ordem dos níveis.
-  3. "SPED Fiscal" e "EFD-Contribuições": o conteúdo dos arquivos exatamente como está no TXT, sem cruzamento.
+  3. "Relatório dinâmico": arraste campos para Linhas (ex.: Unidade, Fornecedor, CFOP, Descrição do item),
+     Colunas (opcional, ex.: Competência) e Valores (Valor contábil, ICMS, IPI, PIS, COFINS...). O relatório se
+     atualiza sozinho a cada mudança. Ordene do maior para o menor (ou ao contrário), filtre por texto ou por
+     valor (ex.: PIS > 0), ligue subtotais, salve modelos e exporte para Excel. Sempre é o consolidado das duas
+     obrigações, sem valor duplicado. Clique em uma linha para ver as notas fiscais.
+  4. "SPED Fiscal" e "EFD-Contribuições": o conteúdo dos arquivos exatamente como está no TXT, sem cruzamento.
      Escolha o registro na lista da esquerda (C100, C170, E110, M200...), filtre por período, unidade, arquivo,
      entradas/saídas, texto ou condições por campo, e exporte para Excel. O modo "Arquivo" mostra o TXT inteiro.
-  4. "Regras e filtros": regras sob demanda, filtros salvos (também na barra lateral, 1 clique) e análises
+  5. "Regras e filtros": regras sob demanda, filtros salvos (também na barra lateral, 1 clique) e análises
      congeladas.
-  5. "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições. Ao carregar os primeiros arquivos
+  6. "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições. Ao carregar os primeiros arquivos
      reais, confira (as verificações rodam sozinhas ao abrir a tela):
        - "Fechamento": deve ficar em 0 (todo PIS/COFINS da EFD está no totalizador);
        - "Diagnóstico": mostra quanto casou item a item (N1), por rateio (N2/N3) e quanto ficou sem par.

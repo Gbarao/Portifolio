@@ -16,10 +16,11 @@ from app.database.filter_builder import columns_used, where_clause
 
 # Dimensões de agrupamento: chave -> (rótulo, coluna-chave, expressão-descrição, coluna da descrição)
 DIMENSIONS: dict[str, tuple[str, str, str | None, str | None]] = {
-    "filial": ("Empresa/Filial", "cnpj_filial", "max(nome_filial)", "nome_filial"),
+    "filial": ("Unidade (filial)", "cnpj_filial", "max(nome_filial)", "nome_filial"),
     "fornecedor": ("Fornecedor", "cnpj_cpf_fornecedor", "max(razao_social_fornecedor)", "razao_social_fornecedor"),
     "cfop": ("CFOP", "cfop", None, None),
-    "item": ("Item", "cod_item_unificado", "max(descr_item)", "descr_item"),
+    "item": ("Item (código)", "cod_item_unificado", "max(descr_item)", "descr_item"),
+    "descr_item": ("Descrição do item", "descr_item", None, None),
     "competencia": ("Competência", "competencia", None, None),
     "ano": ("Ano", "left(competencia, 4)", None, None),
     "uf_filial": ("UF Filial", "uf_filial", None, None),
@@ -34,6 +35,8 @@ DIMENSIONS: dict[str, tuple[str, str, str | None, str | None]] = {
     "cst_cofins": ("CST COFINS", "cst_cofins", None, None),
     "nat_bc_cred": ("Nat. BC Crédito", "nat_bc_cred", None, None),
     "cod_cta": ("Conta Contábil", "cod_cta", None, None),
+    "cod_mod": ("Modelo do documento", "cod_mod", None, None),
+    "aliq_icms": ("Alíquota ICMS", "aliq_icms", None, None),
     "origem": ("Origem da Linha", "origem", None, None),
     "status_efd": ("Status EFD-Contribuições", "status_efd", None, None),
     "nivel": ("Nível Cruzamento", "nivel_cruzamento_efd", None, None),
@@ -260,3 +263,166 @@ def distinct_values(db, column: str, limit: int = 5000) -> list[dict]:
     rows = db.query(f"SELECT {key} AS v, {label or key} AS l, CAST(sum(vl_contabil) AS DOUBLE) AS t FROM {src} "
                     f"WHERE {key} IS NOT NULL GROUP BY {key} ORDER BY {order} LIMIT {int(limit)}")
     return rows.to_dicts()
+
+
+# --------------------------------------------------------------------------------------
+# Relatório dinâmico (tabela dinâmica): linhas x [coluna] x valores, sempre sobre a base consolidada
+# --------------------------------------------------------------------------------------
+ADDITIVE = {k for k, v in METRICS.items() if v[2] in ("money", "qty", "int") and k != "n_docs"}
+MAX_PIVOT_COLUMNS = 60
+HAVING_OPS = {">": ">", ">=": ">=", "<": "<", "<=": "<=", "=": "=", "!=": "<>", "zero": "= 0", "nao_zero": "<> 0"}
+
+
+class ReportError(ValueError):
+    pass
+
+
+def _num(v) -> float:
+    s = str(v).strip()
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError as e:
+        raise ReportError(f"Valor numérico inválido: {v!r}") from e
+
+
+def report(db, gf: dict | None, rules: dict | None, rows: list[str], col: str | None, metrics: list[str],
+           sort: dict | None = None, limit: int | None = config.UI_MAX_GRID_ROWS, texto: str = "",
+           having: list[dict] | None = None) -> dict:
+    """Relatório dinâmico (linhas x coluna opcional x valores).
+
+    Sem duplicidade por construção: cada linha da tabela fato (SPED Fiscal com o PIS/COFINS da EFD já atribuído
+    a uma única linha, mais as linhas "somente EFD") entra em exatamente um grupo. Os totais são calculados direto
+    da base — com filtro por valor ativo, somente sobre os grupos que passam no filtro —, nunca somando o que está
+    na tela.
+
+    sort   = {"by": <métrica ou dimensão das linhas>, "dir": "desc" | "asc"}
+    texto  = busca nos códigos e descrições das dimensões das linhas
+    having = [{"metric": ..., "op": ">", "value": ...}] — filtros por valor sobre cada grupo (linha do relatório)
+    """
+    rows = [d for d in rows if d in DIMENSIONS]
+    if len(set(rows)) != len(rows):
+        raise ReportError("A mesma dimensão aparece duas vezes nas linhas")
+    if col and (col not in DIMENSIONS or col in rows):
+        raise ReportError("Dimensão de colunas inválida (não pode repetir uma das linhas)")
+    metrics = [m for m in dict.fromkeys(metrics) if m in METRICS]
+    if col:
+        metrics = [m for m in metrics if METRICS[m][2] != "text"]   # listas de CST não cabem em células cruzadas
+    if not metrics:
+        raise ReportError("Escolha ao menos um valor" + (" numérico" if col else ""))
+
+    having = [h for h in (having or []) if h.get("metric") in METRICS and METRICS[h["metric"]][2] != "text"]
+    sort = sort or {}
+    sdir = "ASC" if sort.get("dir") == "asc" else "DESC"
+    sby = sort.get("by")
+    if sby not in rows and (sby not in METRICS or METRICS[sby][2] == "text"):
+        sby = next((m for m in metrics if METRICS[m][2] != "text"), "vl_contabil")
+
+    used_metrics = list(dict.fromkeys(metrics + [h["metric"] for h in having] + ([sby] if sby in METRICS else [])))
+    dims_all = rows + ([col] if col else [])
+    src = source_for(gf, rules, dims_all, used_metrics)
+    params: list = []
+    where = where_clause(gf, rules, params)
+    if texto and texto.strip() and rows:
+        parts = []
+        for d in rows:
+            _, key, _, desc_col = DIMENSIONS[d]
+            parts.append(f"coalesce(CAST({key} AS VARCHAR), '')")
+            if desc_col:
+                parts.append(f"coalesce({desc_col}, '')")
+        params.append(texto.strip().lower())
+        concat = " || ' ' || ".join(parts)
+        where += f" AND contains(lower({concat}), ${len(params)})"
+
+    keys = [DIMENSIONS[d][1] for d in rows]
+    gk = [f"g{i}" for i in range(len(keys))]
+    on = " AND ".join(f"{k} IS NOT DISTINCT FROM q.{g}" for k, g in zip(keys, gk))
+    hv = []
+    for h in having:
+        op = HAVING_OPS.get(h.get("op"))
+        if not op:
+            raise ReportError(f"Operador inválido: {h.get('op')}")
+        expr = f"coalesce({_metric_expr(h['metric'], src)}, 0)"
+        if h["op"] in ("zero", "nao_zero"):
+            hv.append(f"{expr} {op}")
+        else:
+            params.append(_num(h.get("value")))
+            hv.append(f"{expr} {op} ${len(params)}")
+    having_sql = f" HAVING {' AND '.join(hv)}" if hv else ""
+
+    sel = []
+    for d in rows:
+        _, key, desc, _ = DIMENSIONS[d]
+        sel.append(f'{key} AS "{d}"')
+        if desc:
+            sel.append(f'{desc} AS "{d}__desc"')
+    col_key = DIMENSIONS[col][1] if col else None
+    if col:
+        sel.append(f'{col_key} AS "__col"')
+    msql = _metric_sql(metrics, src)
+
+    row_count, truncated = None, False
+    if rows:
+        s_expr = _metric_expr(sby, src) if sby in METRICS else DIMENSIONS[sby][1]
+        grouped = (f"SELECT {', '.join(f'{k} AS {g}' for k, g in zip(keys, gk))}, {s_expr} AS s FROM {src} "
+                   f"WHERE {where} GROUP BY {', '.join(keys)}{having_sql}")
+        lim = f" LIMIT {int(limit)}" if limit else ""
+        top = (f"SELECT *, row_number() OVER (ORDER BY s {sdir} NULLS LAST) AS rk FROM ({grouped}) "
+               f"ORDER BY s {sdir} NULLS LAST{lim}")
+        group_by = keys + ([col_key] if col else [])
+        sql = (f"WITH q AS ({top}) SELECT {', '.join(sel + [msql])}, any_value(q.rk) AS __rank FROM {src} "
+               f"JOIN q ON {on} WHERE {where} GROUP BY {', '.join(group_by)}")
+        df = db.query(sql, params)
+        row_count = int(db.scalar(f"SELECT count(*) FROM ({grouped})", params) or 0)
+        truncated = bool(limit) and row_count > limit
+        # totais: direto da base; com filtro por valor, apenas dos grupos qualificados
+        base_from = (f"{src} JOIN ({grouped}) q ON {on} WHERE {where}" if hv else f"{src} WHERE {where}")
+    else:
+        sql = f"SELECT {', '.join(sel + [msql])} FROM {src} WHERE {where}" + (f" GROUP BY {col_key}" if col else "")
+        df = db.query(sql, params)
+        base_from = f"{src} WHERE {where}"
+
+    tot_df = db.query(f"SELECT {msql} FROM {base_from}", params)
+    tot = tot_df.to_dicts()[0] if tot_df.height else {}
+
+    columns_meta: list[dict] = []
+    if col:
+        n_cols = df["__col"].n_unique() if df.height else 0
+        col_tot = db.query(f"SELECT {col_key} AS __col, {msql} FROM {base_from} GROUP BY {col_key}", params)
+        col_vals = sorted(set(col_tot["__col"].to_list()) | set(df["__col"].to_list() if df.height else []),
+                          key=lambda v: (v is None, str(v)))
+        if len(col_vals) > MAX_PIVOT_COLUMNS or n_cols > MAX_PIVOT_COLUMNS:
+            raise ReportError(f"A dimensão '{DIMENSIONS[col][0]}' tem {len(col_vals)} valores; em colunas o limite é "
+                              f"{MAX_PIVOT_COLUMNS}. Use-a nas linhas ou filtre antes.")
+        idx = [c for c in df.columns if c not in metrics and c not in ("__col", "__rank")]
+        if idx:
+            out = df.group_by(idx, maintain_order=True).agg(pl.col("__rank").first()) if "__rank" in df.columns \
+                else df.select(idx).unique(maintain_order=True)
+        else:
+            out = pl.DataFrame({"__one": [1]})
+        for v in col_vals:
+            label = "(vazio)" if v is None else str(v)
+            ren = {m: f"{label}\u241f{m}" for m in metrics}
+            part = df.filter(pl.col("__col").is_null() if v is None else pl.col("__col") == v)
+            part = part.select(idx + metrics).rename(ren)
+            if idx:
+                out = out.join(part, on=idx, how="left", nulls_equal=True)
+            else:
+                out = pl.concat([out, part if part.height else pl.DataFrame({c: [None] for c in ren.values()})],
+                                how="horizontal")
+            ct = col_tot.filter(pl.col("__col").is_null() if v is None else pl.col("__col") == v).to_dicts()
+            for m in metrics:
+                columns_meta.append({"key": ren[m], "group": label, "metric": m})
+                tot[ren[m]] = ct[0][m] if ct else None
+        for m in metrics:
+            if m in ADDITIVE:
+                cols = [mm["key"] for mm in columns_meta if mm["metric"] == m and mm["group"] != "TOTAL"]
+                out = out.with_columns(pl.sum_horizontal([pl.col(c).fill_null(0) for c in cols]).alias(f"TOTAL\u241f{m}"))
+                columns_meta.append({"key": f"TOTAL\u241f{m}", "group": "TOTAL", "metric": m})
+                tot[f"TOTAL\u241f{m}"] = tot.get(m)
+        df = out.drop([c for c in ("__one",) if c in out.columns])
+    if "__rank" in df.columns:
+        df = df.sort("__rank", nulls_last=True).drop("__rank")
+    return {"df": df, "totals": tot, "columns_meta": columns_meta, "truncated": truncated, "source": src,
+            "row_count": row_count, "metrics": metrics, "sort": {"by": sby, "dir": sdir.lower()}}

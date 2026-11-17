@@ -163,7 +163,7 @@ export function DataGrid({
             return (
               <div key={r.id}
                 className={cx('group/row absolute left-0 flex w-full cursor-default border-b border-line/60 text-[13px] transition-colors',
-                  selected ? 'bg-accent/[0.08]' : depth > 0 ? 'bg-sunken/30 hover:bg-sunken' : 'hover:bg-sunken/70')}
+                  selected ? 'bg-accent/[0.08]' : r.cells.__sub ? 'bg-sunken/80 font-semibold hover:bg-sunken' : depth > 0 ? 'bg-sunken/30 hover:bg-sunken' : 'hover:bg-sunken/70')}
                 style={{ top: 0, transform: `translateY(${vi.start}px)`, height: rowHeight }}
                 onClick={() => onSelect?.(r)} onDoubleClick={() => (r.expandable ? onToggle?.(r) : onActivate?.(r))}>
                 {checkable && (

@@ -32,7 +32,7 @@ from app.exporter import excel_writer
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 EXPORT_DIR = config.DATA_DIR / "exports"
 UPLOAD_DIR = config.DATA_DIR / "uploads"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 STATE_VERSION = 3
 
 
@@ -345,6 +345,76 @@ def create_app(db: SpedDatabase | None = None, native: bool = False) -> FastAPI:
         return _json({"totals": {k: _clean(v) for k, v in tot.items()},
                       "source": analytics.source_for(q.get("gf") or {}, q.get("rules"), [], metrics),
                       "ms": round((time.perf_counter() - t0) * 1000)})
+
+    # ---------------------------------------------------------------- relatório dinâmico
+    def _run_report(q: dict, limit: int | None):
+        try:
+            return analytics.report(db, q.get("gf") or {}, q.get("rules"), _dims(q.get("rows")),
+                                    q.get("col") if q.get("col") in analytics.DIMENSIONS else None,
+                                    list(q.get("metrics") or []), q.get("sort"), limit, q.get("texto") or "",
+                                    q.get("having") or [])
+        except analytics.ReportError as e:
+            raise HTTPException(400, str(e))
+
+    def _report_labels(r: dict, rows: list[str]) -> dict[str, str]:
+        lab = {}
+        for d in rows:
+            lab[d] = analytics.DIMENSIONS[d][0]
+            lab[f"{d}__desc"] = f"{analytics.DIMENSIONS[d][0]} — descrição"
+        for m in r["metrics"]:
+            lab[m] = analytics.METRICS[m][0]
+        for cm in r["columns_meta"]:
+            lab[cm["key"]] = f"{cm['group']} · {analytics.METRICS[cm['metric']][0]}"
+        return lab
+
+    @api.post("/api/report")
+    def report(q: dict = Body(...)):
+        t0 = time.perf_counter()
+        limit = max(1, min(int(q.get("limit") or config.UI_MAX_GRID_ROWS), 20_000))
+        r = _run_report(q, limit)
+        out = payload(r["df"])
+        types = []
+        for c, t in zip(out["columns"], out["types"]):
+            mk = c.split("\u241f")[-1]
+            types.append(_type_of(mk, pl.Float64()) if mk in analytics.METRICS else t)
+        out["types"] = types
+        out.update({"totals": {k: _clean(v) for k, v in r["totals"].items()}, "columnsMeta": r["columns_meta"],
+                    "truncated": r["truncated"], "rowCount": r["row_count"], "source": r["source"],
+                    "metrics": r["metrics"], "sort": r["sort"], "labels": _report_labels(r, _dims(q.get("rows"))),
+                    "ms": round((time.perf_counter() - t0) * 1000)})
+        return _json(out)
+
+    @api.post("/api/export/report")
+    def export_report(q: dict = Body(...)):
+        rows = _dims(q.get("rows"))
+        r = _run_report(q, excel_writer.EXCEL_MAX_ROWS - 1)
+        df = r["df"]
+        if df.height and df.width:
+            tot = {c: None for c in df.columns}
+            tot[df.columns[0]] = "TOTAL"
+            for c in df.columns:
+                if c in r["totals"] and c != df.columns[0]:
+                    tot[c] = r["totals"][c]
+            df = pl.concat([df, pl.DataFrame([tot], schema=df.schema, strict=False)], how="vertical_relaxed")
+        labels = _report_labels(r, rows)
+        info = _context({**q, "hierarchy": rows})
+        info["Linhas"] = " › ".join(analytics.DIMENSIONS[d][0] for d in rows) or "(nenhuma)"
+        info["Colunas"] = analytics.DIMENSIONS[q["col"]][0] if q.get("col") in analytics.DIMENSIONS else "(nenhuma)"
+        info["Valores"] = ", ".join(analytics.METRICS[m][0] for m in r["metrics"])
+        srt = r["sort"]
+        info["Ordenação"] = (f"{(analytics.METRICS.get(srt['by']) or analytics.DIMENSIONS.get(srt['by']))[0]} "
+                             f"({'maior → menor' if srt['dir'] == 'desc' else 'menor → maior'})")
+        if q.get("texto"):
+            info["Texto nas linhas"] = q["texto"]
+        for i, h in enumerate(q.get("having") or [], 1):
+            info[f"Filtro por valor {i}"] = f"{analytics.METRICS.get(h.get('metric'), (h.get('metric'),))[0]} " \
+                                            f"{h.get('op')} {h.get('value') if h.get('op') not in ('zero', 'nao_zero') else ''}"
+        info["Base"] = "Consolidado SPED Fiscal + EFD-Contribuições (cada valor contado uma única vez)"
+        if r["truncated"]:
+            info["Atenção"] = f"Relatório limitado às {df.height - 1:,} primeiras linhas pela ordenação escolhida"
+        p = _export_name("relatorio_dinamico", "xlsx")
+        excel_writer.export_frames_excel(p, {"Relatorio": df}, info, labels={"Relatorio": labels})
+        return _export_result(p, max(0, df.height - 1))
 
     @api.post("/api/count-docs")
     def count_docs(q: dict = Body(...)):

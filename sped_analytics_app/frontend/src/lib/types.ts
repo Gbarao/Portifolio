@@ -52,7 +52,16 @@ export interface GlobalFilters {
 }
 
 export type Mode = 'arvore' | 'tabela' | 'mensal'
-export type Page = 'analise' | 'sped' | 'efd' | 'arquivos' | 'regras' | 'auditoria'
+export type Page = 'analise' | 'relatorio' | 'sped' | 'efd' | 'arquivos' | 'regras' | 'auditoria'
+
+export interface Having { metric: string; op: string; value: string }
+export interface ReportLayout { nome: string; rows: string[]; col: string | null; metrics: string[] }
+export interface ReportState {
+  rows: string[]; col: string | null; metrics: string[]
+  sort: { by: string; dir: 'asc' | 'desc' }
+  limit: number; texto: string; having: Having[]; subtotais: boolean
+  layouts: ReportLayout[]
+}
 export type RawTipo = 'ICMS_IPI' | 'CONTRIB'
 
 export interface RawCond { campo: string; op: string; valor: string }
@@ -79,6 +88,7 @@ export interface UiState {
   appliedFilterName: string
   page: Page
   raw: Record<RawTipo, RawState>
+  report: ReportState
 }
 
 export interface SavedFilter {

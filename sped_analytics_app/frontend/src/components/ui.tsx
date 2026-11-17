@@ -80,10 +80,10 @@ export function Checkbox({ checked, onChange, className }: { checked: boolean; o
 
 export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
-    <label className="inline-flex cursor-pointer items-center gap-2 text-[13px]">
+    <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap text-[13px]">
       <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-        className={cx('relative h-5 w-9 rounded-full transition-colors focus-ring', checked ? 'bg-accent' : 'bg-line')}>
-        <span className={cx('absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
+        className={cx('relative h-5 w-9 shrink-0 rounded-full transition-colors focus-ring', checked ? 'bg-accent' : 'bg-line')}>
+        <span className={cx('absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
           checked ? 'translate-x-[18px]' : 'translate-x-0.5')} />
       </button>
       {label}

@@ -53,7 +53,7 @@ class _Book:
         if dtype == "int":
             return self.f_int
         if dtype == "num":
-            n = name.lower()
+            n = name.split("\u241f")[-1].lower()   # colunas cruzadas: "<valor da coluna>␟<métrica>"
             if n.startswith(("qtd", "aliq", "preco")):
                 return self.f_qty
             return self.f_money
@@ -130,7 +130,8 @@ def _batches_to_book(book: _Book, batches, base_name: str, labels: dict | None =
     return total
 
 
-def export_frames_excel(path: str | Path, sheets: dict[str, pl.DataFrame], info: dict[str, str] | None = None) -> Path:
+def export_frames_excel(path: str | Path, sheets: dict[str, pl.DataFrame], info: dict[str, str] | None = None,
+                        labels: dict[str, dict[str, str]] | None = None) -> Path:
     """Exporta um ou mais DataFrames (resultado da grade, auditoria, snapshot) para .xlsx formatado."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +144,7 @@ def export_frames_excel(path: str | Path, sheets: dict[str, pl.DataFrame], info:
             ws.write_string(i, 0, str(k), book.f_head)
             ws.write_string(i, 1, str(v))
     for name, df in sheets.items():
-        _batches_to_book(book, [df], name)
+        _batches_to_book(book, [df], name, (labels or {}).get(name))
     book.wb.close()
     return path
 
