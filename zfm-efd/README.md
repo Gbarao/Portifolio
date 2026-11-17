@@ -33,6 +33,8 @@ zfm/filtros.py      filtro global (empresas, estabelecimentos, período) aplicad
 zfm/as_is.py        carga As Is lida da apuração, anualização, R5, saldos credores
 zfm/conciliacoes.py Q3–Q13 (R1 = Q5, R2 = Q6, R3 = Q8, R4 = Q7)
 zfm/simulacao.py    motor To Be, diferença, ponte, composição saídas × entradas, absorção
+zfm/cruzamentos.py  pareamento Fiscal × Contribuições, CFOP/itens, repetidos, C170 × C190, cobertura
+zfm/metodologia.py  catálogo: cenários (critério, registros, As Is, To Be pelos parâmetros), cruzamentos, fontes
 zfm/cenarios.py     cenários C1–C5: matriz, As Is × To Be por cenário, IPI por produto, conferências, alertas
 zfm/beneficio_atual.py  benefício ZFM (informativo)
 zfm/ui.py           componentes das telas (estilo local, cartões, tabelas, cache por versão dos dados)

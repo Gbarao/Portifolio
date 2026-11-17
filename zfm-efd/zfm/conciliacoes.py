@@ -98,40 +98,11 @@ def q6_docs_x_e520(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
 
 def q7_icms_x_contrib(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """Escrituracao detalhada: cruzamento por CHV_NFE. Consolidada: total de saidas
-    por estabelecimento e mes (C180 x C190 da ICMS/IPI)."""
-    detalhada = con.execute("""
-        WITH ci AS (
-            SELECT raiz, cnpj_estab, mes, chv_nfe, num_doc, vl_doc, vl_pis, vl_cofins, sentido
-            FROM v_docs WHERE NOT cancelado AND chv_nfe IS NOT NULL),
-        cc AS (
-            SELECT a.raiz, d.cnpj_estab, month(a.dt_ini) AS mes, d.CHV_NFE AS chv_nfe,
-                   d.NUM_DOC AS num_doc, d.VL_DOC AS vl_doc, d.VL_PIS AS vl_pis, d.VL_COFINS AS vl_cofins,
-                   CASE d.IND_OPER WHEN '0' THEN 'entrada' ELSE 'saida' END AS sentido
-            FROM raw_contrib_c100 d JOIN arquivos a USING (arquivo_id)
-            WHERE a.ativo AND coalesce(d.COD_SIT, '00') NOT IN ('02','03','04','05')
-              AND d.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)),
-        estab_det AS (SELECT DISTINCT cnpj_estab, mes FROM cc)
-        SELECT coalesce(ci.raiz, cc.raiz) AS raiz, coalesce(ci.cnpj_estab, cc.cnpj_estab) AS cnpj_estab,
-               coalesce(ci.mes, cc.mes) AS mes, coalesce(ci.sentido, cc.sentido) AS sentido,
-               coalesce(ci.chv_nfe, cc.chv_nfe) AS chv_nfe,
-               CASE WHEN cc.chv_nfe IS NULL THEN 'Só na EFD ICMS/IPI'
-                    WHEN ci.chv_nfe IS NULL THEN 'Só na EFD Contribuições'
-                    ELSE 'Valores diferentes' END AS problema,
-               ci.vl_doc AS valor_icms_ipi, cc.vl_doc AS valor_contrib,
-               ci.vl_pis AS pis_icms_ipi, cc.vl_pis AS pis_contrib,
-               ci.vl_cofins AS cofins_icms_ipi, cc.vl_cofins AS cofins_contrib
-        FROM ci FULL OUTER JOIN cc ON ci.chv_nfe = cc.chv_nfe
-        -- entradas sem credito podem nao constar da EFD Contribuicoes: so se aponta
-        -- entrada que esta na Contribuicoes e falta na Fiscal
-        WHERE (ci.chv_nfe IS NULL OR EXISTS (SELECT 1 FROM estab_det e
-                                          WHERE e.cnpj_estab = ci.cnpj_estab AND e.mes = ci.mes))
-          AND NOT (ci.sentido = 'entrada' AND cc.chv_nfe IS NULL)
-          AND (ci.chv_nfe IS NULL OR cc.chv_nfe IS NULL
-               OR abs(coalesce(ci.vl_doc, 0) - coalesce(cc.vl_doc, 0)) > ?
-               OR abs(coalesce(ci.vl_pis, 0) - coalesce(cc.vl_pis, 0)) > ?
-               OR abs(coalesce(ci.vl_cofins, 0) - coalesce(cc.vl_cofins, 0)) > ?)
-        """, [_tol()] * 3).df()
+    """R4: pareamento dos documentos Fiscal × Contribuicoes (zfm/cruzamentos.py): documento so numa EFD
+    (com as duas carregadas) ou com cabecalho diferente; na escrituracao consolidada, total de saidas
+    por estabelecimento e mes (C180 × C190 da ICMS/IPI)."""
+    from . import cruzamentos
+    detalhada = cruzamentos.pareamento_divergencias(con)
     consolidada = con.execute("""
         WITH c180 AS (
             SELECT a.raiz, h.cnpj_estab, month(a.dt_ini) AS mes, sum(h.VL_TOT_ITEM) AS saidas_c180
@@ -142,9 +113,10 @@ def q7_icms_x_contrib(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
             SELECT cnpj_estab, mes,
                    sum(vl_opr - coalesce(vl_ipi_c190, 0) - coalesce(vl_icms_st_c190, 0)) AS saidas_c190
             FROM v_saidas_doc WHERE emissao = 'propria' GROUP BY ALL)
-        SELECT c.raiz, c.cnpj_estab, c.mes, 'saida' AS sentido, NULL AS chv_nfe,
-               'Total de saídas diferente (escrituração consolidada)' AS problema,
-               i.saidas_c190 AS valor_icms_ipi, c.saidas_c180 AS valor_contrib
+        SELECT c.raiz, c.cnpj_estab, c.mes, 'saida' AS sentido, 'Fiscal × Contribuições' AS fonte,
+               'Total de saídas diferente (escrituração consolidada C180 × C190)' AS problema,
+               NULL AS num_doc, NULL AS chv_nfe, NULL AS participante,
+               i.saidas_c190 AS valor_fiscal_ou_contrib, c.saidas_c180 AS valor_outra_efd
         FROM c180 c LEFT JOIN icms i USING (cnpj_estab, mes)
         WHERE abs(coalesce(i.saidas_c190, 0) - c.saidas_c180) > greatest(?, ? * abs(c.saidas_c180))""",
                               [_tol(), _pct()]).df()
@@ -265,7 +237,17 @@ CHECAGENS = {
     "Q11": ("Códigos de ajuste E111/E116 sem classificação", q11_codigos_nao_classificados),
     "Q12": ("E116 × E110 (obrigações × ICMS a recolher)", q12_e116_x_e110),
     "Q13": ("C180 × C181/C185 (Contribuições consolidada)", q13_c180_x_c181_c185),
+    "Q14": ("C170 × C190 por documento e CFOP (EFD ICMS/IPI)", lambda con: _cz().c170_x_c190(con)),
+    "Q15": ("CFOP e itens do mesmo documento nas duas EFDs", lambda con: _cz().divergencias_itens(con)),
+    "Q16": ("Documento repetido na mesma EFD (outros períodos)", lambda con: _cz().repetidos(con)),
+    "Q17": ("Cobertura: EFD ICMS/IPI × EFD Contribuições por estabelecimento e mês",
+            lambda con: _cz().q17_cobertura(con)),
 }
+
+
+def _cz():
+    from . import cruzamentos
+    return cruzamentos
 
 
 def filtrar(df: pd.DataFrame, f: "Filtro | list[str] | None") -> pd.DataFrame:

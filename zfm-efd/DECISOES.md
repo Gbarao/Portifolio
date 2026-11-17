@@ -280,6 +280,32 @@ roteiro e pendências, cartões, abas e tabelas com números no formato do naveg
 locais (nenhum recurso da internet; conferido no navegador: zero requisições externas). A tabela
 `param_regras_entradas` foi substituída por `param_regras_cenario` (fica no arquivo, sem uso).
 
+**D-050 — Pareamento Fiscal × Contribuições (R4/Q7).** Mecânica do Consolidador EFD: empresa = raiz do CNPJ;
+participante = CNPJ/CPF do 0150 de cada arquivo (COD_PART não é comparado); documento = estabelecimento +
+entrada/saída + chave da NF-e (44 posições) ou, sem chave, modelo|série|número|data|CNPJ do participante. A
+NF-e de transferência aparece como saída num estabelecimento e entrada no outro e não é repetição. Situações:
+nas duas EFDs; só numa (divergência, com as duas EFDs do mês carregadas); entrada só na Fiscal (pode ser
+entrada sem crédito, não é erro); Contribuições consolidada (C180/C190, conferida pelo total); sem
+contrapartida (a outra EFD do mês não foi carregada); repetido na mesma EFD. Nos pareados, Q7 compara valor,
+data, participante e, nas saídas, PIS/COFINS. Substitui o cruzamento só por CHV_NFE.
+
+**D-051 — Novos cruzamentos.** Q14: C170 × C190 por documento e CFOP (EFD ICMS/IPI). Q15: CFOPs do mesmo
+documento nas duas EFDs (C190 da Fiscal × C170 da Contribuições) e itens pelo NUM_ITEM (CFOP, produto,
+valor) — o CFOP liga o produto (Contribuições) ao destino (Fiscal). Q16: documento repetido na mesma EFD.
+Q17: cobertura. Os documentos repetidos são listados (Q16) e não são excluídos da base: a apuração (E110)
+também os contém e o R1/R5 continuam fechando; a exclusão fica como decisão do usuário.
+
+**D-052 — Cobertura das escriturações.** Por empresa: estabelecimentos = os que têm EFD ICMS/IPI + os do 0140
+da EFD Contribuições com inscrição estadual (só AM); meses = do primeiro ao último mês com qualquer EFD da
+empresa. Para cada estabelecimento × mês: tem EFD ICMS/IPI? tem EFD Contribuições da empresa? A validação
+roda antes da importação (lendo só o 0000 e o 0140 de cada arquivo da pasta, somado ao que já está no
+banco), depois da importação e no Painel.
+
+**D-053 — Metodologia na tela.** Tela "Metodologia e cruzamentos": por cenário, como é identificado, registros
+e campos capturados, As Is, To Be (texto montado a partir dos parâmetros em uso), conferências, cruzamentos
+e base legal; registros capturados com arquivo e linha; catálogo de cruzamentos com a situação atual; origem
+de cada dado. As mesmas tabelas vão para o Excel.
+
 ---
 
 ## Perguntas pendentes
@@ -309,3 +335,4 @@ locais (nenhum recurso da internet; conferido no navegador: zero requisições e
 - **P-018** — Produtos TIC (art. 454, § 2º): tratamento a definir caso a caso.
 - **P-019** — Tipo ZFM (indústria incentivada/habilitado) e regime dos participantes: confirmar na aba
   Empresas ZFM; a classificação automática usa SUFRAMA e município do 0150.
+- **P-020** — Documentos repetidos na mesma EFD (Q16): manter na base (padrão) ou excluir a segunda ocorrência.

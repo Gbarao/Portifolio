@@ -3,6 +3,7 @@ import time
 import pandas as pd
 import streamlit as st
 
+from zfm import cruzamentos as cz
 from zfm import db, qualidade, ui
 from zfm.config import pasta_dados
 from zfm.parsers import ErroEFD, listar_txt
@@ -25,6 +26,74 @@ SIT = {"na fila": "Na fila", "lendo": "Lendo", "carregado": "Carregado", "duplic
 def _tempo(s: float) -> str:
     s = int(s)
     return f"{s // 3600}h{(s % 3600) // 60:02d}min" if s >= 3600 else f"{s // 60}min{s % 60:02d}s"
+
+
+TIPOS = {"ICMS_IPI": "EFD ICMS/IPI", "CONTRIB": "EFD Contribuições"}
+
+
+def mostrar_cobertura(cob, chave: str) -> None:
+    """Resumo por empresa + matriz estabelecimento × mês + lista do que falta."""
+    if cob.empty:
+        return
+    fl = cz.faltas(cob)
+    res = cob.groupby(["raiz", "empresa"], as_index=False).agg(
+        estabelecimentos=("cnpj_estab", "nunique"), meses=("mes", "nunique"),
+        faltando=("situacao", lambda x: int((~x.str.startswith("OK")).sum())))
+    res["situacao"] = res["faltando"].map(lambda n: "OK: as duas EFDs em todos os meses" if n == 0
+                                          else f"{n} escrituração(ões) faltando")
+    ui.tabela(res, moeda=[])
+    cob = cob.copy()
+    cob["período"] = cob["mes"].map(lambda m: f"{m:02d}") + "/" + cob["ano"].astype(str)
+    cob["marca"] = cob.apply(lambda r: ("ICMS/IPI ✓" if r.icms_ipi else "ICMS/IPI ✗") + " · " +
+                             ("Contrib. ✓" if r.contribuicoes else "Contrib. ✗"), axis=1)
+    mat = cob.pivot_table(index=["empresa", "cnpj_estab"], columns="período", values="marca", aggfunc="first")
+    mat = mat[sorted(mat.columns, key=lambda p: (p[3:], p[:2]))].reset_index()
+    meses = [c for c in mat.columns if "/" in str(c)]
+
+    def cor(v):
+        if not isinstance(v, str):
+            return ""
+        return "background-color:#E7F5EE;color:#1E7B4F" if "✗" not in v else "background-color:#FDECEA;color:#B42318"
+
+    st.dataframe(mat.style.map(cor, subset=meses), hide_index=True, width="stretch")
+    if not fl.empty:
+        st.error(f"{len(fl)} escrituração(ões) faltando. Lista abaixo, com o que importar.", icon=":material/error:")
+        ui.tabela(fl[["empresa", "cnpj_estab", "uf", "ano", "mes", "situacao", "o_que_fazer"]], moeda=[], chave=chave)
+
+
+def validacao_previa(caminhos) -> None:
+    """Antes de importar: le so o 0000 (e o 0140) de cada arquivo da pasta e confere, junto com o que ja esta
+    no banco, se cada empresa tem as duas EFDs em todos os meses."""
+    ui.secao("Validação antes de importar", "Lê só o cabeçalho (0000) e os estabelecimentos (0140) de cada arquivo "
+             "da pasta e soma ao que já está no banco.")
+    chave = tuple(str(p) for p in caminhos)
+    if st.session_state.get("_ident_chave") != chave:
+        idents, erros = [], []
+        with st.spinner("Lendo os cabeçalhos..."):
+            for p in caminhos:
+                try:
+                    idents.append(cz.identificar_rapido(p))
+                except Exception as e:  # noqa: BLE001
+                    erros.append({"Arquivo": p.name, "Problema": str(e)})
+        st.session_state["_ident_chave"], st.session_state["_ident"] = chave, (idents, erros)
+    idents, erros = st.session_state["_ident"]
+    if erros:
+        st.warning(f"{len(erros)} arquivo(s) não parecem ser EFD e serão recusados na importação.",
+                   icon=":material/warning:")
+        st.dataframe(pd.DataFrame(erros), hide_index=True, width="stretch")
+    if idents:
+        with st.expander(f"Arquivos identificados ({len(idents)})"):
+            st.dataframe(pd.DataFrame([{"Arquivo": e.arquivo, "Tipo": TIPOS.get(e.tipo, e.tipo), "CNPJ": e.cnpj,
+                                        "Empresa": e.nome, "UF": e.uf, "Período": f"{e.mes:02d}/{e.ano}",
+                                        "Estabelecimentos no 0140": len(e.estabs) if e.tipo == "CONTRIB" else None}
+                                       for e in idents]), hide_index=True, width="stretch")
+        cob = cz.cobertura(cz.escrituracoes_do_banco(con) + idents)
+        mostrar_cobertura(cob, "cob_previa")
+        if cz.faltas(cob).empty:
+            st.success("Todas as empresas terão as duas EFDs (ICMS/IPI e Contribuições) em todos os meses.",
+                       icon=":material/check_circle:")
+        else:
+            st.caption("Você pode importar mesmo assim; o que faltar fica apontado em Qualidade e reconciliação.")
 
 
 @st.fragment(run_every=1.5)
@@ -115,6 +184,7 @@ if lista:
                                    "Tamanho (MB)": [round(t / 1e6, 1) for t in tam],
                                    "Pasta": [str(p.parent) for p in caminhos]}),
                      hide_index=True, width="stretch")
+    validacao_previa(caminhos)
     if st.button("Iniciar importação", type="primary", icon=":material/play_arrow:", disabled=g.rodando):
         try:
             g.iniciar(caminhos, lambda: ui._conexao_base().cursor(), ui.ao_final_da_importacao)
@@ -140,6 +210,15 @@ with ui.protegido("listar os arquivos carregados"):
                                       "versao_layout": "Leiaute", "retificadora": "Retificadora",
                                       "situacao": "Situação", "qtd_linhas": "Linhas",
                                       "carregado_em": "Carregado em"}), moeda=[], altura=380)
+
+ui.secao("Validação das escriturações no banco", "Para cada empresa: EFD ICMS/IPI de cada estabelecimento do AM e "
+         "EFD Contribuições da empresa, mês a mês (do primeiro ao último mês carregado). Estabelecimentos vêm das "
+         "EFDs ICMS/IPI e do 0140 da EFD Contribuições (com inscrição estadual).")
+with ui.protegido("validar as escriturações"):
+    if not g.rodando:
+        mostrar_cobertura(cz.cobertura_banco(con), "cob_banco")
+    else:
+        st.caption("Disponível ao fim da importação.")
 
 with st.expander("Apagar todos os dados carregados"):
     st.write("Remove do banco local todos os arquivos já lidos. Os .txt originais e os parâmetros "

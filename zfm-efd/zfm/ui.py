@@ -192,6 +192,12 @@ def _executar(nome: str, f: Filtro, teses: bool, extra: tuple):
         return cenarios.ipi_por_produto(con, f, kw.get("sem_protegido", False))
     if nome == "alertas":
         return cenarios.alertas(con, f)
+    if nome == "pareamento":
+        from . import cruzamentos
+        return cruzamentos.resumo_pareamento(con)
+    if nome == "cobertura":
+        from . import cruzamentos
+        return cruzamentos.cobertura_banco(con, kw.get("so_am", True))
     if nome == "beneficio":
         return beneficio_atual.calcular(con, com_teses=teses, eliminar_intragrupo=kw.get("intra", False), f=f)
     if nome == "receita_incentivada":
@@ -336,6 +342,9 @@ ROTULOS = {
     "vantagem_to_be": "Vantagem To Be (R$)", "perda_vantagem": "Perda de vantagem (R$)",
     "classe_ipi": "Situação do IPI", "aliq_tipi_2023": "TIPI 31/12/2023 (%)", "cp_cbs_pct": "CP CBS (%)",
     "cp_ibs_pct": "CP IBS (%)", "tipo_bem": "Tipo de bem", "beneficio": "Benefício (R$)",
+    "situacao": "Situação", "estabelecimentos": "Estabelecimentos", "meses": "Meses", "faltando": "Faltando",
+    "o_que_fazer": "O que fazer", "fonte": "Fonte", "problema": "Problema", "participante": "Participante",
+    "num_doc": "Número", "chv_nfe": "Chave NF-e", "cnpj_part": "CNPJ participante", "uf_part": "UF participante",
 }
 
 
@@ -478,6 +487,14 @@ def status_importacao() -> None:
     elif st.session_state.get("_import_visto") != id(job):
         if r["etapa"] == "concluída":
             st.success(f"Importação concluída: {r['n_carregados']} arquivo(s) novo(s).", icon=":material/check_circle:")
+            try:
+                from . import cruzamentos
+                n = len(cruzamentos.faltas(cruzamentos.cobertura_banco(_conexao_base().cursor())))
+                if n:
+                    st.warning(f"{n} escrituração(ões) faltando (EFD ICMS/IPI ou Contribuições). Veja a tela "
+                               "Importação.", icon=":material/warning:")
+            except Exception:  # noqa: BLE001
+                logger().exception("Falha ao validar a cobertura")
         elif r["erro_final"]:
             st.error("Importação interrompida. Veja a tela Importação.", icon=":material/error:")
 

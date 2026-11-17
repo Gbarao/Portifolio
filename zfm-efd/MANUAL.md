@@ -68,6 +68,17 @@ preta** ou clicar em **Cancelar importação** (o arquivo que estava sendo lido 
 concluídos ficam). Enquanto a importação roda, as telas mostram os dados importados antes, com um aviso
 azul; ao final, tudo é atualizado sozinho e os cadastros novos entram em Parâmetros.
 
+**Validação das duas EFDs.** Ao clicar em **Verificar pasta**, o programa lê só o cabeçalho de cada arquivo e
+mostra, antes de importar, se cada empresa tem a **EFD ICMS/IPI** de cada estabelecimento do AM e a **EFD
+Contribuições** da empresa em todos os meses (somando o que já está no banco). Aparece:
+- uma tabela por empresa (estabelecimentos, meses e quantas escriturações faltam);
+- uma grade estabelecimento × mês: verde "ICMS/IPI ✓ · Contrib. ✓"; vermelho quando falta alguma (✗);
+- a lista do que falta, com o que importar (ex.: "Importar a EFD Contribuições da empresa (matriz)").
+
+A mesma validação aparece depois da importação (seção *Validação das escriturações no banco*), no Painel e em
+Qualidade > Fiscal × Contribuições. Os estabelecimentos considerados são os que têm EFD ICMS/IPI e os listados
+no registro 0140 da EFD Contribuições com inscrição estadual.
+
 Observações:
 - Tempo de referência: alguns minutos por GB. Arquivo já importado é reconhecido em segundos e pulado.
 - O programa reconhece sozinho se o arquivo é EFD ICMS/IPI ou EFD Contribuições.
@@ -83,6 +94,12 @@ No topo, quatro cartões resumem a situação (OK ou quantidade de divergências
 - **Conciliações:** lista das checagens com a situação. Escolha uma na caixa *Ver divergências de* para ver
   as linhas que não fecham. R1 (Q5) documentos × E110; R2 (Q6) documentos × E520; R3 (Q8) receitas × bloco M
   (0,5%); R4 (Q7) mesmo documento nas duas EFDs; Q3, Q4, Q9 a Q13.
+- **Fiscal × Contribuições:** cada documento (C100) é procurado na outra EFD pela chave da NF-e (sem chave:
+  modelo, série, número, data e CNPJ do participante), por estabelecimento e entrada/saída. A tabela mostra
+  quantos documentos estão *nas duas EFDs*, *só numa* (divergência), *sem contrapartida* (a outra EFD do mês
+  não foi carregada), na *Contribuições consolidada* ou *repetidos*. Abaixo, a cobertura das escriturações.
+  Divergências detalhadas: Q7 (documento), Q15 (CFOP e itens do mesmo documento), Q16 (repetidos), Q14 (C170
+  × C190), Q17 (escrituração faltando).
 - **Reconciliação R5:** carga recalculada pela base de operações × carga da apuração. Se não fechar, a
   diferença aparece como "ajuste de reconciliação", separada do efeito da reforma.
 - **Avisos de leitura:** linhas com formato diferente do esperado (com exemplo e linha do arquivo).
@@ -144,6 +161,15 @@ cada tela mostram o filtro em uso.
   - *Alertas*: não classificados, divergências de CST/alíquota (com arquivo e linha), comprovação de ingresso,
     produtos candidatos a perda no IBS, produtos sem TIPI, TIC, tipo ZFM não revisado e R5;
   - *Não classificados*: operações sem cenário, com o motivo e onde corrigir.
+- **Metodologia e cruzamentos (Análise):**
+  - *Cenários*: tabela com todos os cenários; escolha um para ver **como é identificado**, **quais registros e
+    campos são capturados**, o **As Is** (o que é lido), o **To Be** (com os parâmetros em uso — muda quando
+    você edita Parâmetros > Regras por cenário), as conferências, os cruzamentos que validam e a base legal;
+  - *Registros capturados*: as linhas que caíram no cenário, com registro, arquivo e linha do .txt e os campos
+    usados na classificação (CFOP, participante, UF, tipo ZFM, produto);
+  - *Cruzamentos*: cada cruzamento (lado A × lado B, chave de ligação, tolerância, o que indica) com a situação
+    atual;
+  - *De onde vem cada dado*: EFD, registros e campos de cada informação usada nos cálculos.
 - **Carga As Is:** ICMS, IPI, PIS e COFINS lidos da apuração (sem recálculo), anualizados; composição;
   crédito estímulo e fundos; saldos credores; R5.
 - **To Be e diferença:** cenário, ano, tributos e visão (Completa, Só saídas, Só entradas); diferença por
@@ -153,7 +179,7 @@ cada tela mostram o filtro em uso.
 
 ## 8. Exportar para o Excel (menu Relatórios)
 
-Clique em **Gerar Excel** e depois em **Baixar Excel**. Uma aba por visão: Matriz cenários, Cenários As Is x
+Clique em **Gerar Excel** e depois em **Baixar Excel**. Uma aba por visão: Metodologia (cenários, cruzamentos e fontes dos dados), Pareamento Fiscal x Contrib, Cobertura das EFDs, Matriz cenários, Cenários As Is x
 To Be, IPI por produto (C5), Alertas, Não classificados, Diferença por tributo e por empresa, Ponte, Saídas x
 entradas, Vantagem competitiva IPI, Absorção, Carga As Is, R5, Benefício (informativo), divergências das
 conciliações, **Premissas** (lista legível) e **Parâmetros (tabelas)**. Os filtros da barra lateral valem para

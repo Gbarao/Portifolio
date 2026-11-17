@@ -25,6 +25,8 @@ paginas = {
     ],
     "Análise": [
         P("telas/cenarios.py", title="Cenários ZFM (C1–C5)", icon=":material/account_tree:", url_path="cenarios"),
+        P("telas/metodologia.py", title="Metodologia e cruzamentos", icon=":material/menu_book:",
+          url_path="metodologia"),
         P("telas/carga_as_is.py", title="Carga As Is", icon=":material/receipt_long:", url_path="as-is"),
         P("telas/to_be.py", title="To Be e diferença", icon=":material/trending_up:", url_path="to-be"),
         P("telas/beneficio.py", title="Benefício ZFM (informativo)", icon=":material/savings:",
@@ -34,4 +36,4 @@ paginas = {
         P("telas/exportacao.py", title="Exportação para Excel", icon=":material/download:", url_path="exportacao"),
     ],
 }
-st.navigation(paginas).run()
+st.navigation(paginas, expanded=True).run()

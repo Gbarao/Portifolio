@@ -29,12 +29,49 @@ with ui.protegido("verificar a qualidade"):
     n_div = sum(len(d) > 0 for d in resultados.values())
     ui.cartoes({"Completude (Q1)": ("OK" if faltas == 0 else f"{faltas} falta(s)", "estabelecimento × mês"),
                 "Integridade (Q2)": ("OK" if q2.empty else f"{len(q2)} divergência(s)", "bloco 9 × lido"),
-                "Conciliações Q3–Q13": ("OK" if n_div == 0 else f"{n_div} com divergência",
+                "Conciliações Q3–Q17": ("OK" if n_div == 0 else f"{n_div} com divergência",
                                         f"{len(resultados)} checagens"),
                 "Reconciliação R5": ("OK" if r5_nao.empty else f"{len(r5_nao)} não fecham",
                                      "base de operações × apuração")})
 
-    t1, t2, t3, t4 = st.tabs(["Completude e integridade", "Conciliações", "Reconciliação R5", "Avisos de leitura"])
+    t1, tfc, t2, t3, t4 = st.tabs(["Completude e integridade", "Fiscal × Contribuições", "Conciliações",
+                                   "Reconciliação R5", "Avisos de leitura"])
+    with tfc:
+        ui.secao("Pareamento dos documentos entre as duas EFDs",
+                 "Cada C100 é procurado na outra EFD por estabelecimento + entrada/saída + chave da NF-e (sem chave: "
+                 "modelo, série, número, data e CNPJ do participante). Só 'Só na EFD ICMS/IPI' e 'Só na EFD "
+                 "Contribuições' são divergências; as demais situações são esperadas e explicadas abaixo.")
+        pr = ui.calcular("pareamento", f)
+        pr = pr[pr["raiz"].isin(ctx.raizes)] if not pr.empty else pr
+        if pr.empty:
+            ui.vazio("Sem documentos C100 nas EFDs")
+        else:
+            piv = pr.pivot_table(index=["fonte", "sentido", "situacao"], values=["documentos", "valor"],
+                                 aggfunc="sum").reset_index()
+            ui.tabela(piv, moeda=["valor"])
+            with st.expander("O que significa cada situação"):
+                st.markdown(
+                    "- **Nas duas EFDs:** documento encontrado nas duas; valores, data e participante conferidos (Q7) "
+                    "e CFOPs/itens conferidos (Q15).\n"
+                    "- **Só na EFD ICMS/IPI / Só na EFD Contribuições:** as duas EFDs do mês estão carregadas e o "
+                    "documento está só numa. Divergência (Q7).\n"
+                    "- **Só na EFD ICMS/IPI (entrada sem crédito?):** entrada sem PIS/COFINS a creditar pode não constar "
+                    "da EFD Contribuições. Não é tratada como erro.\n"
+                    "- **Contribuições consolidada:** o estabelecimento escritura a Contribuições por C180/C190 (sem "
+                    "documento); a conferência é pelo total (C180 × C190, Q7).\n"
+                    "- **Sem contrapartida:** a outra EFD daquele mês não foi carregada (ver cobertura).\n"
+                    "- **Repetido na mesma EFD:** segunda ocorrência do documento (Q16).")
+        ui.secao("Cobertura: EFD ICMS/IPI de cada estabelecimento × EFD Contribuições da empresa")
+        cob = ui.calcular("cobertura", f)
+        cob = cob[cob["raiz"].isin(ctx.raizes)] if not cob.empty else cob
+        if not cob.empty:
+            fl = cob[~cob["situacao"].str.startswith("OK")]
+            if fl.empty:
+                st.success("As duas EFDs estão carregadas para todos os estabelecimentos do AM em todos os meses.",
+                           icon=":material/check_circle:")
+            else:
+                st.error(f"{len(fl)} combinação(ões) estabelecimento × mês com EFD faltando.", icon=":material/error:")
+                ui.tabela(fl.drop(columns=["no_0140"]), moeda=[])
     with t1:
         ui.secao("Q1 – As duas EFDs existem em todos os meses?",
                  "A EFD Contribuições é entregue pela matriz; por isso é procurada pela raiz do CNPJ. "

@@ -74,10 +74,9 @@ with ui.protegido("montar o painel"):
     f = Filtro(raizes=tuple(raizes), mes_ini=1, mes_fim=max(mes_fim, 1))
 
     # ------------------------------------------------------------- checklist
-    q1 = ui.calcular("q1", f, mes_fim=mes_fim)
-    q1 = q1[q1["raiz"].isin(raizes)] if not q1.empty else q1
-    meses = qualidade.MESES[:mes_fim]
-    faltas = int((q1[meses] != qualidade.OK).sum().sum()) if not q1.empty and meses else 0
+    cob = ui.calcular("cobertura", f)
+    cob = cob[cob["raiz"].isin(raizes)] if not cob.empty else cob
+    faltas = int((~cob["situacao"].str.startswith("OK")).sum()) if not cob.empty else 0
     r5 = ui.calcular("r5", f)
     r5_nao = int((~r5["fecha"]).sum()) if not r5.empty else 0
     ez = params.carregar("param_empresas_zfm")
@@ -93,8 +92,8 @@ with ui.protegido("montar o painel"):
         ui.secao("Roteiro e pendências")
         ui.passos([
             ("EFDs importadas", d[0] > 0, f"{d[0]} arquivo(s), meses 1 a {mes_fim} de {ano_b}"),
-            ("Completude: as duas EFDs em todos os meses", faltas == 0,
-             "OK" if faltas == 0 else f"{faltas} combinação(ões) estabelecimento × mês sem arquivo"),
+            ("EFD ICMS/IPI e EFD Contribuições de cada empresa em todos os meses", faltas == 0,
+             "OK" if faltas == 0 else f"{faltas} escrituração(ões) faltando (veja Importação)"),
             ("Reconciliação R5: a base explica a apuração", r5_nao == 0,
              "OK" if r5_nao == 0 else f"{r5_nao} combinação(ões) não fecham (vira ajuste de reconciliação)"),
             ("Empresas ZFM revisadas (tipo e regime)", ez_pend == 0,

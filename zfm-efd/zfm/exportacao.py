@@ -105,6 +105,13 @@ def gerar_excel(con: duckdb.DuckDBPyConnection, f: Filtro | list[str] | None = N
                          WHERE cenario IN ('NC_S', 'NC_E') AND {f.sql()} ORDER BY valor DESC LIMIT 100000""").df()
     if not nc.empty:
         abas["Não classificados"] = nc
+    from . import cruzamentos, metodologia
+    abas["Metodologia - cenários"] = metodologia.cenarios()
+    abas["Metodologia - cruzamentos"] = metodologia.cruzamentos()
+    abas["Fontes dos dados"] = metodologia.fontes()
+    pr = cruzamentos.resumo_pareamento(con)
+    abas["Pareamento Fiscal x Contrib"] = filtra(pr) if not pr.empty else pr
+    abas["Cobertura das EFDs"] = filtra(cruzamentos.cobertura_banco(con))
     asis = as_is.carga_anual(con, f, com_teses)
     if not asis.empty:
         abas["Carga As Is (anual)"] = _por_empresa(
