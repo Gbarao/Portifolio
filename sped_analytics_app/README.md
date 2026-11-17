@@ -115,6 +115,7 @@ Os CSTs considerados estão em `config.py`.
 | `sys_snapshots_analises` + `data/snapshots/*.parquet` | análises congeladas, somente leitura, com hash de integridade |
 | `sys_sessao` | último estado da tela (filtros, hierarquia, aba, tema), restaurado ao reabrir |
 | `data/parquet_store/` | cache colunar bruto de cada arquivo importado |
+| `sf_linhas`, `ec_linhas`, `linhas_contagem` | todas as linhas originais dos TXT (com unidade e documento-pai) e a contagem por registro, para as telas SPED Fiscal / EFD-Contribuições. Ocupam cerca de 1/3 do tamanho dos TXT; podem ser desligadas com `SPED_LINHAS_ORIGINAIS=0` |
 
 Regras de proteção na importação:
 - Um arquivo com hash idêntico é bloqueado como **DUPLICADO**.
@@ -138,13 +139,27 @@ hierarquia, colunas e tela são restaurados ao reabrir).
    - hierarquia reordenável, escolha de colunas, ordenação por qualquer coluna, colunas redimensionáveis;
    - clique em qualquer linha abre o painel de **notas fiscais** (com chave de 44 dígitos), redimensionável;
    - exportação do resumo, dos itens detalhados (Excel, CSV, Parquet) e das notas; congelamento de snapshots.
-2. **Arquivos**: importação por pasta ou arrastando arquivos, com barra de progresso e resultado por arquivo;
+2. **SPED Fiscal** e **EFD-Contribuições** (seção "Arquivos como estão"): o conteúdo dos arquivos exatamente como
+   importado, **sem nenhum cruzamento** — inclusive saídas, notas canceladas, apuração (E110, M100, M200…),
+   inventário e qualquer outro registro:
+   - lista de registros presentes, agrupada por bloco, com descrição e quantidade de linhas;
+   - grade do registro escolhido com os nomes oficiais dos campos; valores (VL_, ALIQ_, QTD) como números e datas
+     (DT_) como datas; coluna "Linha original" com o texto exato do TXT;
+   - registros filhos mostram o contexto do documento-pai do próprio arquivo (ex.: C170 → número, série, chave,
+     datas e participante do C100), e registros com COD_PART/COD_ITEM mostram o nome do participante (0150) e a
+     descrição/NCM do item (0200) do mesmo arquivo;
+   - filtros: período, unidade (CNPJ do estabelecimento — na EFD-Contribuições, o do 0140/A010/C010/D010/F010),
+     arquivo, Entradas/Saídas (IND_OPER do registro ou do documento-pai), texto em qualquer campo e condições por
+     campo (igual, contém, começa com, lista, maior/menor, vazio);
+   - modo **Arquivo**: o TXT inteiro na ordem original, com filtro por registro e texto;
+   - exportação de tudo o que estiver filtrado para Excel (com aba de parâmetros) ou CSV.
+3. **Arquivos**: importação por pasta ou arrastando arquivos, com barra de progresso e resultado por arquivo;
    matriz de cobertura filial × mês; lista de arquivos com remoção; remoção por competência; backup e restauração;
    reconsolidação; log.
-3. **Regras e filtros**: construtor de regras E/OU com grupos aninhados, prévia do SQL, teste (linhas e valores),
+4. **Regras e filtros**: construtor de regras E/OU com grupos aninhados, prévia do SQL, teste (linhas e valores),
    modelos prontos, biblioteca de filtros salvos por categoria e visualizador de snapshots (com verificação de
    integridade, exportação e restauração do contexto).
-4. **Auditoria**: verificações agrupadas, contadas automaticamente e exportáveis em uma pasta de trabalho:
+5. **Auditoria**: verificações agrupadas, contadas automaticamente e exportáveis em uma pasta de trabalho:
    - **fechamento**: PIS/COFINS dos registros brutos da EFD × totalizador (deve ser sempre zero);
    - créditos somente na EFD (linhas `EC_SEM_PAR`);
    - diferença de valor do documento entre SF e EFD;
@@ -164,7 +179,7 @@ pip install -r requirements-opcional.txt
 python -m pytest -q tests
 ```
 
-São 50 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
+São 60 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
 - `tests/test_pipeline.py` (18): detecção, duplicidade, retificadora, fechamento C170 = C190, rateio de frete,
   N1/N3/DOC, Exceção 2, 0175, filtros, auditoria, cobertura, exportação, snapshot, backup e remoção.
 - `tests/test_cruzamento.py` (22): cenários em que os dois arquivos **não** são espelhos. Numeração de itens
@@ -175,6 +190,10 @@ São 50 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data
 - `tests/test_api.py` (10): todos os endpoints usados pela interface — importação por pasta e por envio de
   arquivos, árvore nível a nível, totais, mês a mês, notas, filtros salvos, snapshots, migração do estado salvo
   pela versão anterior, exportações e downloads, auditoria, backup, remoção e reconsolidação.
+
+- `tests/test_raw.py` (10): telas SPED Fiscal / EFD-Contribuições — todas as linhas guardadas idênticas ao TXT,
+  saídas e canceladas presentes, contexto do documento-pai, unidade por estabelecimento na EFD, filtros e
+  condições, registro fora do catálogo, modo arquivo e paginação, exportação e indexação de arquivos antigos.
 
 ### Alterar a interface (opcional, para desenvolvedores)
 
@@ -242,6 +261,17 @@ Na interface (navegador, mesma base de 28,8 milhões de linhas, tempo até o con
 | Trocar para Mês a mês | 0,07 s |
 | Trocar para Tabela com 4 dimensões (5 mil maiores linhas) | 1,4 s |
 
+Telas SPED Fiscal / EFD-Contribuições (base de 3,6 milhões de linhas originais):
+
+| Medida | Resultado |
+|---|---|
+| Custo na importação | +13% de tempo (46,6 s → 52,9 s) e +169 MB no banco (520 MB de TXT) |
+| C100 do SPED Fiscal (400 mil linhas): 1ª página + total | 0,11 s |
+| C170 (1,2 milhão de linhas): 1ª página + total / página 100 | 0,32 s / 0,36 s |
+| C170 com unidade + CFOP + VL_ITEM > 10.000 | 0,56 s |
+| C170 da EFD só entradas (pelo IND_OPER do C100 pai) | 0,60 s |
+| Na tela: abrir SPED Fiscal / trocar para C170 / filtrar unidade | 0,36 s / 0,91 s / 0,71 s |
+
 ## Premissas e limites conhecidos
 
 - **Linhas por nível.** Cada nível da árvore traz até 5.000 linhas na raiz e 2.000 por item aberto (os maiores
@@ -259,6 +289,12 @@ Na interface (navegador, mesma base de 28,8 milhões de linhas, tempo até o con
   está implementada.
 - **Contagem de documentos.** É a única métrica que sempre lê a fato linha a linha; por isso saiu das colunas
   padrão da grade (continua no indicador do topo, calculada à parte).
+- **Nomes de campos nas telas SPED Fiscal / EFD-Contribuições.** Registros fora do catálogo (ou campos acrescidos
+  em versões mais novas do leiaute) aparecem como CAMPO_02, CAMPO_03…; o conteúdo é sempre o do arquivo. Os nomes
+  dos campos dos Blocos E e M devem ser conferidos com o Guia Prático vigente.
+- **Arquivos importados antes da versão 2.1.** Não têm as linhas originais guardadas. As telas oferecem
+  "Indexar agora", que lê de novo o TXT no caminho de origem (só se ele ainda existir e tiver o mesmo hash);
+  caso contrário, é preciso reimportar o arquivo.
 - **De-para de itens.** O de-para do 0205 é de um nível (código anterior → código atual).
 - **Upload pela interface.** O envio por arrastar copia os arquivos para `data/uploads`. Para volumes de vários GB,
   prefira informar a pasta.

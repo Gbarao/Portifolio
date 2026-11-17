@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app import config
-from app.database import analytics, audit, snapshots
+from app.database import analytics, audit, raw_view, snapshots
 from app.database import filter_builder as fb
 from app.database.aggregates import FATO
 from app.database.engine import SpedDatabase, get_db
@@ -32,7 +32,7 @@ from app.exporter import excel_writer
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 EXPORT_DIR = config.DATA_DIR / "exports"
 UPLOAD_DIR = config.DATA_DIR / "uploads"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 STATE_VERSION = 3
 
 
@@ -196,6 +196,77 @@ def create_app(db: SpedDatabase | None = None, native: bool = False) -> FastAPI:
     def _filter_error(_req, exc: fb.FilterError):
         return JSONResponse({"detail": f"Filtro inválido: {exc}"}, status_code=400)
 
+    @api.exception_handler(raw_view.RawQueryError)
+    def _raw_error(_req, exc: raw_view.RawQueryError):
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    # ---------------------------------------------------------------- consulta direta dos arquivos (sem cruzamento)
+    @api.get("/api/raw/{tipo}/overview")
+    def raw_overview(tipo: str):
+        o = raw_view.overview(db, tipo)
+        o["operadores"] = raw_view.OPS
+        return _json(o)
+
+    @api.post("/api/raw/{tipo}/registers")
+    def raw_registers(tipo: str, q: dict = Body(default={})):
+        return _json(raw_view.registers(db, tipo, q))
+
+    @api.post("/api/raw/{tipo}/query")
+    def raw_query(tipo: str, q: dict = Body(...)):
+        t0 = time.perf_counter()
+        limit = max(1, min(int(q.get("limit") or 1000), 5000))
+        offset = max(0, int(q.get("offset") or 0))
+        res = raw_view.query_register(db, tipo, q, limit, offset)
+        rq = res["rq"]
+        df = res["df"]
+        out = payload(df) if df.width else {"columns": [a for a, _, _ in rq.columns], "types": rq.types(), "rows": []}
+        kinds = {"money": "money", "qty": "qty", "int": "int", "date": "date"}
+        out["types"] = ["text" if a in ("linha_no", "arquivo") else kinds.get(t, "text")
+                        for (a, _, _), t in zip(rq.columns, rq.types())]
+        out.update({"total": res["total"], "offset": offset, "labels": raw_view.labels(rq), "fields": rq.fields,
+                    "docReg": rq.doc_reg, "ms": round((time.perf_counter() - t0) * 1000)})
+        return _json(out)
+
+    @api.post("/api/raw/{tipo}/lines")
+    def raw_lines(tipo: str, q: dict = Body(...)):
+        t0 = time.perf_counter()
+        limit = max(1, min(int(q.get("limit") or 1000), 5000))
+        offset = max(0, int(q.get("offset") or 0))
+        res = raw_view.file_lines(db, tipo, q, limit, offset)
+        out = payload(res["df"])
+        out["types"] = ["text"] * len(out["columns"])
+        out.update({"total": res["total"], "offset": offset, "ms": round((time.perf_counter() - t0) * 1000)})
+        return _json(out)
+
+    @api.post("/api/raw/{tipo}/export")
+    def raw_export(tipo: str, q: dict = Body(...)):
+        fmt = q.get("fmt") if q.get("fmt") in ("xlsx", "csv") else "xlsx"
+        if q.get("modo") == "arquivo":
+            res = raw_view.file_lines(db, tipo, q, 1, 0)
+            sql, params, labels = res["sql"], res["params"], {"linha_no": "Linha no arquivo", "reg": "Registro",
+                                                               "unidade": "Unidade (CNPJ)", "linha_original": "Linha original"}
+            name = f"{'sped_fiscal' if tipo == 'ICMS_IPI' else 'efd_contribuicoes'}_arquivo_{int(q.get('arquivo') or 0)}"
+        else:
+            rq = raw_view.RegisterQuery(db, tipo, q)
+            sql, params, labels = rq.select_sql(), rq.params, raw_view.labels(rq)
+            name = f"{'sped_fiscal' if tipo == 'ICMS_IPI' else 'efd_contribuicoes'}_{rq.reg}"
+        p = _export_name(name, fmt)
+        n = None
+        if fmt == "xlsx":
+            _, n = excel_writer.export_query_excel(db, sql, params, p, q.get("reg") or "Linhas", labels,
+                                                   raw_view.describe_filters(tipo, q))
+        else:
+            excel_writer.export_query_csv(db, sql, params, p)
+        return _export_result(p, n)
+
+    @api.get("/api/raw/pending")
+    def raw_pending():
+        return _json(db.files_without_lines())
+
+    @api.post("/api/raw/index")
+    def raw_index():
+        return {"job": jobs.start("rebuild", lambda prog: db.index_lines(prog))}
+
     # ---------------------------------------------------------------- metadados e estado
     @api.get("/api/meta")
     def meta():
@@ -333,7 +404,7 @@ def create_app(db: SpedDatabase | None = None, native: bool = False) -> FastAPI:
         p = _export_name("itens_detalhados", fmt)
         n = None
         if fmt == "xlsx":
-            _, n = excel_writer.export_query_excel(db, sql, params, p, "Itens", _context(q))
+            _, n = excel_writer.export_query_excel(db, sql, params, p, "Itens", info=_context(q))
         elif fmt == "csv":
             excel_writer.export_query_csv(db, sql, params, p)
         else:

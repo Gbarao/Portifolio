@@ -10,9 +10,10 @@ from pathlib import Path
 from app import config
 from app.parser.layouts import SF, index_of
 from app.parser.normalizer import SinkSet, pick, split_line
+from app.parser.raw_lines import RawLineTracker
 
 TABLES = ["sf_part", "sf_part_hist", "sf_unid", "sf_item_cad", "sf_item_hist", "sf_nat", "sf_conta",
-          "sf_doc", "sf_c170", "sf_anal", "sf_c191", "sf_c197"]
+          "sf_doc", "sf_c170", "sf_anal", "sf_c191", "sf_c197", "sf_linhas"]
 
 
 def _idx(reg: str, names: list[str]) -> list[int]:
@@ -72,6 +73,7 @@ I_C197 = _idx("C197", ["COD_AJ", "DESCR_COMPL_AJ", "COD_ITEM", "VL_BC_ICMS", "AL
 
 def parse(path: str | Path, file_id: int, out_dir: Path) -> dict[str, int]:
     sinks = SinkSet(file_id, out_dir, TABLES)
+    raw = RawLineTracker("ICMS_IPI", sinks, file_id)
     doc_id = 0
     anal_id = 0
     cur_doc_reg: str | None = None  # registro pai corrente (C100/C500/D100/D500/D700) ou None se ignorado
@@ -86,6 +88,7 @@ def parse(path: str | Path, file_id: int, out_dir: Path) -> dict[str, int]:
                 p = split_line(line)
                 if not p:
                     continue
+                raw.add(lines, line, p)
                 reg = p[0]
                 if reg in I_DOC:  # documento pai
                     if p[1] != "0":  # apenas entradas (IND_OPER = 0)

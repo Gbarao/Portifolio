@@ -27,7 +27,7 @@ from app.parser.normalizer import SCHEMAS
 
 log = logging.getLogger("sped.engine")
 
-_SQL_TYPES = {"s": "VARCHAR", "n": "DECIMAL(18,6)", "d": "DATE", "i": "BIGINT"}
+_SQL_TYPES = {"s": "VARCHAR", "n": "DECIMAL(18,6)", "d": "DATE", "i": "BIGINT", "I": "BIGINT", "r": "VARCHAR"}
 _HERE = Path(__file__).resolve().parent
 
 UF_IBGE = {"11": "RO", "12": "AC", "13": "AM", "14": "RR", "15": "PA", "16": "AP", "17": "TO", "21": "MA",
@@ -51,6 +51,7 @@ NAT_BC_CRED_DEFAULT = (
 )
 
 RAW_SF = [t for t in SCHEMAS if t.startswith("sf_")]
+LINES_TABLE = {"ICMS_IPI": "sf_linhas", "CONTRIB": "ec_linhas"}
 RAW_EC = [t for t in SCHEMAS if t.startswith("ec_")]
 
 
@@ -147,6 +148,8 @@ class SpedDatabase:
             self.con.execute((_HERE / "schema.sql").read_text(encoding="utf-8"))
             for stmt in aggregates.ddl():
                 self.con.execute(stmt)
+            self.con.execute("CREATE TABLE IF NOT EXISTS linhas_contagem (file_id BIGINT, reg VARCHAR, "
+                             "cnpj_estab VARCHAR, n BIGINT)")
             self.con.execute("INSERT OR REPLACE INTO sys_meta VALUES ('fato_version', ?)", [aggregates.FATO_VERSION])
             for t, cols in SCHEMAS.items():
                 ddl = ", ".join(f"{c} {_SQL_TYPES[ty]}" for c, ty in cols)
@@ -362,6 +365,7 @@ class SpedDatabase:
                     pq = self.parquet_dir / t / f"{fid}.parquet"
                     if pq.exists() and counts.get(t, 0) > 0:
                         self.con.execute(f"INSERT INTO {t} BY NAME SELECT * FROM read_parquet(?)", [str(pq)])
+                self._count_lines(fid, tipo)
                 self.con.execute(
                     "INSERT INTO sys_arquivos_importados (id_arquivo, hash_sha256, tipo_sped, cnpj, nome, uf, "
                     "competencia, dt_ini, dt_fin, finalidade, cod_ver, caminho_origem, tamanho_bytes, linhas, "
@@ -375,10 +379,82 @@ class SpedDatabase:
                 raise
         for old in h.get("replace_ids", []):
             self._drop_parquet(old, tipo)
+        # as linhas originais ficam só no banco (o Parquet delas não é reaproveitado)
+        (self.parquet_dir / LINES_TABLE[tipo] / f"{fid}.parquet").unlink(missing_ok=True)
+
+    def _count_lines(self, fid: int, tipo: str) -> None:
+        t = LINES_TABLE[tipo]
+        self.con.execute("DELETE FROM linhas_contagem WHERE file_id = ?", [fid])
+        self.con.execute(f"INSERT INTO linhas_contagem SELECT file_id, reg, cnpj_estab, count(*) FROM {t} "
+                         "WHERE file_id = ? GROUP BY ALL", [fid])
 
     def _delete_raw(self, file_id: int, tipo: str) -> None:
         for t in self._tables_for(tipo):
             self.con.execute(f"DELETE FROM {t} WHERE file_id = ?", [file_id])
+        self.con.execute("DELETE FROM linhas_contagem WHERE file_id = ?", [file_id])
+
+    # ------------------------------------------------------------------ linhas originais
+    def files_without_lines(self) -> list[dict]:
+        """Arquivos ativos importados antes da gravação das linhas originais."""
+        rows = self.con.cursor().execute(
+            "SELECT id_arquivo, tipo_sped, caminho_origem, hash_sha256, competencia, cnpj FROM sys_arquivos_importados "
+            "WHERE ativo AND id_arquivo NOT IN (SELECT DISTINCT file_id FROM linhas_contagem) ORDER BY id_arquivo"
+        ).fetchall()
+        return [{"id": r[0], "tipo": r[1], "caminho": r[2], "hash": r[3], "competencia": r[4], "cnpj": r[5],
+                 "encontrado": bool(r[2]) and Path(r[2]).is_file()} for r in rows]
+
+    def index_lines(self, progress: Callable[[str, float], None] | None = None, workers: int | None = None) -> dict:
+        """Lê de novo os TXT originais (se ainda existirem no mesmo caminho e com o mesmo hash) só para guardar
+        as linhas originais dos arquivos importados antes desta funcionalidade."""
+        from app.parser.raw_lines import parse_raw
+        prog = progress or (lambda m, f: None)
+        pend = self.files_without_lines()
+        ok, falta, alterado = [], [], []
+        todo = []
+        for i, f in enumerate(pend, 1):
+            prog(f"Conferindo arquivos originais ({i}/{len(pend)})", 0.05 * i / max(1, len(pend)))
+            if not f["encontrado"]:
+                falta.append(f)
+                continue
+            if detector.sha256_file(f["caminho"])[0] != f["hash"]:
+                alterado.append(f)
+                continue
+            todo.append(f)
+        out = self.parquet_dir
+        ctx = mp.get_context("spawn")
+        n_workers = max(1, min(workers or config.PARSER_WORKERS, len(todo) or 1))
+        results = {}
+        if todo:
+            with ProcessPoolExecutor(max_workers=n_workers, mp_context=ctx) as ex:
+                futs = {ex.submit(parse_raw, f["caminho"], f["id"], f["tipo"], out): f for f in todo}
+                for i, fut in enumerate(as_completed(futs), 1):
+                    f = futs[fut]
+                    try:
+                        results[f["id"]] = fut.result()
+                    except Exception as e:  # noqa: BLE001
+                        alterado.append({**f, "erro": str(e)})
+                    prog(f"Lendo linhas originais ({i}/{len(todo)})", 0.05 + 0.75 * i / len(todo))
+        for i, f in enumerate(todo, 1):
+            if f["id"] not in results:
+                continue
+            t = LINES_TABLE[f["tipo"]]
+            pq = out / t / f"{f['id']}.parquet"
+            prog(f"Gravando linhas no banco ({i}/{len(todo)})", 0.8 + 0.2 * i / len(todo))
+            with self.write_lock:
+                self.con.execute("BEGIN TRANSACTION")
+                try:
+                    self.con.execute(f"DELETE FROM {t} WHERE file_id = ?", [f["id"]])
+                    if pq.exists():
+                        self.con.execute(f"INSERT INTO {t} BY NAME SELECT * FROM read_parquet(?)", [str(pq)])
+                    self._count_lines(f["id"], f["tipo"])
+                    self.con.execute("COMMIT")
+                except Exception:
+                    self.con.execute("ROLLBACK")
+                    raise
+            pq.unlink(missing_ok=True)
+            ok.append(f)
+        return {"indexados": len(ok), "nao_encontrados": [f["caminho"] for f in falta],
+                "alterados": [f["caminho"] for f in alterado]}
 
     # ------------------------------------------------------------------ consolidação
     def _consolidation_steps(self) -> list[tuple[str, str]]:

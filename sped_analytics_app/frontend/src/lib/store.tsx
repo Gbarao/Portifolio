@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
-import type { Meta, Options, SavedFilter, SnapshotInfo, UiState } from './types'
+import type { Meta, Options, RawState, RawTipo, SavedFilter, SnapshotInfo, UiState } from './types'
+
+export const EMPTY_RAW: RawState = { modo: 'registro', reg: 'C100', competencias: [], unidades: [], arquivos: [], operacao: '', busca: '', condicoes: [], registrosArquivo: '' }
 
 const EMPTY_RULES = { op: 'AND' as const, rules: [] }
 
@@ -36,7 +38,11 @@ function normalize(st: Partial<UiState>, meta: Meta): UiState {
     mode: (['arvore', 'tabela', 'mensal'].includes(st.mode as string) ? st.mode : 'arvore') as any,
     pivotMetric: st.pivotMetric && mets.has(st.pivotMetric) ? st.pivotMetric : 'vl_contabil',
     appliedFilterName: st.appliedFilterName || '',
-    page: (['analise', 'arquivos', 'regras', 'auditoria'].includes(st.page as string) ? st.page : 'analise') as any,
+    page: (['analise', 'sped', 'efd', 'arquivos', 'regras', 'auditoria'].includes(st.page as string) ? st.page : 'analise') as any,
+    raw: {
+      ICMS_IPI: { ...EMPTY_RAW, ...((st as any).raw?.ICMS_IPI || {}) },
+      CONTRIB: { ...EMPTY_RAW, reg: 'C170', ...((st as any).raw?.CONTRIB || {}) },
+    } as Record<RawTipo, RawState>,
   }
 }
 

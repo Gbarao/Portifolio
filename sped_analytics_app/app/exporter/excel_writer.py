@@ -70,11 +70,14 @@ def _kind(dtype: pl.DataType) -> str:
     return "text"
 
 
-def _write_sheet_header(ws, book: _Book, cols: list[str], kinds: list[str]) -> None:
+def _write_sheet_header(ws, book: _Book, cols: list[str], kinds: list[str], labels: dict | None = None) -> None:
+    lab = (lambda c: (labels or {}).get(c) or _label(c))
     ws.set_row(0, 30)
     for j, (c, k) in enumerate(zip(cols, kinds)):
-        ws.write_string(0, j, _label(c), book.f_head)
-        width = 14 if k in ("num", "int", "date") else min(max(len(_label(c)) + 2, 12), 45)
+        ws.write_string(0, j, lab(c), book.f_head)
+        width = 14 if k in ("num", "int", "date") else min(max(len(lab(c)) + 2, 12), 45)
+        if c == "linha_original":
+            width = 90
         if c in ("chave",):
             width = 46
         ws.set_column(j, j, width, book.fmt_for(c, k))
@@ -94,7 +97,7 @@ def _write_value(ws, i: int, j: int, v, fmt) -> None:
         ws.write_string(i, j, str(v))
 
 
-def _batches_to_book(book: _Book, batches, base_name: str) -> int:
+def _batches_to_book(book: _Book, batches, base_name: str, labels: dict | None = None) -> int:
     ws = None
     sheet_no = 0
     row = 0
@@ -112,7 +115,7 @@ def _batches_to_book(book: _Book, batches, base_name: str) -> int:
                 sheet_no += 1
                 name = base_name if sheet_no == 1 else f"{base_name}_{sheet_no}"
                 ws = book.wb.add_worksheet(name[:31])
-                _write_sheet_header(ws, book, cols, kinds)
+                _write_sheet_header(ws, book, cols, kinds, labels)
                 row = 1
             for j, v in enumerate(rec):
                 _write_value(ws, row, j, v, fmts[j])
@@ -121,7 +124,7 @@ def _batches_to_book(book: _Book, batches, base_name: str) -> int:
     if ws is None:  # sem dados: cria aba vazia com cabeçalho
         ws = book.wb.add_worksheet(base_name[:31])
         if cols:
-            _write_sheet_header(ws, book, cols, kinds)
+            _write_sheet_header(ws, book, cols, kinds, labels)
     elif cols:
         ws.autofilter(0, 0, max(row - 1, 1), len(cols) - 1)
     return total
@@ -155,7 +158,7 @@ def _query_batches(db, sql: str, params: list):
         cur.close()
 
 
-def export_query_excel(db, sql: str, params: list, path: str | Path, sheet: str = "Dados",
+def export_query_excel(db, sql: str, params: list, path: str | Path, sheet: str = "Dados", labels: dict | None = None,
                        info: dict[str, str] | None = None) -> tuple[Path, int]:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,7 +170,7 @@ def export_query_excel(db, sql: str, params: list, path: str | Path, sheet: str 
         for i, (k, v) in enumerate(info.items()):
             ws.write_string(i, 0, str(k), book.f_head)
             ws.write_string(i, 1, str(v))
-    n = _batches_to_book(book, _query_batches(db, sql, params), sheet)
+    n = _batches_to_book(book, _query_batches(db, sql, params), sheet, labels)
     book.wb.close()
     return path, n
 

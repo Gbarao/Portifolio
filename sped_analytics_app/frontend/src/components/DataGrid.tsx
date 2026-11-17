@@ -44,13 +44,14 @@ interface Props {
   checked?: Set<string>
   onCheck?: (ids: Set<string>) => void
   dense?: boolean
+  onEndReached?: () => void
 }
 
 const DEFAULT_W: Record<string, number> = { money: 120, qty: 100, price: 110, int: 84, pct: 84, date: 104, bool: 70, text: 150 }
 
 export function DataGrid({
   columns, rows, totals, totalsLabel = 'Total', loading, emptyText, selectedId, onSelect, onToggle, onActivate,
-  sort, onSort, rowHeight = 34, treeKey, checkable, checked, onCheck, dense,
+  sort, onSort, rowHeight = 34, treeKey, checkable, checked, onCheck, dense, onEndReached,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [widths, setWidths] = useState<Record<string, number>>({})
@@ -79,6 +80,9 @@ export function DataGrid({
   }, [columns, colW, checkW])
 
   const virt = useVirtualizer({ count: rows.length, getScrollElement: () => scrollRef.current, estimateSize: () => rowHeight, overscan: 16 })
+  const vItems = virt.getVirtualItems()
+  const lastIdx = vItems.length ? vItems[vItems.length - 1].index : 0
+  useEffect(() => { if (onEndReached && rows.length > 0 && lastIdx >= rows.length - 40) onEndReached() }, [lastIdx, rows.length, onEndReached])
 
   // redimensionamento de colunas
   const drag = useRef<{ key: string; x: number; w: number } | null>(null)

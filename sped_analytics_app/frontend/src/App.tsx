@@ -1,4 +1,4 @@
-import { BarChart3, ChevronsLeft, Layers3, ChevronsRight, FolderInput, Lock, Monitor, Moon, ShieldCheck, Sun, Wand2, Zap } from 'lucide-react'
+import { BarChart3, ChevronsLeft, FileCode2, Layers3, ReceiptText, ChevronsRight, FolderInput, Lock, Monitor, Moon, ShieldCheck, Sun, Wand2, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { Toaster } from 'sonner'
 import { cx, Menu, MenuItem, Tip, TipProvider } from './components/ui'
@@ -7,11 +7,14 @@ import type { Page } from './lib/types'
 import { AnalysisPage } from './pages/AnalysisPage'
 import { AuditPage } from './pages/AuditPage'
 import { FilesPage } from './pages/FilesPage'
+import { RawPage } from './pages/RawPage'
 import { RulesPage } from './pages/RulesPage'
 
-const PAGES: { key: Page; label: string; icon: any; title: string; subtitle: string }[] = [
+const PAGES: { key: Page; label: string; icon: any; title: string; subtitle: string; section?: string }[] = [
   { key: 'analise', label: 'Análise', icon: BarChart3, title: 'Análise consolidada de entradas', subtitle: 'SPED Fiscal × EFD-Contribuições por empresa, fornecedor, CFOP e item' },
-  { key: 'arquivos', label: 'Arquivos', icon: FolderInput, title: 'Central de arquivos', subtitle: 'Importação, cobertura fiscal, gestão da base e backup' },
+  { key: 'sped', label: 'SPED Fiscal', icon: FileCode2, section: 'Arquivos como estão', title: 'SPED Fiscal (EFD ICMS/IPI)', subtitle: 'Conteúdo dos arquivos exatamente como importado, registro a registro — sem cruzamentos' },
+  { key: 'efd', label: 'EFD-Contribuições', icon: ReceiptText, title: 'EFD-Contribuições (PIS/Cofins)', subtitle: 'Conteúdo dos arquivos exatamente como importado, registro a registro — sem cruzamentos' },
+  { key: 'arquivos', label: 'Arquivos', icon: FolderInput, section: 'Gestão', title: 'Central de arquivos', subtitle: 'Importação, cobertura fiscal, gestão da base e backup' },
   { key: 'regras', label: 'Regras e filtros', icon: Wand2, title: 'Regras e biblioteca', subtitle: 'Filtros sob demanda, filtros salvos e análises congeladas' },
   { key: 'auditoria', label: 'Auditoria', icon: ShieldCheck, title: 'Auditoria de divergências', subtitle: 'Fechamento, qualidade do cruzamento e inconsistências' },
 ]
@@ -40,13 +43,17 @@ export default function App() {
               const Icon = p.icon
               const active = state.page === p.key
               return (
-                <Tip key={p.key} content={collapsed ? p.label : null} side="right">
+                <div key={p.key}>
+                {p.section && (collapsed ? <div className="mx-2.5 my-2 h-px bg-line" />
+                  : <div className="px-2.5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted">{p.section}</div>)}
+                <Tip content={collapsed ? p.label : null} side="right">
                   <button onClick={() => set({ page: p.key })}
                     className={cx('flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors focus-ring',
                       active ? 'bg-accent/10 text-accent' : 'text-fg/75 hover:bg-sunken hover:text-fg')}>
                     <Icon className="h-[18px] w-[18px] shrink-0" />{!collapsed && <span className="truncate">{p.label}</span>}
                   </button>
                 </Tip>
+                </div>
               )
             })}
           </nav>
@@ -94,8 +101,10 @@ export default function App() {
               <p className="truncate text-[12px] text-muted">{page.subtitle}</p>
             </div>
           </header>
-          <div className={cx('min-h-0 flex-1', state.page === 'analise' || state.page === 'auditoria' ? 'overflow-hidden' : 'overflow-auto')}>
+          <div className={cx('min-h-0 flex-1', ['analise', 'auditoria', 'sped', 'efd'].includes(state.page) ? 'overflow-hidden' : 'overflow-auto')}>
             {state.page === 'analise' && <AnalysisPage />}
+            {state.page === 'sped' && <RawPage key="sf" tipo="ICMS_IPI" />}
+            {state.page === 'efd' && <RawPage key="ec" tipo="CONTRIB" />}
             {state.page === 'arquivos' && <FilesPage />}
             {state.page === 'regras' && <RulesPage />}
             {state.page === 'auditoria' && <AuditPage />}

@@ -10,7 +10,7 @@ function norm(s: string) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
 
-function MultiList({ options, value, onChange, format }: { options: Opt[]; value: string[]; onChange: (v: string[]) => void; format?: (v: string) => string }) {
+export function MultiList({ options, value, onChange, format }: { options: Opt[]; value: string[]; onChange: (v: string[]) => void; format?: (v: string) => string }) {
   const [q, setQ] = useState('')
   const sel = useMemo(() => new Set(value), [value])
   const list = useMemo(() => {
@@ -60,7 +60,7 @@ function MultiList({ options, value, onChange, format }: { options: Opt[]; value
   )
 }
 
-function FilterButton({ icon, label, count, children, summary }: { icon: ReactNode; label: string; count: number; children: ReactNode; summary?: string }) {
+export function FilterButton({ icon, label, count, children, summary }: { icon: ReactNode; label: string; count: number; children: ReactNode; summary?: string }) {
   return (
     <Popover trigger={
       <button className={cx('inline-flex h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-[13px] transition-colors focus-ring',

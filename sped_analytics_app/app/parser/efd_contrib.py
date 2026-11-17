@@ -11,9 +11,10 @@ from pathlib import Path
 from app import config
 from app.parser.layouts import EC, index_of
 from app.parser.normalizer import SCHEMAS, SinkSet, pick, split_line
+from app.parser.raw_lines import RawLineTracker
 
 TABLES = ["ec_estab", "ec_bloco_estab", "ec_part", "ec_item_cad", "ec_item_hist", "ec_conta", "ec_doc",
-          "ec_item", "ec_doc_trib", "ec_c190", "ec_c191_195", "ec_f"]
+          "ec_item", "ec_doc_trib", "ec_c190", "ec_c191_195", "ec_f", "ec_linhas"]
 
 _NONE = 10_000
 
@@ -89,6 +90,7 @@ I_F = {
 
 def parse(path: str | Path, file_id: int, out_dir: Path) -> dict[str, int]:
     sinks = SinkSet(file_id, out_dir, TABLES)
+    raw = RawLineTracker("CONTRIB", sinks, file_id)
     cnpj_0140 = ""  # estabelecimento corrente no Bloco 0
     cnpj_mov = ""  # estabelecimento corrente nos blocos de movimento (X010)
     matriz = ""
@@ -105,6 +107,7 @@ def parse(path: str | Path, file_id: int, out_dir: Path) -> dict[str, int]:
                 p = split_line(line)
                 if not p:
                     continue
+                raw.add(lines, line, p)
                 reg = p[0]
                 if reg in I_ITEM:
                     if cur_doc_reg == ITEM_PARENT[reg]:

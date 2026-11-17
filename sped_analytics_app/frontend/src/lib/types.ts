@@ -52,7 +52,21 @@ export interface GlobalFilters {
 }
 
 export type Mode = 'arvore' | 'tabela' | 'mensal'
-export type Page = 'analise' | 'arquivos' | 'regras' | 'auditoria'
+export type Page = 'analise' | 'sped' | 'efd' | 'arquivos' | 'regras' | 'auditoria'
+export type RawTipo = 'ICMS_IPI' | 'CONTRIB'
+
+export interface RawCond { campo: string; op: string; valor: string }
+export interface RawState {
+  modo: 'registro' | 'arquivo'
+  reg: string
+  competencias: string[]; comp_ini?: string; comp_fim?: string
+  unidades: string[]; arquivos: number[]
+  operacao: '' | '0' | '1'
+  busca: string
+  condicoes: RawCond[]
+  arquivo?: number
+  registrosArquivo: string
+}
 
 export interface UiState {
   v?: number
@@ -64,6 +78,7 @@ export interface UiState {
   pivotMetric: string
   appliedFilterName: string
   page: Page
+  raw: Record<RawTipo, RawState>
 }
 
 export interface SavedFilter {

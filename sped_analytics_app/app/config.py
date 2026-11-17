@@ -64,6 +64,10 @@ ITEM_SINTETICO_POR_MODELO = {
 }
 ITEM_SINTETICO_C190 = "_SEM_ITEM_C190_"
 
+# Guarda todas as linhas originais dos arquivos (telas "SPED Fiscal" e "EFD-Contribuições", sem cruzamento).
+# Ocupa espaço adicional no banco (aprox. 30-50% do tamanho dos TXT); desligue com SPED_LINHAS_ORIGINAIS=0.
+GUARDAR_LINHAS_ORIGINAIS = os.environ.get("SPED_LINHAS_ORIGINAIS", "1") != "0"
+
 TOLERANCIA_ITEM = 0.01  # R$ — diferença máxima de VL_ITEM para aceitar o cruzamento item a item (N1)
 TOLERANCIA_DIVERGENCIA = 0.05  # R$ — diferenças abaixo disso não são apontadas na auditoria
 

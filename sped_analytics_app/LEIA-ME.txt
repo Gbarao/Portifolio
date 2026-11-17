@@ -23,9 +23,12 @@ USO (menu à esquerda)
   2. "Análise": filtros no topo (aplicados na hora). Na visão Árvore, clique na seta ▸ (ou dê duplo clique) para
      abrir Empresa > Fornecedor > CFOP > Item; um clique simples em qualquer linha lista as notas fiscais no painel
      de baixo. Também há as visões Tabela e Mês a mês, a escolha de colunas e a ordem dos níveis.
-  3. "Regras e filtros": regras sob demanda, filtros salvos (também na barra lateral, 1 clique) e análises
+  3. "SPED Fiscal" e "EFD-Contribuições": o conteúdo dos arquivos exatamente como está no TXT, sem cruzamento.
+     Escolha o registro na lista da esquerda (C100, C170, E110, M200...), filtre por período, unidade, arquivo,
+     entradas/saídas, texto ou condições por campo, e exporte para Excel. O modo "Arquivo" mostra o TXT inteiro.
+  4. "Regras e filtros": regras sob demanda, filtros salvos (também na barra lateral, 1 clique) e análises
      congeladas.
-  4. "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições. Ao carregar os primeiros arquivos
+  5. "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições. Ao carregar os primeiros arquivos
      reais, confira (as verificações rodam sozinhas ao abrir a tela):
        - "Fechamento": deve ficar em 0 (todo PIS/COFINS da EFD está no totalizador);
        - "Diagnóstico": mostra quanto casou item a item (N1), por rateio (N2/N3) e quanto ficou sem par.
@@ -37,6 +40,9 @@ ATUALIZAÇÃO DE UMA VERSÃO ANTERIOR
   3. Execute instalar.bat de novo (a interface nova usa outros componentes; leva 1 a 2 minutos).
   4. Abra normalmente. Na primeira abertura a base consolidada é refeita sozinha a partir dos arquivos já
      importados (não é preciso importar de novo); em bases grandes isso pode levar alguns minutos.
+  5. Nas telas "SPED Fiscal" e "EFD-Contribuições", os arquivos importados em versões anteriores aparecem com
+     o aviso "ainda não têm as linhas originais guardadas": clique em "Indexar agora". O programa lê de novo os
+     TXT no mesmo caminho em que foram importados (se tiverem sido movidos ou alterados, reimporte-os).
 
 DADOS
   Tudo fica na subpasta "data" (banco sped_master.duckdb, cache Parquet, filtros, snapshots, exportações).

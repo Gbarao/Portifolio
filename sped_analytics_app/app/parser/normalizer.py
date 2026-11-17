@@ -16,7 +16,7 @@ from app import config
 
 # Tipos lógicos: s=texto, n=numérico (DECIMAL 18,6), d=data DDMMAAAA, i=inteiro
 NUM_TYPE = pa.decimal128(18, 6)
-_ARROW = {"s": pa.string(), "n": NUM_TYPE, "d": pa.date32(), "i": pa.int64()}
+_ARROW = {"s": pa.string(), "n": NUM_TYPE, "d": pa.date32(), "i": pa.int64(), "I": pa.int64(), "r": pa.string()}
 
 
 def _cols(spec: str) -> list[tuple[str, str]]:
@@ -74,6 +74,9 @@ SCHEMAS: dict[str, list[tuple[str, str]]] = {
                      "vl_tot_item:n"),
     "ec_c191_195": _cols("file_id:i c190_id:i reg tributo cnpj_cpf_part cst cfop vl_item:n vl_desc:n vl_bc:n "
                          "aliq:n vl:n cod_cta"),
+    # ---------------- Linhas originais (consulta sem cruzamento) ----------------
+    "sf_linhas": _cols("file_id:I line_no:I reg cnpj_estab doc_line:I linha:r"),
+    "ec_linhas": _cols("file_id:I line_no:I reg cnpj_estab doc_line:I linha:r"),
     "ec_f": _cols("file_id:i cnpj_filial reg ind_oper cod_part cod_item dt_oper:d vl_oper:n nat_bc_cred "
                   "ind_orig_cred cst_pis vl_bc_pis:n aliq_pis:n vl_pis:n cst_cofins vl_bc_cofins:n "
                   "aliq_cofins:n vl_cofins:n cod_cta descr"),
@@ -88,6 +91,10 @@ def _to_array(values: list, typ: str) -> pa.Array:
     if typ == "i":
         return pa.array([int(v) if v not in ("", None) and str(v).strip().lstrip("-").isdigit() else None
                          for v in values], pa.int64())
+    if typ == "I":  # inteiros já nativos (gerados pelo parser)
+        return pa.array(values, pa.int64())
+    if typ == "r":  # texto bruto: preservado exatamente como no arquivo
+        return pa.array(values, pa.string())
     arr = pa.array(values, pa.string())
     arr = pc.utf8_trim_whitespace(arr)
     arr = pc.if_else(pc.equal(arr, ""), pa.scalar(None, pa.string()), arr)
@@ -149,8 +156,10 @@ class TableSink:
         tbl = pa.Table.from_arrays(arrays, schema=self.schema)
         if self.writer is None:
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            # linhas originais: Parquet temporário (apagado após a carga) -> compressão mais leve e rápida
+            level = 1 if self.table in ("sf_linhas", "ec_linhas") else config.PARQUET_COMPRESSION_LEVEL
             self.writer = pq.ParquetWriter(self.path, self.schema, compression=config.PARQUET_COMPRESSION,
-                                           compression_level=config.PARQUET_COMPRESSION_LEVEL)
+                                           compression_level=level)
         self.writer.write_table(tbl)
         self.total += self.n
         self.buf = [[] for _ in self.cols]
