@@ -55,7 +55,7 @@ export function FilesPage() {
   const running = !!job && job.status === 'running'
 
   return (
-    <div className="flex flex-col gap-4 p-5">
+    <div className="flex flex-col gap-3 p-3 tall:gap-4 tall:p-5">
       <StatsRow stats={stats} />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_1fr]">
         <ImportCard running={running} job={job} result={result} onStart={(id) => follow(id, (j) => {

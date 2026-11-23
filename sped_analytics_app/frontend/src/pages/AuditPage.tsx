@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { DataGrid, sortRows, tableToGrid, useSort } from '../components/DataGrid'
 import { Button, Card, Input, Spinner, cx } from '../components/ui'
+import { MaxBackdrop, MaxButton, useMaximize } from '../components/layout'
 import { api, download } from '../lib/api'
 import { fmtInt } from '../lib/format'
 import { useApp } from '../lib/store'
@@ -55,9 +56,10 @@ export function AuditPage() {
     return out
   }, [data, current])
   const filtersActive = Object.keys(state.gf).length > 0
+  const mx = useMaximize()
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-5">
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-auto p-3 tall:gap-4 tall:p-5">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 text-[12.5px] text-muted">
           {filtersActive ? 'Considera o período e as filiais dos filtros da Análise.' : 'Considera toda a base (sem filtros na Análise).'}
@@ -92,7 +94,8 @@ export function AuditPage() {
         ))}
       </div>
 
-      <Card className="flex min-h-[360px] flex-1 flex-col">
+      <MaxBackdrop on={mx.on} onClose={mx.toggle} />
+      <Card className={cx('flex min-h-[360px] flex-1 flex-col', mx.cls)}>
         <div className="flex items-center gap-2 border-b px-4 py-2.5">
           <ShieldCheck className="h-4 w-4 text-muted" />
           <div className="min-w-0 flex-1 truncate text-[13px] font-semibold">
@@ -100,6 +103,7 @@ export function AuditPage() {
             {data && <span className="ml-2 font-normal text-muted">· {fmtInt(data.total)} linha(s){data.total > data.rows.length ? ` (exibindo ${fmtInt(data.rows.length)})` : ''}</span>}
           </div>
           {current && <Button size="sm" icon={<ArrowDownToLine className="h-3.5 w-3.5" />} onClick={() => exp(false)}>Excel</Button>}
+          <MaxButton on={mx.on} onClick={mx.toggle} size="icon-sm" />
         </div>
         <div className="min-h-0 flex-1 p-2">
           {current ? <DataGrid columns={g.columns} rows={sortRows(g.rows, sort)} totals={totals} loading={loading} dense sort={sort} onSort={toggleSort}

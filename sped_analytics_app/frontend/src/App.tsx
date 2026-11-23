@@ -1,4 +1,4 @@
-import { BarChart3, ChevronsLeft, FileCode2, Grid3x3, Layers3, ReceiptText, ChevronsRight, FolderInput, Lock, Monitor, Moon, ShieldCheck, Sun, Wand2, Zap } from 'lucide-react'
+import { BarChart3, ChevronsLeft, FileCode2, Grid3x3, Layers3, ReceiptText, ChevronsRight, FolderInput, Lock, Monitor, Moon, Scale, ShieldCheck, Sun, UserSearch, Wand2, ZoomIn, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { Toaster } from 'sonner'
 import { cx, Menu, MenuItem, Tip, TipProvider } from './components/ui'
@@ -6,6 +6,8 @@ import { useApp, useTheme } from './lib/store'
 import type { Page } from './lib/types'
 import { AnalysisPage } from './pages/AnalysisPage'
 import { AuditPage } from './pages/AuditPage'
+import { BlocoMPage } from './pages/BlocoMPage'
+import { FornecedorPage } from './pages/FornecedorPage'
 import { FilesPage } from './pages/FilesPage'
 import { RawPage } from './pages/RawPage'
 import { ReportPage } from './pages/ReportPage'
@@ -14,6 +16,8 @@ import { RulesPage } from './pages/RulesPage'
 const PAGES: { key: Page; label: string; icon: any; title: string; subtitle: string; section?: string }[] = [
   { key: 'analise', label: 'Análise', icon: BarChart3, title: 'Análise consolidada de entradas', subtitle: 'SPED Fiscal × EFD-Contribuições por empresa, fornecedor, CFOP e item' },
   { key: 'relatorio', label: 'Relatório dinâmico', icon: Grid3x3, title: 'Relatório dinâmico', subtitle: 'Monte linhas, colunas e valores livremente — sempre o consolidado SPED Fiscal + EFD-Contribuições, sem duplicidade' },
+  { key: 'fornecedor', label: 'Busca por fornecedor', icon: UserSearch, title: 'Busca por fornecedor', subtitle: 'Tudo sobre um CNPJ/CPF: cadastro, entradas consolidadas, notas, itens e cada linha dos arquivos' },
+  { key: 'blocom', label: 'Bloco M (PIS/Cofins)', icon: Scale, section: 'Apuração', title: 'Bloco M — apuração do PIS/Pasep e da Cofins', subtitle: 'EFD-Contribuições: créditos, contribuição, ajustes, saldos, verificações e conferência com os documentos' },
   { key: 'sped', label: 'SPED Fiscal', icon: FileCode2, section: 'Arquivos como estão', title: 'SPED Fiscal (EFD ICMS/IPI)', subtitle: 'Conteúdo dos arquivos exatamente como importado, registro a registro — sem cruzamentos' },
   { key: 'efd', label: 'EFD-Contribuições', icon: ReceiptText, title: 'EFD-Contribuições (PIS/Cofins)', subtitle: 'Conteúdo dos arquivos exatamente como importado, registro a registro — sem cruzamentos' },
   { key: 'arquivos', label: 'Arquivos', icon: FolderInput, section: 'Gestão', title: 'Central de arquivos', subtitle: 'Importação, cobertura fiscal, gestão da base e backup' },
@@ -24,7 +28,9 @@ const PAGES: { key: Page; label: string; icon: any; title: string; subtitle: str
 export default function App() {
   const { state, set, filters, applyPreset, meta } = useApp()
   const [theme, setTheme] = useTheme()
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('sidebar') === '1' } catch { return false } })
+  const [collapsed, setCollapsed] = useState(() => {
+    try { const v = localStorage.getItem('sidebar'); return v == null ? window.innerWidth < 1280 : v === '1' } catch { return false }
+  })
   const toggleSidebar = () => { setCollapsed((c) => { try { localStorage.setItem('sidebar', c ? '0' : '1') } catch { /* */ } return !c }) }
   const page = PAGES.find((p) => p.key === state.page) ?? PAGES[0]
   const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
@@ -34,13 +40,13 @@ export default function App() {
       <div className="flex h-full">
         {/* barra lateral */}
         <aside className={cx('flex shrink-0 flex-col border-r bg-panel transition-[width] duration-200', collapsed ? 'w-[60px]' : 'w-[236px]')}>
-          <div className="flex h-14 items-center gap-2.5 px-3.5">
+          <div className="flex h-12 items-center gap-2.5 px-3.5 tall:h-14">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg shadow-sm">
               <Layers3 className="h-[18px] w-[18px]" />
             </div>
             {!collapsed && <div className="min-w-0 leading-tight"><div className="truncate text-[13.5px] font-semibold">Consolidação Fiscal</div><div className="truncate text-[11.5px] text-muted">SPED · EFD-Contribuições</div></div>}
           </div>
-          <nav className="space-y-0.5 px-2 pt-2">
+          <nav className="space-y-0.5 overflow-y-auto px-2 pt-2">
             {PAGES.map((p) => {
               const Icon = p.icon
               const active = state.page === p.key
@@ -50,7 +56,7 @@ export default function App() {
                   : <div className="px-2.5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted">{p.section}</div>)}
                 <Tip content={collapsed ? p.label : null} side="right">
                   <button onClick={() => set({ page: p.key })}
-                    className={cx('flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors focus-ring',
+                    className={cx('flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors focus-ring tall:h-9',
                       active ? 'bg-accent/10 text-accent' : 'text-fg/75 hover:bg-sunken hover:text-fg')}>
                     <Icon className="h-[18px] w-[18px] shrink-0" />{!collapsed && <span className="truncate">{p.label}</span>}
                   </button>
@@ -87,6 +93,11 @@ export default function App() {
             <button onClick={toggleSidebar} className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] text-fg/75 hover:bg-sunken">
               {collapsed ? <ChevronsRight className="h-[18px] w-[18px]" /> : <><ChevronsLeft className="h-[18px] w-[18px]" /><span>Recolher menu</span></>}
             </button>
+            <Tip content={<span>Aumentar: <b>Ctrl +</b> · Diminuir: <b>Ctrl −</b> · Normal: <b>Ctrl 0</b> (ou Ctrl + roda do mouse). Painéis laterais e inferiores podem ser arrastados pela borda, e as tabelas têm o botão de tela cheia.</span>} side="right">
+              <div className="flex h-8 w-full cursor-help items-center gap-2.5 rounded-lg px-2.5 text-[12.5px] text-fg/70">
+                <ZoomIn className="h-[18px] w-[18px] shrink-0" />{!collapsed && <span>Tamanho: Ctrl + / Ctrl −</span>}
+              </div>
+            </Tip>
             {!collapsed && (
               <Tip content="Os dados ficam apenas no seu computador; a interface roda em 127.0.0.1." side="right">
                 <div className="flex items-center gap-2 px-2.5 pt-1 text-[11.5px] text-muted"><Lock className="h-3.5 w-3.5" />100% local · v{meta.version}</div>
@@ -97,15 +108,17 @@ export default function App() {
 
         {/* conteúdo */}
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-panel/80 px-5 backdrop-blur">
+          <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-panel/80 px-3 backdrop-blur tall:h-14 tall:px-5">
             <div className="min-w-0">
               <h1 className="truncate text-[15px] font-semibold tracking-tight">{page.title}</h1>
               <p className="truncate text-[12px] text-muted">{page.subtitle}</p>
             </div>
           </header>
-          <div className={cx('min-h-0 flex-1', ['analise', 'relatorio', 'auditoria', 'sped', 'efd'].includes(state.page) ? 'overflow-hidden' : 'overflow-auto')}>
+          <div className={cx('min-h-0 flex-1', ['analise', 'relatorio', 'auditoria', 'sped', 'efd', 'fornecedor', 'blocom'].includes(state.page) ? 'overflow-hidden' : 'overflow-auto')}>
             {state.page === 'analise' && <AnalysisPage />}
             {state.page === 'relatorio' && <ReportPage />}
+            {state.page === 'fornecedor' && <FornecedorPage />}
+            {state.page === 'blocom' && <BlocoMPage />}
             {state.page === 'sped' && <RawPage key="sf" tipo="ICMS_IPI" />}
             {state.page === 'efd' && <RawPage key="ec" tipo="CONTRIB" />}
             {state.page === 'arquivos' && <FilesPage />}

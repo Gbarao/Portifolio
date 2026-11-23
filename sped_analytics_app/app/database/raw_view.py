@@ -139,6 +139,12 @@ class RegisterQuery:
         if (self.q.get("busca") or "").strip():
             self.params.append(str(self.q["busca"]).strip().lower())
             conds.append(f"contains(lower(l.linha), ${len(self.params)})")
+        if self.q.get("participantes"):
+            from app.database import fornecedor
+            self.params.append(fornecedor.norm_ids(self.q["participantes"]))
+            sql = fornecedor.participant_lines_sql(self.tipo, self.ids, f"${len(self.params)}")
+            conds.append(f"EXISTS (SELECT 1 FROM {sql} pl WHERE pl.file_id = l.file_id AND pl.line_no = l.line_no "
+                         f"AND pl.reg = '{self.reg}')")
         return " AND ".join(conds)
 
     def _field_count(self, where: str) -> int:
@@ -166,7 +172,7 @@ class RegisterQuery:
     def _build(self) -> None:
         where = self._base_where()
         nf = self._field_count(where) if self.ids else 0
-        lay = catalog.layout(self.tipo, self.reg) or ["REG"]
+        lay = catalog.layout(self.tipo, self.reg, nf) or ["REG"]
         n_fields = max(len(lay), nf)
         names = [lay[i] if i < len(lay) else f"CAMPO_{i + 1:02d}" for i in range(n_fields)]
         self.fields = names[1:]                      # sem o REG
@@ -371,6 +377,8 @@ def describe_filters(tipo: str, q: dict) -> dict[str, str]:
         out["Operação"] = "Entradas" if q["operacao"] == "0" else "Saídas"
     if q.get("busca"):
         out["Texto na linha"] = q["busca"]
+    if q.get("participantes"):
+        out["Participante (CNPJ/CPF)"] = ", ".join(map(str, q["participantes"]))
     for i, c in enumerate(q.get("condicoes") or [], 1):
         out[f"Condição {i}"] = f"{c.get('campo')} {OPS.get(c.get('op'), c.get('op'))} {c.get('valor') or ''}".strip()
     return {k: str(v) for k, v in out.items()}

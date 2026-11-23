@@ -4,6 +4,7 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      screens: { tall: { raw: '(min-height: 821px)' } },
       fontFamily: {
         sans: ['"Inter Variable"', 'Inter', 'system-ui', 'Segoe UI', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],

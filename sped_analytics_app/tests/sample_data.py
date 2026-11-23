@@ -182,9 +182,59 @@ def efd_contrib(comp: str, tipo_escrit: str = "0", extra_pis: float = 0.0) -> st
                  "2000,00", "7,6000", "152,00", "06", "0", "3.1.04", "", "ALUGUEL PREDIO"),
             line("F120", "09", "04", "0", "1", "500,00", "0,00", "50", "500,00", "1,6500", "8,25", "50", "500,00",
                  "7,6000", "38,00", "1.2.01", "", "DEPRECIACAO MAQUINAS"),
-            line("F990", "0"),
-            line("9001", "0"), line("9990", "0"), line("9999", "0")]
+            line("F990", "0")]
+    out += bloco_m(comp)
+    out += [line("9001", "0"), line("9990", "0"), line("9999", "0")]
     return "".join(out)
+
+
+# Bases de crédito dos documentos acima (CST 50, alíquota básica), por natureza (Tabela 4.3.7):
+#   01 revenda: C170 CFOP 1102 (1.000) + C191 CFOP 1102 (1.500); 02 insumo: C170 CFOP 1101 (500 + 300);
+#   03 serviço: A170 (1.000) + D101 (120); 04 energia: C501 (250); 06 F100 (2.000); 09 F120 (500)
+BASES_CREDITO = {"01": 2500.0, "02": 800.0, "03": 1120.0, "04": 250.0, "06": 2000.0, "09": 500.0}
+RECEITA_BRUTA = 20000.0
+
+
+def bloco_m(comp: str) -> list[str]:
+    """Apuração (Bloco M) e controle de créditos (1100/1500) coerentes com os documentos de efd_contrib().
+    Em 2024-02: ajuste de acréscimo de crédito (M110/M510) e uso de crédito de período anterior (1100/1500)."""
+    fev = comp == "2024-02"
+    base = sum(BASES_CREDITO.values())
+    out = [line("M001", "0")]
+    for trib, aliq, cod_rec, aj, ant in (("PIS", 1.65, "691201", 10.0, 50.0), ("COFINS", 7.6, "585601", 40.0, 200.0)):
+        cred = round(base * aliq / 100, 2)
+        aj = aj if fev else 0.0
+        ant = ant if fev else 0.0
+        disp = round(cred + aj, 2)
+        cont = round(RECEITA_BRUTA * aliq / 100, 2)
+        dev = round(cont - disp - ant, 2)
+        r_cred, r_det, r_aj, r_cons, r_rec, r_det_cont, r_nt, r_nt_det = (
+            ("M100", "M105", "M110", "M200", "M205", "M210", "M400", "M410") if trib == "PIS"
+            else ("M500", "M505", "M510", "M600", "M605", "M610", "M800", "M810"))
+        out.append(line(r_cred, "101", "0", money(base), f"{aliq:.4f}".replace(".", ","), "", "", money(cred),
+                        money(aj), "0,00", "0,00", money(disp), "0", money(disp), "0,00"))
+        for nat, b in BASES_CREDITO.items():
+            out.append(line(r_det, nat, "50", money(b), "", money(b), money(b), "", "", ""))
+        if aj:
+            out.append(line(r_aj, "1", money(aj), "05", "123", "AJUSTE DE TESTE", f"01{comp[5:7]}{comp[:4]}"))
+        out.append(line(r_cons, money(cont), money(disp), money(ant), money(dev), "0,00", "0,00", money(dev),
+                        "0,00", "0,00", "0,00", "0,00", money(dev)))
+        out.append(line(r_rec, "08", cod_rec, money(dev)))
+        out.append(line(r_det_cont, "01", money(RECEITA_BRUTA), money(RECEITA_BRUTA), "0,00", "0,00",
+                        money(RECEITA_BRUTA), f"{aliq:.4f}".replace(".", ","), "", "", money(cont), "0,00", "0,00",
+                        "0,00", "0,00", money(cont)))
+        out.append(line(r_nt, "06", "1000,00", "3.1.10", ""))
+        out.append(line(r_nt_det, "999", "1000,00", "3.1.10", ""))
+    out.append(line("M990", "0"))
+    out.append(line("1001", "0" if fev else "1"))
+    if fev:
+        for reg, apu, usado_ant, usado in (("1100", 500.0, 100.0, 50.0), ("1500", 2000.0, 400.0, 200.0)):
+            disp = apu - usado_ant
+            out.append(line(reg, "122023", "01", "", "101", money(apu), "0,00", money(apu), money(usado_ant),
+                            "0,00", "0,00", money(disp), money(usado), "0,00", "0,00", "0,00", "0,00",
+                            money(disp - usado)))
+    out.append(line("1990", "0"))
+    return out
 
 
 def write_scenario(dest: Path) -> list[Path]:

@@ -52,7 +52,12 @@ export interface GlobalFilters {
 }
 
 export type Mode = 'arvore' | 'tabela' | 'mensal'
-export type Page = 'analise' | 'relatorio' | 'sped' | 'efd' | 'arquivos' | 'regras' | 'auditoria'
+export type Page = 'analise' | 'relatorio' | 'fornecedor' | 'blocom' | 'sped' | 'efd' | 'arquivos' | 'regras' | 'auditoria'
+
+export interface FornRef { cnpjs: string[]; nome: string }
+export interface FornState extends FornRef { comp_ini?: string; comp_fim?: string; tab: string; recentes: FornRef[] }
+export type Tributo = 'PIS' | 'COFINS'
+export interface BlocoMState { empresas: string[]; comp_ini?: string; comp_fim?: string; tab: string; tributo: Tributo }
 
 export interface Having { metric: string; op: string; value: string }
 export interface ReportLayout { nome: string; rows: string[]; col: string | null; metrics: string[] }
@@ -89,6 +94,8 @@ export interface UiState {
   page: Page
   raw: Record<RawTipo, RawState>
   report: ReportState
+  forn: FornState
+  blocom: BlocoMState
 }
 
 export interface SavedFilter {

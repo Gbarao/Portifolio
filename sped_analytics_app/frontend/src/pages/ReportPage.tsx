@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { DataGrid, type GridCol, type GridRow } from '../components/DataGrid'
 import { FilterBar } from '../components/FilterBar'
+import { CollapseToggle, MaxButton, SidePanel, useCollapsed, useDragHeight, useMaximize } from '../components/layout'
 import { Badge, Button, Card, Dialog, Field, Input, Menu, MenuItem, MenuLabel, MenuSep, Popover, Select, Switch, Tip, cx } from '../components/ui'
 import { api, download } from '../lib/api'
 import { fmtComp, fmtInt } from '../lib/format'
@@ -165,18 +166,32 @@ export function ReportPage() {
     ...rp.rows.map((d) => ({ k: d, l: dimLabel(d) })),
   ]
   const sortIsDim = rp.rows.includes(rp.sort.by)
+  const [cfgCollapsed, setCfgCollapsed] = useCollapsed('report-config')
+  const mx = useMaximize()
+  const docsH = useDragHeight('report-docs', 280)
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-5">
+    <div className="flex h-full min-h-0 flex-col gap-2 p-3 tall:gap-3 tall:p-5">
       <div className="flex flex-wrap items-center gap-2">
         <FilterBar />
       </div>
       <RulesChip />
       <div className="flex min-h-0 flex-1 gap-3">
-        <FieldList rp={rp} onDrag={(d) => { dragRef.current = d }} addRow={addRow} setCol={(k) => upd({ col: k, rows: rp.rows.filter((x) => x !== k) })} toggleMetric={toggleMetric} />
+        <SidePanel id="report-fields" title="Campos" defaultWidth={264} min={200} max={480}>
+          <FieldList rp={rp} onDrag={(d) => { dragRef.current = d }} addRow={addRow} setCol={(k) => upd({ col: k, rows: rp.rows.filter((x) => x !== k) })} toggleMetric={toggleMetric} />
+        </SidePanel>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 tall:gap-3">
           {/* áreas de montagem */}
+          {cfgCollapsed ? (
+            <Card className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 text-[12.5px]">
+              <span className="text-muted">Linhas:</span><b className="font-medium">{rp.rows.map(dimLabel).join(' › ') || '—'}</b>
+              {rp.col && <><span className="text-muted">Colunas:</span><b className="font-medium">{dimLabel(rp.col)}</b></>}
+              <span className="text-muted">Valores:</span><b className="truncate font-medium">{rp.metrics.map(metricLabel).join(', ')}</b>
+              <div className="flex-1" />
+              <CollapseToggle collapsed onToggle={() => setCfgCollapsed(false)} label="montagem" />
+            </Card>
+          ) : (
           <Card className="p-2.5">
             <div className="grid grid-cols-1 gap-2 lg:grid-cols-[1.4fr_0.8fr_1.4fr]">
               <Zone title="Linhas" icon={<Rows3 className="h-4 w-4" />} hint="Arraste dimensões (Unidade, Fornecedor, CFOP…)" onDrop={() => dropTo('rows')}>
@@ -197,6 +212,7 @@ export function ReportPage() {
               </Zone>
             </div>
           </Card>
+          )}
 
           {/* ordenação, filtros, opções */}
           <div className="flex flex-wrap items-center gap-2">
@@ -229,6 +245,7 @@ export function ReportPage() {
               </div>
             </Tip>
             <div className="flex-1" />
+            {!cfgCollapsed && <CollapseToggle collapsed={false} onToggle={() => setCfgCollapsed(true)} label="montagem" />}
             <Layouts rp={rp} upd={upd} />
             <Button variant="primary" icon={<ArrowDownToLine className="h-4 w-4" />} disabled={!data || !rp.metrics.length}
               onClick={() => runExport('/api/export/report', { ...body, appliedFilterName: state.appliedFilterName }, 'Excel do relatório')}>Excel</Button>
@@ -257,9 +274,14 @@ export function ReportPage() {
                 <span className="inline-flex items-center gap-1"><Database className="h-3.5 w-3.5" />{data.source.replace('fato_entradas_consolidadas', 'itens (fato)')} · {data.ms} ms</span>
               </>
             ) : null}
+            <div className="flex-1" />
+            <MaxButton on={mx.on} onClick={mx.toggle} size="icon-sm" />
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-[200px] flex-1">
+            {mx.on && <div className="fixed inset-0 z-30 bg-black/30" onClick={mx.toggle} />}
+            <div className={cx('min-h-[200px] flex-1', mx.on && 'fixed inset-2 z-40 flex flex-col rounded-xl border bg-bg p-2 shadow-pop')}>
+              {mx.on && <div className="flex items-center gap-2 px-1 pb-2 text-[13px] font-semibold">Relatório dinâmico<span className="font-normal text-muted">· {fmtInt(data?.rowCount ?? 0)} linha(s)</span><div className="flex-1" /><MaxButton on onClick={mx.toggle} size="icon-sm" /></div>}
+              <div className={cx(mx.on ? 'min-h-0 flex-1' : 'h-full')}>
               {!rp.metrics.length ? (
                 <Card className="flex h-full items-center justify-center text-[13px] text-muted">Escolha ao menos um valor na área “Valores”.</Card>
               ) : (
@@ -267,9 +289,11 @@ export function ReportPage() {
                   onSelect={onSelect} sort={gridSort} onSort={onSort} rowHeight={32} dense
                   emptyText={error ? 'Não foi possível montar o relatório' : 'Nenhum dado para os filtros atuais'} />
               )}
+              </div>
             </div>
+            {selected && docsH.handle}
             {selected && (
-              <div className="flex h-[280px] shrink-0 flex-col pt-2">
+              <div className="flex shrink-0 flex-col" style={{ height: docsH.h }}>
                 <DocsPanel path={selected.path} base={base} ctx={{ ...base, hierarchy: rp.rows }} onClose={() => setSelected(null)} onExport={runExport} />
               </div>
             )}
@@ -346,7 +370,7 @@ function FieldList({ rp, onDrag, addRow, setCol, toggleMetric }: { rp: ReportSta
   const dims = meta.dimensions.filter((d) => !n || d.label.toLowerCase().includes(n))
   const mets = meta.metrics.filter((m) => !n || m.label.toLowerCase().includes(n))
   return (
-    <Card className="flex w-[264px] shrink-0 flex-col overflow-hidden">
+    <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="border-b p-2.5"><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar campo…" icon={<Search className="h-4 w-4" />} /></div>
       <div className="min-h-0 flex-1 overflow-auto p-1.5">
         <div className="px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">Dimensões</div>

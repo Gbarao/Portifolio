@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { DataGrid, sortRows, tableToGrid, useSort, type GridCol, type GridRow } from '../components/DataGrid'
 import { FilterBar, HierarchyEditor, MetricsPicker } from '../components/FilterBar'
+import { CollapseToggle, MaxButton, useCollapsed, useMaximize } from '../components/layout'
 import { Badge, Button, Dialog, Field, Input, Kpi, Menu, MenuItem, MenuLabel, MenuSep, Popover, Segmented, Select, Tip, cx } from '../components/ui'
 import { api, download } from '../lib/api'
 import { fmtBRL, fmtCnpj, fmtComp, fmtCompact, fmtInt } from '../lib/format'
@@ -45,6 +46,8 @@ export function AnalysisPage() {
   const base = useMemo(() => ({ gf: state.gf, rules }), [state.gf, rules])
   const queryKey = JSON.stringify({ base, h, mode, metrics, pivotMetric, dataVersion })
 
+  const [kpiCollapsed, setKpiCollapsed] = useCollapsed('analise-kpis')
+  const mx = useMaximize()
   // ---------------------------------------------------------------- indicadores
   const [kpi, setKpi] = useState<Record<string, any> | null>(null)
   const [docs, setDocs] = useState<number | null>(null)
@@ -230,11 +233,13 @@ export function AnalysisPage() {
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-5">
+    <div className="flex h-full min-h-0 flex-col gap-2 p-3 tall:gap-3 tall:p-5">
       {/* filtros */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <FilterBar />
         <div className="flex items-center gap-2 text-[12px] text-muted">
+          <CollapseToggle collapsed={kpiCollapsed} onToggle={() => setKpiCollapsed(!kpiCollapsed)} label="indicadores" />
+          <MaxButton on={mx.on} onClick={mx.toggle} size="icon-sm" />
           {info.source && (
             <Tip content="Tabela consultada. Resumos pré-somados (agg_*) respondem mais rápido que a tabela de itens (fato).">
               <span className="inline-flex items-center gap-1.5 rounded-md bg-sunken px-2 py-1"><Database className="h-3.5 w-3.5" />{info.source.replace('fato_entradas_consolidadas', 'itens (fato)')}<span className="opacity-60">· {info.ms} ms</span></span>
@@ -245,6 +250,14 @@ export function AnalysisPage() {
       <RulesChip />
 
       {/* indicadores + evolução mensal */}
+      {kpiCollapsed ? (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border bg-panel px-3.5 py-2 text-[12.5px] shadow-card">
+          {([['Valor contábil', 'vl_contabil'], ['ICMS', 'vl_icms'], ['IPI', 'vl_ipi'], ['PIS', 'vl_pis'], ['COFINS', 'vl_cofins'], ['Recuperáveis', 'vl_trib_recuperaveis'], ['Custo líquido', 'vl_custo_liquido']] as const).map(([l, k]) => (
+            <span key={k}><span className="text-muted">{l} </span><b className="num font-semibold">{kpi ? fmtBRL(kpi[k]) : '…'}</b></span>
+          ))}
+          <span className="text-muted">{docs == null ? '…' : fmtInt(docs)} documentos</span>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_360px]">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Kpi label="Valor contábil" icon={<Receipt className="h-3.5 w-3.5" />} loading={!kpi} value={fmtBRL(kpi?.vl_contabil)}
@@ -260,6 +273,7 @@ export function AnalysisPage() {
         </div>
         <TrendCard trend={trend} />
       </div>
+      )}
 
       {/* barra de visualização */}
       <div className="flex flex-wrap items-center gap-2">
@@ -298,7 +312,10 @@ export function AnalysisPage() {
 
       {/* grade + painel de notas */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-[220px] flex-1">
+        {mx.on && <div className="fixed inset-0 z-30 bg-black/30" onClick={mx.toggle} />}
+        <div className={cx('min-h-[220px] flex-1', mx.on && 'fixed inset-2 z-40 flex flex-col rounded-xl border bg-bg p-2 shadow-pop')}>
+          {mx.on && <div className="flex items-center gap-2 px-1 pb-2 text-[13px] font-semibold">Análise consolidada<span className="font-normal text-muted">· {h.map(dimLabel).join(' › ')}</span><div className="flex-1" /><MaxButton on onClick={mx.toggle} size="icon-sm" /></div>}
+          <div className={mx.on ? 'min-h-0 flex-1' : 'h-full'}>
           {mode === 'tabela' ? (
             <DataGrid columns={flatGrid.columns} rows={flatGrid.rows} totals={rootTotals} loading={loading}
               selectedId={selected?.id} onSelect={onSelect} sort={sort} onSort={toggleSort} />
@@ -306,6 +323,7 @@ export function AnalysisPage() {
             <DataGrid columns={[treeCol, ...valueCols]} rows={treeRows} totals={rootTotals} loading={loading || rootBucket?.status === 'loading'}
               treeKey="__dim" selectedId={selected?.id} onSelect={onSelect} onToggle={toggle} sort={sort} onSort={toggleSort} />
           )}
+          </div>
         </div>
         {truncatedFlat && <div className="pt-1.5 text-[12px] text-warn">Exibindo as {fmtInt(flat?.limit)} maiores linhas por valor; a linha Total considera todas. Use Exportar para o conjunto completo.</div>}
 

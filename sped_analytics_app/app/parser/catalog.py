@@ -90,6 +90,34 @@ DESCRICOES = {
         "M500": "Crédito de Cofins relativo ao período",
         "M505": "Detalhamento da base de cálculo do crédito apurado no período – Cofins",
         "M600": "Consolidação da contribuição para a seguridade social – Cofins do período",
+        "M110": "Ajustes do crédito de PIS/Pasep apurado", "M115": "Detalhamento dos ajustes do crédito de PIS/Pasep",
+        "M205": "Contribuição para o PIS/Pasep a recolher – detalhamento por código de receita",
+        "M210": "Detalhamento da contribuição para o PIS/Pasep do período",
+        "M211": "Sociedades cooperativas – composição da base de cálculo – PIS/Pasep",
+        "M215": "Ajustes da base de cálculo da contribuição para o PIS/Pasep apurada",
+        "M220": "Ajustes da contribuição para o PIS/Pasep apurada",
+        "M225": "Detalhamento dos ajustes da contribuição para o PIS/Pasep apurada",
+        "M230": "Informações adicionais de diferimento – PIS/Pasep",
+        "M300": "Contribuição de PIS/Pasep diferida em períodos anteriores – valores a pagar no período",
+        "M350": "PIS/Pasep – folha de salários",
+        "M400": "Receitas isentas, não alcançadas pela incidência, sujeitas a alíquota zero ou de vendas com "
+                "suspensão – PIS/Pasep",
+        "M410": "Detalhamento das receitas isentas, não alcançadas, alíquota zero ou suspensão – PIS/Pasep",
+        "M510": "Ajustes do crédito de Cofins apurado", "M515": "Detalhamento dos ajustes do crédito de Cofins",
+        "M605": "Contribuição para a Cofins a recolher – detalhamento por código de receita",
+        "M610": "Detalhamento da contribuição para a Cofins do período",
+        "M611": "Sociedades cooperativas – composição da base de cálculo – Cofins",
+        "M615": "Ajustes da base de cálculo da Cofins apurada",
+        "M620": "Ajustes da Cofins apurada", "M625": "Detalhamento dos ajustes da Cofins apurada",
+        "M630": "Informações adicionais de diferimento – Cofins",
+        "M700": "Cofins diferida em períodos anteriores – valores a pagar no período",
+        "M800": "Receitas isentas, não alcançadas pela incidência, sujeitas a alíquota zero ou de vendas com "
+                "suspensão – Cofins",
+        "M810": "Detalhamento das receitas isentas, não alcançadas, alíquota zero ou suspensão – Cofins",
+        "1100": "Controle de créditos fiscais – PIS/Pasep",
+        "1101": "Apuração de crédito extemporâneo – documentos e operações de períodos anteriores – PIS/Pasep",
+        "1500": "Controle de créditos fiscais – Cofins",
+        "1501": "Apuração de crédito extemporâneo – documentos e operações de períodos anteriores – Cofins",
     },
 }
 
@@ -145,6 +173,57 @@ _EC_EXTRA = {
     "M600": ["REG", "VL_TOT_CONT_NC_PER", "VL_TOT_CRED_DESC", "VL_TOT_CRED_DESC_ANT", "VL_TOT_CONT_NC_DEV",
              "VL_RET_NC", "VL_OUT_DED_NC", "VL_CONT_NC_REC", "VL_TOT_CONT_CUM_PER", "VL_RET_CUM", "VL_OUT_DED_CUM",
              "VL_CONT_CUM_REC", "VL_TOT_CONT_REC"],
+    "M110": ["REG", "IND_AJ", "VL_AJ", "COD_AJ", "NUM_DOC", "DESCR_AJ", "DT_REF"],
+    "M115": ["REG", "DET_VALOR_AJ", "CST_PIS", "DET_BC_CRED", "DET_ALIQ", "DT_OPER_AJ", "DESC_AJ", "COD_CTA",
+             "INFO_COMPL"],
+    "M205": ["REG", "NUM_CAMPO", "COD_REC", "VL_DEBITO"],
+    "M210": ["REG", "COD_CONT", "VL_REC_BRT", "VL_BC_CONT", "VL_AJUS_ACRES_BC_PIS", "VL_AJUS_REDUC_BC_PIS",
+             "VL_BC_CONT_AJUS", "ALIQ_PIS", "QUANT_BC_PIS", "ALIQ_PIS_QUANT", "VL_CONT_APUR", "VL_AJUS_ACRES",
+             "VL_AJUS_REDUC", "VL_CONT_DIFER", "VL_CONT_DIFER_ANT", "VL_CONT_PER"],
+    "M215": ["REG", "IND_AJ_BC", "VL_AJ_BC", "COD_AJ_BC", "NUM_DOC", "DESCR_AJ_BC", "DT_REF", "COD_CTA", "CNPJ",
+             "INFO_COMPL"],
+    "M220": ["REG", "IND_AJ", "VL_AJ", "COD_AJ", "NUM_DOC", "DESCR_AJ", "DT_REF"],
+    "M225": ["REG", "DET_VALOR_AJ", "CST_PIS", "DET_BC_CRED", "DET_ALIQ", "DT_OPER_AJ", "DESC_AJ", "COD_CTA",
+             "INFO_COMPL"],
+    "M400": ["REG", "CST_PIS", "VL_TOT_REC", "COD_CTA", "DESC_COMPL"],
+    "M410": ["REG", "NAT_REC", "VL_REC", "COD_CTA", "DESC_COMPL"],
+    "M510": ["REG", "IND_AJ", "VL_AJ", "COD_AJ", "NUM_DOC", "DESCR_AJ", "DT_REF"],
+    "M515": ["REG", "DET_VALOR_AJ", "CST_COFINS", "DET_BC_CRED", "DET_ALIQ", "DT_OPER_AJ", "DESC_AJ", "COD_CTA",
+             "INFO_COMPL"],
+    "M605": ["REG", "NUM_CAMPO", "COD_REC", "VL_DEBITO"],
+    "M610": ["REG", "COD_CONT", "VL_REC_BRT", "VL_BC_CONT", "VL_AJUS_ACRES_BC_COFINS", "VL_AJUS_REDUC_BC_COFINS",
+             "VL_BC_CONT_AJUS", "ALIQ_COFINS", "QUANT_BC_COFINS", "ALIQ_COFINS_QUANT", "VL_CONT_APUR",
+             "VL_AJUS_ACRES", "VL_AJUS_REDUC", "VL_CONT_DIFER", "VL_CONT_DIFER_ANT", "VL_CONT_PER"],
+    "M615": ["REG", "IND_AJ_BC", "VL_AJ_BC", "COD_AJ_BC", "NUM_DOC", "DESCR_AJ_BC", "DT_REF", "COD_CTA", "CNPJ",
+             "INFO_COMPL"],
+    "M620": ["REG", "IND_AJ", "VL_AJ", "COD_AJ", "NUM_DOC", "DESCR_AJ", "DT_REF"],
+    "M625": ["REG", "DET_VALOR_AJ", "CST_COFINS", "DET_BC_CRED", "DET_ALIQ", "DT_OPER_AJ", "DESC_AJ", "COD_CTA",
+             "INFO_COMPL"],
+    "M800": ["REG", "CST_COFINS", "VL_TOT_REC", "COD_CTA", "DESC_COMPL"],
+    "M810": ["REG", "NAT_REC", "VL_REC", "COD_CTA", "DESC_COMPL"],
+    "1100": ["REG", "PER_APU_CRED", "ORIG_CRED", "CNPJ_SUC", "COD_CRED", "VL_CRED_APU", "VL_CRED_EXT_APU",
+             "VL_TOT_CRED_APU", "VL_CRED_DESC_PA_ANT", "VL_CRED_PER_PA_ANT", "VL_CRED_DCOMP_PA_ANT",
+             "SD_CRED_DISP_EFD", "VL_CRED_DESC_EFD", "VL_CRED_PER_EFD", "VL_CRED_DCOMP_EFD", "VL_CRED_TRANS",
+             "VL_CRED_OUT", "SLD_CRED_FIM"],
+    "1500": ["REG", "PER_APU_CRED", "ORIG_CRED", "CNPJ_SUC", "COD_CRED", "VL_CRED_APU", "VL_CRED_EXT_APU",
+             "VL_TOT_CRED_APU", "VL_CRED_DESC_PA_ANT", "VL_CRED_PER_PA_ANT", "VL_CRED_DCOMP_PA_ANT",
+             "SD_CRED_DISP_EFD", "VL_CRED_DESC_EFD", "VL_CRED_PER_EFD", "VL_CRED_DCOMP_EFD", "VL_CRED_TRANS",
+             "VL_CRED_OUT", "SLD_CRED_FIM"],
+}
+
+# Leiautes anteriores (identificados pela quantidade de campos da linha). M210/M610 ganharam, para fatos geradores
+# a partir de 01/2019, os campos de ajuste da base de cálculo (VL_AJUS_ACRES_BC_*, VL_AJUS_REDUC_BC_*,
+# VL_BC_CONT_AJUS).
+LAYOUT_VARIANTS = {
+    "CONTRIB": {
+        "M210": [["REG", "COD_CONT", "VL_REC_BRT", "VL_BC_CONT", "ALIQ_PIS", "QUANT_BC_PIS", "ALIQ_PIS_QUANT",
+                  "VL_CONT_APUR", "VL_AJUS_ACRES", "VL_AJUS_REDUC", "VL_CONT_DIFER", "VL_CONT_DIFER_ANT",
+                  "VL_CONT_PER"]],
+        "M610": [["REG", "COD_CONT", "VL_REC_BRT", "VL_BC_CONT", "ALIQ_COFINS", "QUANT_BC_COFINS",
+                  "ALIQ_COFINS_QUANT", "VL_CONT_APUR", "VL_AJUS_ACRES", "VL_AJUS_REDUC", "VL_CONT_DIFER",
+                  "VL_CONT_DIFER_ANT", "VL_CONT_PER"]],
+    },
+    "ICMS_IPI": {},
 }
 
 LAYOUTS = {"ICMS_IPI": {**_SF_EXTRA, **_SF_TARGET}, "CONTRIB": {**_EC_EXTRA, **_EC_TARGET}}
@@ -155,7 +234,12 @@ DOC_ID_FIELDS = ["IND_OPER", "IND_EMIT", "COD_PART", "COD_MOD", "COD_SIT", "SER"
                  "COD_CRED", "NAT_BC_CRED"]
 
 
-def layout(tipo: str, reg: str) -> list[str] | None:
+def layout(tipo: str, reg: str, n_fields: int | None = None) -> list[str] | None:
+    """Leiaute do registro; com n_fields (campos da linha, sem o REG), escolhe a versão de leiaute compatível."""
+    if n_fields is not None:
+        for v in LAYOUT_VARIANTS.get(tipo, {}).get(reg, []):
+            if len(v) - 1 == n_fields:
+                return v
     lay = LAYOUTS[tipo].get(reg)
     if lay:
         return lay
@@ -182,8 +266,8 @@ def field_kind(name: str) -> str:
     n = name.upper()
     if n.startswith("DT_"):
         return "date"
-    if n.startswith(("VL_", "SLD_", "DEB_ESP")) or n in ("VL",):
+    if n.startswith(("VL_", "SLD_", "SD_", "DEB_ESP", "DET_VALOR", "DET_BC")) or n in ("VL",):
         return "money"
-    if n.startswith(("ALIQ", "QTD", "QUANT", "FAT_CONV")):
+    if n.startswith(("ALIQ", "QTD", "QUANT", "FAT_CONV", "DET_ALIQ")):
         return "qty"
     return "text"

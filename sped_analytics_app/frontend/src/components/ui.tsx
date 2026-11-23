@@ -57,10 +57,12 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   })
 
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  const bare = /\bborder-0\b/.test(className || '')   // dentro de um grupo com borda própria: sem moldura dupla
   return (
     <div className={cx('relative inline-flex', className)}>
       <select {...rest}
-        className="h-[34px] w-full appearance-none rounded-lg border bg-panel pl-2.5 pr-8 text-[13px] text-fg focus-ring hover:border-muted/40">
+        className={cx('w-full appearance-none rounded-lg pl-2.5 pr-8 text-[13px] text-fg focus-ring',
+          bare ? 'h-[30px] border-0 bg-transparent hover:bg-sunken' : 'h-[34px] border bg-panel hover:border-muted/40')}>
         {children}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />

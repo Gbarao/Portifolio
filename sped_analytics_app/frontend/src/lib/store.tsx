@@ -1,12 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
-import type { Meta, Options, RawState, RawTipo, ReportState, SavedFilter, SnapshotInfo, UiState } from './types'
+import type { BlocoMState, FornState, Meta, Options, RawState, RawTipo, ReportState, SavedFilter, SnapshotInfo, UiState } from './types'
 
 export const DEFAULT_REPORT: ReportState = {
   rows: ['filial', 'fornecedor', 'cfop', 'descr_item'], col: null,
   metrics: ['vl_contabil', 'vl_icms', 'vl_icms_st_fcp', 'vl_ipi', 'vl_pis', 'vl_cofins', 'vl_trib_recuperaveis', 'vl_custo_liquido'],
   sort: { by: 'vl_contabil', dir: 'desc' }, limit: 5000, texto: '', having: [], subtotais: false, layouts: [],
 }
+
+export const EMPTY_FORN: FornState = { cnpjs: [], nome: '', tab: 'geral', recentes: [] }
+export const EMPTY_BLOCOM: BlocoMState = { empresas: [], tab: 'resumo', tributo: 'PIS' }
 
 export const EMPTY_RAW: RawState = { modo: 'registro', reg: 'C100', competencias: [], unidades: [], arquivos: [], operacao: '', busca: '', condicoes: [], registrosArquivo: '' }
 
@@ -44,7 +47,9 @@ function normalize(st: Partial<UiState>, meta: Meta): UiState {
     mode: (['arvore', 'tabela', 'mensal'].includes(st.mode as string) ? st.mode : 'arvore') as any,
     pivotMetric: st.pivotMetric && mets.has(st.pivotMetric) ? st.pivotMetric : 'vl_contabil',
     appliedFilterName: st.appliedFilterName || '',
-    page: (['analise', 'relatorio', 'sped', 'efd', 'arquivos', 'regras', 'auditoria'].includes(st.page as string) ? st.page : 'analise') as any,
+    page: (['analise', 'relatorio', 'fornecedor', 'blocom', 'sped', 'efd', 'arquivos', 'regras', 'auditoria'].includes(st.page as string) ? st.page : 'analise') as any,
+    forn: { ...EMPTY_FORN, ...((st as any).forn || {}) },
+    blocom: { ...EMPTY_BLOCOM, ...((st as any).blocom || {}) },
     report: (() => {
       const r = { ...DEFAULT_REPORT, ...((st as any).report || {}) } as ReportState
       r.rows = (r.rows || []).filter((d) => dims.has(d))

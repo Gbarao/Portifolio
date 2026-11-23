@@ -129,6 +129,16 @@ A interface é aberta em uma janela própria (com `pywebview`) ou no navegador, 
 recolhível com acesso rápido aos filtros salvos, tema claro/escuro/sistema e estado salvo automaticamente (filtros,
 hierarquia, colunas e tela são restaurados ao reabrir).
 
+Interface ajustável à tela:
+- a janela abre maximizada e pode ser redimensionada livremente (mínimo 960 × 600);
+- **Ctrl +**, **Ctrl −** e **Ctrl 0** (ou Ctrl + roda do mouse) aumentam, reduzem e restauram o tamanho de tudo;
+- painéis laterais (campos do relatório, lista de registros) têm a largura ajustada arrastando a borda e podem ser
+  recolhidos; painéis inferiores (notas fiscais, detalhes) têm a altura ajustada pelo divisor;
+- toda tabela principal tem o botão **tela cheia** (Esc para sair);
+- indicadores e a área de montagem do relatório podem ser recolhidos — em telas de até ~820 px de altura
+  (notebooks) começam recolhidos; a escolha fica guardada no computador;
+- o texto da janela pode ser selecionado e copiado.
+
 1. **Análise**:
    - filtros globais em botões com busca instantânea (período, filial, fornecedor, CFOP, item, UF e "Mais":
      razão social, raiz de CNPJ, descrição, prefixos de CFOP e NCM), aplicados na hora;
@@ -155,7 +165,39 @@ hierarquia, colunas e tela são restaurados ao reabrir).
    - exportação para Excel com linha de total e aba de parâmetros.
    O total é sempre calculado na base (não somando as linhas da tela); com filtro por valor ativo, sobre as linhas
    que passam no filtro.
-3. **SPED Fiscal** e **EFD-Contribuições** (seção "Arquivos como estão"): o conteúdo dos arquivos exatamente como
+3. **Busca por fornecedor**: digite CNPJ, CPF, raiz (8 dígitos) ou parte do nome; a lista sugere os participantes
+   (com o valor de entradas) e, para uma raiz, oferece todos os estabelecimentos juntos. Para o escolhido mostra:
+   - cabeçalho com cadastro atual e quantas versões de cadastro existem; indicadores das entradas consolidadas;
+   - **Visão geral**: entradas por competência, por unidade, por CFOP, situação na EFD-Contribuições, CST PIS e
+     natureza da base de crédito (mesma base da Análise: SPED Fiscal + EFD-Contribuições, sem duplicidade);
+   - **Notas fiscais** e **Itens** comprados;
+   - **Nos arquivos**: cada linha dos TXT ligada ao participante, entradas **e saídas**, por registro — documentos com
+     `COD_PART` (C100, C500, D100, D500, D700, H010, A100, F100), os registros filhos desses documentos (C170, C190,
+     C191, C197, D190, A170, C501/C505, D101/D105...), os C191/C195 da EFD-Contribuições (CNPJ no próprio registro)
+     e os 0150/0175. O código do participante é resolvido em cada arquivo (na EFD-Contribuições, em cada
+     estabelecimento do 0140), porque o mesmo CNPJ pode ter códigos diferentes em arquivos diferentes;
+   - **Cadastro**: todas as versões do 0150 (nome, IE, endereço, município) com período em que aparecem, e os 0175;
+   - período ajustável e **Excel completo** (cadastro, entradas, notas, itens e uma aba por registro dos arquivos).
+4. **Bloco M (PIS/Cofins)**: a apuração da EFD-Contribuições como informada no arquivo, por empresa e período, com
+   PIS/Pasep e Cofins em separado:
+   - indicadores: contribuição apurada (não cumulativa e cumulativa), créditos apurados, ajustes, créditos
+     descontados (do período e de períodos anteriores), retenções e deduções, valor a recolher e saldo de créditos;
+   - **Apuração**: demonstrativo do M200/M600 linha a linha por competência, com gráfico;
+   - **Créditos**: M100/M500 por tipo de crédito e, abaixo, a base por natureza (Tabela 4.3.7) e CST do M105/M505;
+   - **Contribuição**: M210/M610 por código da contribuição (leiautes anterior e posterior a 2019) e débitos por
+     código de receita (M205/M605);
+   - **Ajustes**: M110/M510, M215/M615 e M220/M620 com detalhamento (M115/M515, M225/M625);
+   - **Receitas não tributadas**: M400/M800 e o detalhamento por natureza da receita (M410/M810);
+   - **Saldos de créditos**: controle de créditos de períodos anteriores (1100/1500);
+   - **Conferência com documentos**: base do crédito do M105/M505 × soma dos documentos da própria escrituração
+     (C170, A170, C191/C195, C501/C505, D101/D105, D501/D505, F100, F120, F130) por competência, natureza e CST;
+   - **Verificações**: conferências aritméticas entre os registros (ex.: total a recolher = não cumulativa +
+     cumulativa; crédito descontado do M200 = soma dos M100; crédito disponível do M100 = apurado + ajustes −
+     diferido; saldos do 1100), com tolerância de R$ 0,01;
+   - exportação de todas as seções para Excel.
+   Fonte: as linhas originais guardadas na importação. Arquivos importados antes da versão 2.1 precisam ser
+   indexados (botão na própria tela).
+5. **SPED Fiscal** e **EFD-Contribuições** (seção "Arquivos como estão"): o conteúdo dos arquivos exatamente como
    importado, **sem nenhum cruzamento** — inclusive saídas, notas canceladas, apuração (E110, M100, M200…),
    inventário e qualquer outro registro:
    - lista de registros presentes, agrupada por bloco, com descrição e quantidade de linhas;
@@ -169,13 +211,13 @@ hierarquia, colunas e tela são restaurados ao reabrir).
      campo (igual, contém, começa com, lista, maior/menor, vazio);
    - modo **Arquivo**: o TXT inteiro na ordem original, com filtro por registro e texto;
    - exportação de tudo o que estiver filtrado para Excel (com aba de parâmetros) ou CSV.
-4. **Arquivos**: importação por pasta ou arrastando arquivos, com barra de progresso e resultado por arquivo;
+6. **Arquivos**: importação por pasta ou arrastando arquivos, com barra de progresso e resultado por arquivo;
    matriz de cobertura filial × mês; lista de arquivos com remoção; remoção por competência; backup e restauração;
    reconsolidação; log.
-5. **Regras e filtros**: construtor de regras E/OU com grupos aninhados, prévia do SQL, teste (linhas e valores),
+7. **Regras e filtros**: construtor de regras E/OU com grupos aninhados, prévia do SQL, teste (linhas e valores),
    modelos prontos, biblioteca de filtros salvos por categoria e visualizador de snapshots (com verificação de
    integridade, exportação e restauração do contexto).
-6. **Auditoria**: verificações agrupadas, contadas automaticamente e exportáveis em uma pasta de trabalho:
+8. **Auditoria**: verificações agrupadas, contadas automaticamente e exportáveis em uma pasta de trabalho:
    - **fechamento**: PIS/COFINS dos registros brutos da EFD × totalizador (deve ser sempre zero);
    - créditos somente na EFD (linhas `EC_SEM_PAR`);
    - diferença de valor do documento entre SF e EFD;
@@ -195,7 +237,7 @@ pip install -r requirements-opcional.txt
 python -m pytest -q tests
 ```
 
-São 124 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
+São 136 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
 - `tests/test_pipeline.py` (18): detecção, duplicidade, retificadora, fechamento C170 = C190, rateio de frete,
   N1/N3/DOC, Exceção 2, 0175, filtros, auditoria, cobertura, exportação, snapshot, backup e remoção.
 - `tests/test_cruzamento.py` (22): cenários em que os dois arquivos **não** são espelhos. Numeração de itens
@@ -214,6 +256,12 @@ São 124 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_dat
   igual ao total da base e ao total devolvido, sem chave repetida (nenhum valor duplicado); PIS do relatório igual
   ao PIS bruto da EFD; colunas por competência somam a coluna total; ordenação, limite, texto, filtros por valor,
   API e exportação.
+- `tests/test_blocom_fornecedor.py` (12): Bloco M — apuração, indicadores, base do crédito por natureza, ajustes,
+  saldos 1100/1500, verificações sem divergência em arquivo coerente e com divergência em arquivo alterado,
+  conferência com os documentos (diferença detectada), M210 no leiaute anterior a 2019, seleção sem Bloco M e
+  exportação; busca por fornecedor — sugestões por CNPJ e nome, totais iguais aos da Análise, versões de cadastro,
+  linhas nos arquivos com entradas e saídas separadas, filtro por período, código do participante por arquivo,
+  raiz e exportação.
 
 ### Alterar a interface (opcional, para desenvolvedores)
 
@@ -292,6 +340,17 @@ Relatório dinâmico (fato com 1,2 milhão de linhas, 8 valores, consulta já aq
 | idem + filtro por texto | `agg_item` | 0,43 s |
 | idem + filtro por valor (PIS > 0) | `agg_item` | 0,34 s |
 | Fornecedor × Competência (colunas por mês) | `agg_fornecedor` | 22 ms |
+
+Busca por fornecedor e Bloco M (base de 3,6 milhões de linhas originais; fornecedor com 2.400 itens de entrada):
+
+| Medida | Tempo |
+|---|---|
+| Sugestões enquanto digita (nome ou CNPJ) | 5 ms |
+| Cadastro (0150 de todos os arquivos) | 20 ms |
+| Entradas consolidadas (totais, mês, filial, CFOP, itens, status) | 44 ms |
+| Linhas nos arquivos por registro, entradas/saídas | 0,32 s |
+| Grade de um registro filtrada pelo participante (C170 / C100) | 0,70 s / 0,62 s |
+| Bloco M completo (todas as seções, verificações e conferência) | 0,13 s |
 
 Telas SPED Fiscal / EFD-Contribuições (base de 3,6 milhões de linhas originais):
 

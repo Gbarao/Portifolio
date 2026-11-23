@@ -100,7 +100,7 @@ export function RulesPage() {
   )
 
   return (
-    <div className="grid grid-cols-1 gap-4 p-5 2xl:grid-cols-[1fr_420px]">
+    <div className="grid grid-cols-1 gap-3 p-3 tall:gap-4 tall:p-5 2xl:grid-cols-[1fr_420px]">
       <div className="space-y-4">
         <Card>
           <CardHeader icon={<Zap className="h-5 w-5" />} title="Construtor de regras"

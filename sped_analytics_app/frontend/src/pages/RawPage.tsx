@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { DataGrid, type GridCol, type GridRow } from '../components/DataGrid'
 import { FilterButton, MultiList } from '../components/FilterBar'
+import { MaxBackdrop, MaxButton, SidePanel, useMaximize } from '../components/layout'
 import { Badge, Button, Card, Empty, Input, Menu, MenuItem, Popover, Segmented, Select, Spinner, Tip, cx } from '../components/ui'
 import { api, download, waitJob } from '../lib/api'
 import { fmtCnpj, fmtComp, fmtInt } from '../lib/format'
@@ -17,7 +18,7 @@ interface Overview {
   operadores: Record<string, string>
 }
 interface RegInfo { reg: string; n: number; bloco: string; descricao: string; conhecido: boolean }
-interface Page { columns: string[]; types: ColType[]; rows: any[][]; total: number | null; labels?: Record<string, string>; fields?: string[]; docReg?: string | null; ms?: number }
+export interface RawPage_ { columns: string[]; types: ColType[]; rows: any[][]; total: number | null; labels?: Record<string, string>; fields?: string[]; docReg?: string | null; ms?: number }
 
 const PAGE = 1000
 const WIDTHS: Record<string, number> = {
@@ -130,7 +131,7 @@ export function RawPage({ tipo }: { tipo: RawTipo }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-5">
+    <div className="flex h-full min-h-0 flex-col gap-2 p-3 tall:gap-3 tall:p-5">
       {filterBar}
       {pending.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-[12.5px]">
@@ -142,7 +143,9 @@ export function RawPage({ tipo }: { tipo: RawTipo }) {
         </div>
       )}
       <div className="flex min-h-0 flex-1 gap-3">
-        <RegisterList regs={regs} blocos={ov?.blocos ?? {}} rs={rs} upd={upd} />
+        <SidePanel id="raw-regs" title="Registros" defaultWidth={300} min={220} max={560}>
+          <RegisterList regs={regs} blocos={ov?.blocos ?? {}} rs={rs} upd={upd} />
+        </SidePanel>
         <div className="flex min-w-0 flex-1 flex-col">
           {rs.modo === 'registro'
             ? <RegisterView tipo={tipo} rs={rs} upd={upd} regs={regs} ops={ov?.operadores ?? {}} />
@@ -164,7 +167,7 @@ function RegisterList({ regs, blocos, rs, upd }: { regs: RegInfo[] | null; bloco
     return [...m.entries()]
   }, [regs, q])
   return (
-    <Card className="flex w-[300px] shrink-0 flex-col overflow-hidden">
+    <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="space-y-2 border-b p-2.5">
         <Segmented value={rs.modo} onChange={(m) => upd({ modo: m })} options={[
           { value: 'registro', label: 'Por registro', icon: <ListOrdered className="h-4 w-4" /> },
@@ -202,15 +205,15 @@ function RegisterList({ regs, blocos, rs, upd }: { regs: RegInfo[] | null; bloco
 }
 
 // ------------------------------------------------------------------------------------------------------------
-function useInfinite(url: string, body: any, key: string) {
-  const [data, setData] = useState<Page | null>(null)
+export function useInfinite(url: string, body: any, key: string) {
+  const [data, setData] = useState<RawPage_ | null>(null)
   const [loading, setLoading] = useState(false)
   const gen = useRef(0)
   const more = useRef(false)
   useEffect(() => {
     const g = ++gen.current
     setLoading(true); setData(null)
-    api.post<Page>(url, { ...body, offset: 0, limit: PAGE })
+    api.post<RawPage_>(url, { ...body, offset: 0, limit: PAGE })
       .then((r) => { if (g === gen.current) setData(r) })
       .catch((e) => { if (g === gen.current) { toast.error(e.message); setData({ columns: [], types: [], rows: [], total: 0 }) } })
       .finally(() => { if (g === gen.current) setLoading(false) })
@@ -220,7 +223,7 @@ function useInfinite(url: string, body: any, key: string) {
     if (!data || more.current || data.total == null || data.rows.length >= data.total) return
     more.current = true
     const g = gen.current
-    api.post<Page>(url, { ...body, offset: data.rows.length, limit: PAGE })
+    api.post<RawPage_>(url, { ...body, offset: data.rows.length, limit: PAGE })
       .then((r) => { if (g === gen.current) setData((d) => d ? { ...d, rows: [...d.rows, ...r.rows] } : d) })
       .catch((e) => toast.error(e.message))
       .finally(() => { more.current = false })
@@ -229,7 +232,7 @@ function useInfinite(url: string, body: any, key: string) {
   return { data, loading, loadMore }
 }
 
-function toGrid(p: Page | null): { columns: GridCol[]; rows: GridRow[] } {
+export function toGrid(p: RawPage_ | null): { columns: GridCol[]; rows: GridRow[] } {
   if (!p) return { columns: [], rows: [] }
   const columns: GridCol[] = p.columns.map((c, i) => ({
     key: c, label: p.labels?.[c] ?? c, type: p.types[i] ?? 'text',
@@ -241,7 +244,7 @@ function toGrid(p: Page | null): { columns: GridCol[]; rows: GridRow[] } {
   return { columns, rows }
 }
 
-function exportTo(tipo: RawTipo, body: any, fmt: 'xlsx' | 'csv', what: string) {
+export function exportTo(tipo: RawTipo, body: any, fmt: 'xlsx' | 'csv', what: string) {
   const id = toast.loading(`Gerando ${fmt === 'xlsx' ? 'Excel' : 'CSV'} de ${what}…`)
   api.post(`/api/raw/${tipo}/export`, { ...body, fmt })
     .then((r) => {
@@ -260,8 +263,11 @@ function RegisterView({ tipo, rs, upd, regs, ops }: { tipo: RawTipo; rs: RawStat
   const { data, loading, loadMore } = useInfinite(`/api/raw/${tipo}/query`, body, key)
   const g = useMemo(() => toGrid(data), [data])
   const info = regs?.find((r) => r.reg === rs.reg)
+  const mx = useMaximize()
   return (
-    <Card className="flex min-h-0 flex-1 flex-col">
+    <>
+    <MaxBackdrop on={mx.on} onClose={mx.toggle} />
+    <Card className={cx('flex min-h-0 flex-1 flex-col', mx.cls)}>
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
@@ -279,6 +285,7 @@ function RegisterView({ tipo, rs, upd, regs, ops }: { tipo: RawTipo; rs: RawStat
           <MenuItem icon={<FileSpreadsheet className="h-4 w-4" />} hint="Todas as linhas filtradas, com os nomes oficiais dos campos" onSelect={() => exportTo(tipo, body, 'xlsx', rs.reg)}>Excel (.xlsx)</MenuItem>
           <MenuItem icon={<FileText className="h-4 w-4" />} hint="Separador ; e vírgula decimal" onSelect={() => exportTo(tipo, body, 'csv', rs.reg)}>CSV</MenuItem>
         </Menu>
+        <MaxButton on={mx.on} onClick={mx.toggle} />
       </div>
       {rs.condicoes.length > 0 && (
         <div className="flex flex-wrap gap-1.5 border-b px-4 py-2">
@@ -295,6 +302,7 @@ function RegisterView({ tipo, rs, upd, regs, ops }: { tipo: RawTipo; rs: RawStat
           emptyText={loading ? '' : 'Nenhuma linha deste registro para os filtros'} />
       </div>
     </Card>
+    </>
   )
 }
 
@@ -345,15 +353,19 @@ function FileView({ tipo, rs, upd, files }: { tipo: RawTipo; rs: RawState; upd: 
   const { data, loading, loadMore } = useInfinite(`/api/raw/${tipo}/lines`, body, key)
   const g = useMemo(() => toGrid(data ? { ...data, labels: { linha_no: 'Linha', reg: 'Registro', unidade: 'Unidade (CNPJ)', linha_original: 'Linha original' } } : null), [data])
   const f = files.find((x) => x.id_arquivo === fid)
+  const mx = useMaximize()
   return (
-    <Card className="flex min-h-0 flex-1 flex-col">
+    <>
+    <MaxBackdrop on={mx.on} onClose={mx.toggle} />
+    <Card className={cx('flex min-h-0 flex-1 flex-col', mx.cls)}>
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
-        <Select className="min-w-[360px] flex-1" value={fid ?? ''} onChange={(e) => upd({ arquivo: Number(e.target.value) })}>
+        <Select className="min-w-[240px] flex-1" value={fid ?? ''} onChange={(e) => upd({ arquivo: Number(e.target.value) })}>
           {indexed.map((a) => <option key={a.id_arquivo} value={a.id_arquivo}>{fmtComp(a.competencia)} · {fmtCnpj(a.cnpj)} · {a.nome}{a.finalidade === 'RETIFICADORA' ? ' (retificadora)' : ''}</option>)}
         </Select>
         <Input className="w-[240px]" value={rs.registrosArquivo} onChange={(e) => upd({ registrosArquivo: e.target.value })} placeholder="Registros (ex.: C100, C170)" />
         <Button variant="primary" icon={<ArrowDownToLine className="h-4 w-4" />} disabled={!data?.total}
           onClick={() => exportTo(tipo, { ...body, modo: 'arquivo' }, 'xlsx', 'linhas do arquivo')}>Excel</Button>
+        <MaxButton on={mx.on} onClick={mx.toggle} />
       </div>
       <div className="px-4 pt-2 text-[12px] text-muted">
         {f && <span className="break-all">{f.caminho_origem}</span>}
@@ -364,5 +376,6 @@ function FileView({ tipo, rs, upd, files }: { tipo: RawTipo; rs: RawState; upd: 
           emptyText={indexed.length ? 'Nenhuma linha' : 'Nenhum arquivo com linhas originais guardadas'} />
       </div>
     </Card>
+    </>
   )
 }

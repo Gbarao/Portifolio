@@ -28,15 +28,28 @@ USO (menu à esquerda)
      atualiza sozinho a cada mudança. Ordene do maior para o menor (ou ao contrário), filtre por texto ou por
      valor (ex.: PIS > 0), ligue subtotais, salve modelos e exporte para Excel. Sempre é o consolidado das duas
      obrigações, sem valor duplicado. Clique em uma linha para ver as notas fiscais.
-  4. "SPED Fiscal" e "EFD-Contribuições": o conteúdo dos arquivos exatamente como está no TXT, sem cruzamento.
+  4. "Busca por fornecedor": digite o CNPJ, CPF, raiz (8 dígitos) ou parte do nome e escolha na lista. Mostra o
+     cadastro (todas as versões do 0150/0175), as entradas consolidadas (por mês, filial, CFOP, itens, notas) e,
+     em "Nos arquivos", cada linha dos TXT ligada a ele, separando entradas e saídas. "Excel completo" exporta tudo.
+  5. "Bloco M (PIS/Cofins)": apuração da EFD-Contribuições por empresa e período — demonstrativo do M200/M600,
+     créditos (M100/M105), contribuição (M210/M205), ajustes, receitas não tributadas (M400/M410), saldos de
+     créditos (1100/1500), conferência da base de crédito com os documentos e verificações aritméticas.
+  6. "SPED Fiscal" e "EFD-Contribuições": o conteúdo dos arquivos exatamente como está no TXT, sem cruzamento.
      Escolha o registro na lista da esquerda (C100, C170, E110, M200...), filtre por período, unidade, arquivo,
      entradas/saídas, texto ou condições por campo, e exporte para Excel. O modo "Arquivo" mostra o TXT inteiro.
-  5. "Regras e filtros": regras sob demanda, filtros salvos (também na barra lateral, 1 clique) e análises
+  7. "Regras e filtros": regras sob demanda, filtros salvos (também na barra lateral, 1 clique) e análises
      congeladas.
-  6. "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições. Ao carregar os primeiros arquivos
+  8. "Auditoria": divergências entre SPED Fiscal e EFD-Contribuições. Ao carregar os primeiros arquivos
      reais, confira (as verificações rodam sozinhas ao abrir a tela):
        - "Fechamento": deve ficar em 0 (todo PIS/COFINS da EFD está no totalizador);
        - "Diagnóstico": mostra quanto casou item a item (N1), por rateio (N2/N3) e quanto ficou sem par.
+
+AJUSTE À TELA
+  - Ctrl + / Ctrl − / Ctrl 0 (ou Ctrl + roda do mouse): aumenta, reduz ou restaura o tamanho de tudo.
+  - Arraste a borda dos painéis laterais para alargá-los; a seta « recolhe o painel. Painéis de baixo (notas
+    fiscais, detalhes) são ajustados pelo divisor acima deles.
+  - O botão de tela cheia (canto da tabela) amplia a tabela; Esc volta.
+  - "Recolher indicadores" / "Recolher montagem" liberam espaço vertical (em notebooks já começam recolhidos).
 
 ATUALIZAÇÃO DE UMA VERSÃO ANTERIOR
   1. Feche o programa.

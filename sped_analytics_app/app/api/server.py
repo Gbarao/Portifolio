@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app import config
-from app.database import analytics, audit, raw_view, snapshots
+from app.database import analytics, audit, bloco_m, fornecedor, raw_view, snapshots
 from app.database import filter_builder as fb
 from app.database.aggregates import FATO
 from app.database.engine import SpedDatabase, get_db
@@ -32,7 +32,7 @@ from app.exporter import excel_writer
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 EXPORT_DIR = config.DATA_DIR / "exports"
 UPLOAD_DIR = config.DATA_DIR / "uploads"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.0"
 STATE_VERSION = 3
 
 
@@ -266,6 +266,119 @@ def create_app(db: SpedDatabase | None = None, native: bool = False) -> FastAPI:
     @api.post("/api/raw/index")
     def raw_index():
         return {"job": jobs.start("rebuild", lambda prog: db.index_lines(prog))}
+
+    # ---------------------------------------------------------------- Bloco M (apuração PIS/Cofins)
+    @api.exception_handler(fornecedor.FornecedorError)
+    def _forn_error(_req, exc: fornecedor.FornecedorError):
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    @api.get("/api/blocom/overview")
+    def blocom_overview():
+        return _json(bloco_m.overview(db))
+
+    @api.post("/api/blocom/query")
+    def blocom_query(q: dict = Body(default={})):
+        t0 = time.perf_counter()
+        res = bloco_m.analyze(db, q)
+        sections = {}
+        for key in bloco_m.SECTIONS:
+            df = bloco_m.section(res, key)
+            sections[key] = payload(df) if df.width else {"columns": [], "types": [], "rows": []}
+        ver = res.get("verificacoes")
+        n_div = int(ver.filter(pl.col("status") != "OK").height) if isinstance(ver, pl.DataFrame) and ver.height else 0
+        return _json({"sections": sections, "kpis": res["kpis"], "leiaute": res["leiaute"],
+                      "divergencias": n_div, "arquivos": len(res["ids"]), "labels": bloco_m.LABELS,
+                      "ms": round((time.perf_counter() - t0) * 1000)})
+
+    @api.post("/api/export/blocom")
+    def export_blocom(q: dict = Body(default={})):
+        res = bloco_m.analyze(db, q)
+        sheets, labels = {}, {}
+        for key, (sheet, _cols) in bloco_m.SECTIONS.items():
+            df = bloco_m.section(res, key)
+            if df.width:
+                sheets[sheet] = df
+                labels[sheet] = bloco_m.LABELS
+        info = bloco_m.describe(q)
+        if res["leiaute"]:
+            info["Atenção – leiaute"] = "; ".join(
+                f"{w['reg']}: {w['linhas']} linha(s) com {w['campos_encontrados']} campos (esperado {w['campos_esperados']})"
+                for w in res["leiaute"])
+        p = _export_name("bloco_m_efd_contribuicoes", "xlsx")
+        excel_writer.export_frames_excel(p, sheets or {"Vazio": pl.DataFrame({"info": ["Sem registros do Bloco M"]})},
+                                         info, labels=labels)
+        return _export_result(p)
+
+    # ---------------------------------------------------------------- busca por fornecedor
+    @api.get("/api/fornecedor/buscar")
+    def forn_search(q: str = ""):
+        return _json(fornecedor.search(db, q))
+
+    @api.post("/api/fornecedor/raiz")
+    def forn_raiz(q: dict = Body(...)):
+        return _json({"cnpjs": fornecedor.expand_raiz(db, str(q.get("raiz") or ""))})
+
+    @api.post("/api/fornecedor/perfil")
+    def forn_profile(q: dict = Body(...)):
+        t0 = time.perf_counter()
+        ids = fornecedor.norm_ids(q.get("cnpjs"))
+        cad = fornecedor.cadastro(db, ids, q)
+        cons = fornecedor.consolidado(db, ids, q)
+        out = {"cnpjs": ids, "cadastro": payload(cad) if cad.width else None,
+               "variantes": payload(fornecedor.cadastro_variantes(cad)) if cad.width else None,
+               "alteracoes": None, "totais": {k: _clean(v) for k, v in cons["totais"].items()},
+               "n_docs": cons["n_docs"]}
+        alt = fornecedor.alteracoes(db, ids, q)
+        if alt.width:
+            out["alteracoes"] = payload(alt)
+        for k in ("por_mes", "por_filial", "por_cfop", "por_item", "por_status", "por_cst_pis", "por_nat"):
+            out[k] = payload(cons[k])
+        out["ms"] = round((time.perf_counter() - t0) * 1000)
+        return _json(out)
+
+    @api.post("/api/fornecedor/arquivos")
+    def forn_files(q: dict = Body(...)):
+        t0 = time.perf_counter()
+        rows = fornecedor.file_summary(db, fornecedor.norm_ids(q.get("cnpjs")), q)
+        return _json({"registros": rows, "ms": round((time.perf_counter() - t0) * 1000)})
+
+    @api.post("/api/export/fornecedor")
+    def export_fornecedor(q: dict = Body(...)):
+        ids = fornecedor.norm_ids(q.get("cnpjs"))
+        cad = fornecedor.cadastro(db, ids, q)
+        cons = fornecedor.consolidado(db, ids, q)
+        gf = fornecedor.gf_for(ids, q)
+        sheets: dict[str, pl.DataFrame] = {}
+        if cad.width:
+            sheets["Cadastro (versões)"] = fornecedor.cadastro_variantes(cad)
+            sheets["Cadastro 0150 (todos)"] = cad
+        alt = fornecedor.alteracoes(db, ids, q)
+        if alt.width:
+            sheets["Alterações 0175"] = alt
+        for k, name in (("por_mes", "Entradas por mês"), ("por_filial", "Por filial"), ("por_cfop", "Por CFOP"),
+                        ("por_item", "Por item"), ("por_status", "Status EFD")):
+            sheets[name] = cons[k]
+        sheets["Notas fiscais"] = analytics.documents(db, gf, None, None, limit=excel_writer.EXCEL_MAX_ROWS)
+        sheets["Itens (consolidado)"] = analytics.lines(db, gf, None, None, limit=excel_writer.EXCEL_MAX_ROWS)
+        summ = fornecedor.file_summary(db, ids, q)
+        if summ:
+            sheets["Arquivos – resumo"] = pl.DataFrame(summ).select(
+                ["tipo_label", "reg", "descricao", "n", "entradas", "saidas", "arquivos"])
+        labels = {}
+        for r in summ:   # linhas originais por registro, com os nomes oficiais dos campos
+            rq = raw_view.RegisterQuery(db, r["tipo"], {"reg": r["reg"], "participantes": ids,
+                                                        "comp_ini": q.get("comp_ini"), "comp_fim": q.get("comp_fim")})
+            name = f"{'SF' if r['tipo'] == 'ICMS_IPI' else 'EFD'} {r['reg']}"
+            sheets[name] = db.query(rq.select_sql(), rq.params)
+            labels[name] = raw_view.labels(rq)
+        info = {"Fornecedor (CNPJ/CPF)": ", ".join(ids),
+                "Período": f"{q.get('comp_ini') or 'início'} a {q.get('comp_fim') or 'fim'}",
+                "Consolidado": "Entradas da base consolidada SPED Fiscal + EFD-Contribuições (sem duplicidade)",
+                "Arquivos": "Linhas dos TXT ligadas ao participante (entradas e saídas), pelo código do 0150 de cada "
+                            "arquivo, registros filhos dos documentos e C191/C195"}
+        p = _export_name(f"fornecedor_{ids[0][:14].replace(':', '_')}", "xlsx")
+        excel_writer.export_frames_excel(p, sheets, info, labels=labels)
+        return _export_result(p)
 
     # ---------------------------------------------------------------- metadados e estado
     @api.get("/api/meta")

@@ -70,7 +70,14 @@ def run_app(native: bool) -> None:
             webview.settings["ALLOW_DOWNLOADS"] = True
         except Exception:  # noqa: BLE001
             pass
-        webview.create_window("Consolidação Fiscal SPED", url, width=1600, height=960, min_size=(1100, 700))
+        # Janela ajustável: abre maximizada (ocupa a tela, qualquer resolução), aceita zoom (Ctrl +/−, Ctrl 0,
+        # Ctrl + roda do mouse) e seleção/cópia de texto; tamanho mínimo pequeno para telas de notebook.
+        opts = dict(width=1440, height=900, min_size=(960, 600), resizable=True, maximized=True, zoomable=True,
+                    text_select=True)
+        try:
+            webview.create_window("Consolidação Fiscal SPED", url, **opts)
+        except TypeError:   # pywebview antigo sem algum dos parâmetros
+            webview.create_window("Consolidação Fiscal SPED", url, width=1440, height=900, min_size=(960, 600))
         webview.start()
         server.should_exit = True
         t.join(timeout=5)
