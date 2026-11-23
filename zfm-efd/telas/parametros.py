@@ -9,77 +9,47 @@ if con is None:
     st.stop()
 ui.seletor_empresas(con)
 tem_dados = ui.preparar(con)
-ui.cabecalho("Parâmetros e premissas",
-             "Todas as alíquotas, percentuais, fatores e listas usados nos cálculos ficam aqui (nada fixo no "
-             "código). Os valores iniciais são hipóteses para validar. Edite na tabela e clique em Salvar, ou "
-             "baixe o CSV, edite no Excel e importe de volta.", "Dados")
+ui.cabecalho("Cadastros",
+             "O que o programa não consegue tirar sozinho das EFDs. Tudo vem pré-preenchido a partir das EFDs ao fim de "
+             "cada importação; você só confirma ou corrige. Comece pelas três primeiras abas. As demais são opcionais.",
+             "Dados")
 
-c1, c2 = st.columns([1, 3], vertical_alignment="center")
-if c1.button("Preencher a partir das EFDs", type="primary", disabled=not tem_dados or ui.importacao_rodando(),
-             icon=":material/auto_fix_high:", width="stretch"):
-    with ui.protegido("preencher os parâmetros a partir das EFDs"):
+# ---------------------------------------------------------------- o que falta
+with ui.protegido("verificar pendências"):
+    prod = params.carregar("param_produtos")
+    ez = params.carregar("param_empresas_zfm")
+    grupo = ez[ez["origem"] == "grupo"] if not ez.empty else ez
+    inc = prod[prod["incentivado"]] if not prod.empty else prod
+    sem_ipi = int(inc["aliq_ipi"].isna().sum()) if not inc.empty else 0
+    ui.passos([
+        ("1. Empresas ZFM: confirmar o tipo (indústria incentivada, habilitado, não habilitado) e o regime dos "
+         "estabelecimentos do grupo", not grupo.empty and bool(grupo["revisado"].all()),
+         f"{int((~grupo['revisado']).sum())} estabelecimento(s) a confirmar" if not grupo.empty else "sem dados"),
+        ("2. Produtos: conferir os incentivados, o tipo de bem e a alíquota do IPI (lida da EFD)", sem_ipi == 0
+         and not inc.empty and bool(inc["revisado"].all()),
+         (f"{sem_ipi} incentivado(s) sem alíquota de IPI na EFD; " if sem_ipi else "")
+         + (f"{int((~inc['revisado']).sum())} a confirmar" if not inc.empty else "sem produtos")),
+        ("3. Alíquotas de CBS e IBS: conferir as premissas de simulação", True, "valores iniciais de pesquisa (fonte na tabela)"),
+        ("4. Comprovações (opcional): projetos SUFRAMA e internamento — sem elas, os incentivos ficam como "
+         "'potencialmente elegíveis'", not params.carregar("param_projetos_suframa").empty, ""),
+    ])
+    c1, c2 = st.columns([1, 3], vertical_alignment="center")
+    if c1.button("Reler as EFDs", disabled=not tem_dados or ui.importacao_rodando(), icon=":material/auto_fix_high:",
+                 width="stretch", help="Acrescenta o que for novo e relê as alíquotas de IPI; não apaga o que foi editado."):
         from zfm.importacao import TRAVA_BANCO
         with st.spinner("Lendo cadastros das EFDs..."), TRAVA_BANCO:
             n = params.preencher_a_partir_das_efds(con)
-        st.success("Linhas novas: " + ", ".join(f"{params.TABELAS[k].titulo}: {v}" for k, v in n.items())
-                   + ". Linhas já editadas não foram alteradas.")
-c2.caption("Acrescenta empresas, CNPJs do Amazonas (tipo ZFM), produtos (0200), CFOPs e códigos de ajuste "
-           "(E111/E116) encontrados nas EFDs, sem apagar o que já foi editado. Roda sozinho ao fim de cada "
-           "importação.")
-
-# ---------------------------------------------------------------- pendencias
-with ui.protegido("verificar pendências"):
-    prod = params.carregar("param_produtos")
-    cod = params.carregar("param_codigos_ajuste_icms")
-    ez = params.carregar("param_empresas_zfm")
-    pend = []
-    if not ez.empty and (~ez["revisado"]).any():
-        pend.append(f"Empresas ZFM: {int((~ez['revisado']).sum())} CNPJ(s) com tipo/regime definidos automaticamente.")
-    if not prod.empty:
-        sem_tipi = prod[prod["incentivado"] & prod["aliq_tipi_2023"].isna()]
-        if len(sem_tipi):
-            pend.append(f"Produtos: {len(sem_tipi)} incentivado(s) sem alíquota TIPI (CP de CBS no percentual "
-                        "menor e vantagem competitiva de IPI zero).")
-        pc = simulacao.produtos_com_percentuais(prod)
-        risco = pc[pc["incentivado"] & pc["alerta_ibs"]]
-        if len(risco):
-            pend.append(f"Produtos: {len(risco)} com crédito estímulo maior que o percentual do art. 450 "
-                        "(candidatos a perda no IBS).")
-    if not cod.empty and (cod["classe"] == "nao_classificado").any():
-        pend.append(f"Códigos de ajuste: {int((cod['classe'] == 'nao_classificado').sum())} sem classificação.")
-    if pend:
-        with st.container(border=True):
-            st.markdown("**Pendências de revisão**")
-            for p in pend:
-                st.markdown(f"- {p}")
-
-ORDEM = ["param_empresas_zfm", "param_produtos", "param_projetos_suframa", "param_internamento",
-         "param_importacoes", "param_servicos_zfm", "param_regras_legais", "param_regras_cenario",
-         "param_conferencia_cenario", "param_aliquotas_cenario", "param_codigos_ajuste_icms", "param_cfops", "param_empresas",
-         "param_municipios_zfm", "param_aliquotas_regime_geral", "param_teses", "param_premissas"]
-TITULOS = {"param_empresas_zfm": "Empresas ZFM", "param_produtos": "Produtos",
-           "param_projetos_suframa": "Projetos SUFRAMA", "param_internamento": "Internamento",
-           "param_importacoes": "Importações", "param_servicos_zfm": "Serviços na ZFM",
-           "param_regras_legais": "Regras legais",
-           "param_regras_cenario": "Regras por cenário", "param_conferencia_cenario": "Conferências",
-           "param_aliquotas_cenario": "Alíquotas por ano", "param_codigos_ajuste_icms": "Códigos de ajuste",
-           "param_cfops": "CFOPs", "param_empresas": "Empresas do grupo", "param_municipios_zfm": "Municípios ZFM",
-           "param_aliquotas_regime_geral": "Regime geral", "param_teses": "Teses", "param_premissas": "Premissas"}
-abas = st.tabs(["Resumo e alíquotas"] + [TITULOS[n] for n in ORDEM])
+        st.success("Linhas novas: " + ", ".join(f"{params.TABELAS[k].titulo}: {v}" for k, v in n.items() if v) or "nenhuma")
+    c2.caption("Roda sozinho ao fim de cada importação. Linhas marcadas como 'revisado' não são alteradas.")
 
 SELECOES = {
     "param_empresas_zfm": {"tipo": ["industria_incentivada", "habilitado", "nao_habilitado"],
-                           "regime": ["regular", "simples"],
-                           "status_habilitacao": ["", "ativa", "suspensa", "cancelada"]},
+                           "regime": ["regular", "simples"], "status_habilitacao": ["", "ativa", "suspensa", "cancelada"]},
     "param_produtos": {"tipo_bem": ["final", "capital", "intermediario", "informatica"],
                        "origem": ["", "nacional", "importada"], "excluido_art441": ["", "sim", "nao"],
-                       "uso_consumo_pessoal": ["", "sim", "nao"], "similar_nacional": ["", "sim", "nao"],
-                       "projeto_cas_2022_2025": ["", "sim", "nao"], "consumo_produtivo_comprovado": ["", "sim", "nao"],
-                       "art455_alternativa": ["", "A_cp_cbs_6", "B_ipi_6_5"]},
+                       "consumo_produtivo_comprovado": ["", "sim", "nao"]},
     "param_projetos_suframa": {"status": ["aprovado", "suspenso", "cancelado"]},
     "param_internamento": {"status": ["confirmado", "pendente", "negado"]},
-    "param_importacoes": {"destinacao": ["consumo_producao", "ativo", "revenda_presencial", "revenda_outra",
-                                         "uso_pessoal"]},
     "param_servicos_zfm": {"local_fisico_zfm": ["", "sim", "nao"]},
     "param_regras_legais": {"status": ["vigente", "futura", "revogada", "pendente_regulamentacao"]},
     "param_regras_cenario": {"entrada_creditavel": ["sim", "nao", "regime"], "cp_ibs_entrada": ["", "447", "449", "444"],
@@ -92,13 +62,104 @@ SELECOES = {
                     "tipo_efeito": ["valor_fixo_mensal", "credito_adicional", "reduz_base", "reduz_aliquota"],
                     "status": ["ativa", "em discussão", "simulação apenas"]},
 }
+ESSENCIAIS = {
+    "param_empresas_zfm": ["cnpj", "nome", "uf", "suframa", "tipo", "regime", "status_habilitacao", "validade_fim",
+                           "revisado", "regra_automatica"],
+    "param_produtos": ["raiz_cnpj", "cod_item", "descricao", "ncm", "incentivado", "tipo_bem", "aliq_ipi", "fonte_aliq_ipi",
+                       "produzido_zfm_2024", "excluido_art441", "revisado"],
+}
+ROT = {"raiz_cnpj": "Empresa (raiz CNPJ)", "cnpj": "CNPJ", "nome": "Nome", "uf": "UF", "suframa": "SUFRAMA (EFD)", "tipo": "Tipo ZFM", "regime": "Regime",
+       "status_habilitacao": "Habilitação", "validade_fim": "Válida até", "revisado": "Revisado",
+       "regra_automatica": "Por que o programa sugeriu", "cod_item": "Código", "descricao": "Descrição", "ncm": "NCM",
+       "incentivado": "Incentivado", "tipo_bem": "Tipo de bem", "aliq_ipi": "IPI (%)",
+       "fonte_aliq_ipi": "Origem da alíquota de IPI", "produzido_zfm_2024": "Industrializado na ZFM em 2024",
+       "excluido_art441": "Excluído (art. 441)"}
+
+
+def editor(nome: str, mascara: pd.Series | None = None, chave: str = "") -> None:
+    """Editor de uma tabela de cadastro. mascara: linhas mostradas (as demais são mantidas ao salvar)."""
+    t = params.TABELAS[nome]
+    df = params.carregar(nome)
+    vis = (df[mascara] if mascara is not None and not df.empty else df).reset_index(drop=True)
+    todas = True
+    if nome in ESSENCIAIS:
+        todas = st.toggle("Mostrar todas as colunas", key=f"todas_{nome}{chave}")
+    with st.expander("O que é cada coluna"):
+        st.caption(t.ajuda)
+    cfg = {c: st.column_config.SelectboxColumn(ROT.get(c, c), options=o) for c, o in SELECOES.get(nome, {}).items()}
+    for c, r in ROT.items():
+        if c in df.columns and c not in cfg:
+            cfg[c] = st.column_config.Column(r, disabled=c in ("fonte_aliq_ipi", "regra_automatica"))
+    ordem = None if todas else ESSENCIAIS[nome]
+    editado = st.data_editor(vis, key=f"ed_{nome}{chave}", num_rows="dynamic", hide_index=True, width="stretch",
+                             column_config=cfg, column_order=ordem, height=min(38 * (len(vis) + 2), 520))
+    b1, b2, b3 = st.columns([1, 1, 2])
+    if b1.button("Salvar", key=f"salvar_{nome}{chave}", type="primary", icon=":material/save:", width="stretch"):
+        novo = pd.DataFrame(editado)
+        for c in df.columns:  # colunas ocultas (column_order) voltam com o valor original
+            if c not in novo.columns:
+                novo[c] = vis[c].reindex(novo.index) if c in vis else None
+        if mascara is not None:
+            novo = pd.concat([df[~mascara], novo], ignore_index=True)
+        params.salvar(nome, novo)
+        st.success("Salvo. Os cálculos já usam os novos valores.")
+    b2.download_button("Baixar CSV", params.exportar_csv(nome, df), file_name=f"{nome}.csv", mime="text/csv",
+                       key=f"baixar_{nome}{chave}", icon=":material/download:", width="stretch")
+    with b3.popover("Importar CSV editado no Excel", icon=":material/upload:"):
+        arq = st.file_uploader("Arquivo CSV", type=["csv"], key=f"imp_{nome}{chave}")
+        if arq is not None and st.button("Confirmar importação", key=f"conf_{nome}{chave}"):
+            try:
+                novo = params.importar_csv(nome, arq.getvalue())
+                params.salvar(nome, novo)
+                st.success(f"Importado: {len(novo)} linhas.")
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
+
+
+abas = st.tabs(["1. Empresas ZFM", "2. Produtos", "3. Alíquotas CBS/IBS", "4. Comprovações (opcional)", "Avançado",
+                "Premissas adotadas"])
 
 with abas[0]:
-    with ui.protegido("mostrar as premissas"):
+    with ui.protegido("mostrar Empresas ZFM"):
+        ui.secao("Estabelecimentos do grupo e participantes do Amazonas",
+                 "O tipo define o cenário de cada operação. O SUFRAMA da EFD é só indício: confirme e marque "
+                 "'Revisado'. Validade e situação da habilitação são opcionais.")
+        part = st.toggle("Mostrar também os participantes do Amazonas (clientes e fornecedores)", key="ez_part")
+        df_ez = params.carregar("param_empresas_zfm")
+        editor("param_empresas_zfm", None if part or df_ez.empty else df_ez["origem"] == "grupo")
+
+with abas[1]:
+    with ui.protegido("mostrar Produtos"):
+        ui.secao("Produtos", "A alíquota do IPI é lida da própria EFD (C170) e vale como a TIPI do produto; a coluna "
+                 "'Origem' mostra de onde veio. Saída isenta da ZFM costuma vir sem alíquota: nesse caso, informe a "
+                 "TIPI. Confira também 'Incentivado' e 'Tipo de bem' (define o percentual do art. 450).")
+        c1, c2 = st.columns([1, 3], vertical_alignment="center")
+        so_inc = c1.toggle("Só produtos incentivados", value=True, key="pr_inc")
+        if c2.button("Reler as alíquotas de IPI da EFD", icon=":material/refresh:"):
+            n = params.preencher_aliquota_ipi(con)
+            st.success(f"{n} produto(s) atualizado(s). Produtos marcados como 'Revisado' não são alterados.")
+        df_pr = params.carregar("param_produtos")
+        editor("param_produtos", df_pr["incentivado"] if so_inc and not df_pr.empty else None)
+        if not df_pr.empty:
+            with st.expander("Percentuais calculados (art. 450) e enquadramento no art. 454"):
+                pc = simulacao.produtos_com_percentuais(df_pr[df_pr["incentivado"]])
+                if not pc.empty:
+                    v = pc[["cod_item", "descricao", "tipo_bem", "aliq_ipi", "art454", "p_ibs_450", "p_cbs_450",
+                            "nivel_credito_estimulo", "alerta_ibs"]].copy()
+                    v["p_ibs_450"] *= 100
+                    v["p_cbs_450"] *= 100
+                    ui.tabela(v.rename(columns={"art454": "Art. 454 (IPI zera)", "p_ibs_450": "CP IBS (% do saldo)",
+                                                "p_cbs_450": "CP CBS (% da venda)",
+                                                "alerta_ibs": "Crédito estímulo > CP IBS"}),
+                              moeda=[], pct=["CP IBS (% do saldo)", "CP CBS (% da venda)"])
+
+with abas[2]:
+    with ui.protegido("mostrar as alíquotas"):
         ui.secao("Alíquotas de referência de CBS e IBS por cenário (%)",
-                 "Digite a alíquota cheia de cada cenário e clique em Aplicar. 2027–2028: CBS = referência − "
-                 "'reducao_cbs_2027_2028' e IBS teste ('aliq_ibs_teste'); 2029–2032: IBS = referência × (1 − fator "
-                 "do ICMS); 2033: referência cheia. Ajuste ano a ano na aba 'Alíquotas por ano'.")
+                 "São premissas de simulação (não há alíquota definitiva em lei). Digite a alíquota cheia de cada "
+                 "cenário e clique em Aplicar: o programa monta 2027–2033 (teste de 0,1% em 2027–2028 e transição do "
+                 "IBS até 2033).")
         USAR = "usar tabela de produtos"
         refs = params.aliquotas_referencia()
         refs["ipi_protegido_override"] = refs["ipi_protegido_override"].replace("", USAR).fillna(USAR)
@@ -110,7 +171,7 @@ with abas[0]:
                 "ibs_referencia": st.column_config.NumberColumn("IBS referência (%)", format="%.2f"),
                 "aplica_cp_450": st.column_config.CheckboxColumn("Aplica CP do art. 450"),
                 "ipi_protegido_override": st.column_config.SelectboxColumn(
-                    "IPI protegido", options=[USAR, "nao"], help="'nao' = nenhum produto com IPI protegido"),
+                    "IPI do concorrente", options=[USAR, "nao"], help="'nao' = nenhum produto mantém IPI (adverso)"),
                 "fonte": st.column_config.TextColumn("Fonte / justificativa", width="large"),
             })
         if st.button("Aplicar aos anos 2027–2033", type="primary", key="aplicar_refs"):
@@ -119,8 +180,34 @@ with abas[0]:
             params.aplicar_referencias(r_)
             st.success("Alíquotas recalculadas para 2027–2033.")
             st.rerun()
-        ui.secao("Todas as premissas adotadas", "Valor adotado, onde alterar e fonte. A mesma lista vai para o "
-                 "Excel (aba 'Premissas').")
+        with st.expander("Ver ou ajustar ano a ano"):
+            editor("param_aliquotas_cenario", chave="_ano")
+
+with abas[3]:
+    with ui.protegido("mostrar as comprovações"):
+        ui.secao("Comprovações", "Opcionais. Sem elas, as operações incentivadas ficam como 'potencialmente elegíveis' "
+                 "(o incentivo é calculado como estimativa e o valor em risco aparece em Cenários ZFM > Pendências).")
+        qual = st.radio("Cadastro", ["Projetos SUFRAMA", "Internamento (ingresso na ZFM)", "Serviços prestados na ZFM"],
+                        horizontal=True, key="comp_qual")
+        editor({"Projetos SUFRAMA": "param_projetos_suframa", "Internamento (ingresso na ZFM)": "param_internamento",
+                "Serviços prestados na ZFM": "param_servicos_zfm"}[qual])
+
+with abas[4]:
+    with ui.protegido("mostrar os cadastros avançados"):
+        ui.secao("Cadastros avançados", "Regras e tabelas de apoio já preenchidas com valores iniciais. Só altere se "
+                 "precisar mudar uma regra de cálculo.")
+        AV = {"Regras legais (percentuais e vigências da LC 214/2025)": "param_regras_legais",
+              "Tratamento de cada cenário": "param_regras_cenario",
+              "Conferências do escriturado": "param_conferencia_cenario", "CFOPs": "param_cfops",
+              "Códigos de ajuste do ICMS": "param_codigos_ajuste_icms", "Empresas do grupo (nomes)": "param_empresas",
+              "Municípios da ZFM": "param_municipios_zfm", "Regime geral (fora da ZFM)": "param_aliquotas_regime_geral",
+              "Teses": "param_teses", "Premissas de cálculo": "param_premissas"}
+        qual = st.selectbox("Tabela", list(AV), key="av_qual")
+        editor(AV[qual], chave="_av")
+
+with abas[5]:
+    with ui.protegido("mostrar as premissas"):
+        ui.secao("Todas as premissas adotadas", "Valor adotado, onde alterar e fonte. A mesma lista vai para o Excel.")
         resumo = params.resumo_premissas()
         grupos = ["(todos)"] + list(dict.fromkeys(resumo["grupo"]))
         g = st.selectbox("Grupo", grupos, key="grupo_premissas")
@@ -128,63 +215,3 @@ with abas[0]:
         st.dataframe(vis.rename(columns={"grupo": "Grupo", "premissa": "Premissa", "valor_adotado": "Valor adotado",
                                          "onde_alterar": "Onde alterar", "fundamento_fonte": "Fundamento / fonte"}),
                      hide_index=True, width="stretch", height=480)
-
-
-def editor(nome: str) -> None:
-    t = params.TABELAS[nome]
-    st.caption(t.ajuda)
-    df = params.carregar(nome)
-    busca = ""
-    if len(df) > 200:
-        busca = st.text_input("Buscar (qualquer coluna)", key=f"busca_{nome}", placeholder="Digite parte do texto",
-                              help="Filtra a tabela para editar. Ao salvar, as linhas que não aparecem são mantidas.")
-    vis = df
-    if busca.strip():
-        alvo = busca.strip().lower()
-        msk = df.astype(str).apply(lambda c: c.str.lower().str.contains(alvo, regex=False)).any(axis=1)
-        vis = df[msk]
-        st.caption(f"{len(vis)} de {len(df)} linhas.")
-    cfg = {c: st.column_config.SelectboxColumn(c, options=o) for c, o in SELECOES.get(nome, {}).items()}
-    editado = st.data_editor(vis, key=f"ed_{nome}_{busca}", num_rows="dynamic", hide_index=True,
-                             width="stretch", column_config=cfg, height=min(38 * (len(vis) + 2), 520))
-    b1, b2, b3 = st.columns([1, 1, 2])
-    if b1.button("Salvar", key=f"salvar_{nome}", type="primary", icon=":material/save:", width="stretch"):
-        novo = pd.DataFrame(editado)
-        if busca.strip():
-            resto = df[~df.index.isin(vis.index)]
-            novo = pd.concat([resto, novo], ignore_index=True)
-        params.salvar(nome, novo)
-        st.success("Salvo. Os cálculos já usam os novos valores.")
-    b2.download_button("Baixar CSV", params.exportar_csv(nome, df), file_name=f"{nome}.csv", mime="text/csv",
-                       key=f"baixar_{nome}", icon=":material/download:", width="stretch")
-    with b3.popover("Importar CSV editado no Excel", icon=":material/upload:"):
-        arq = st.file_uploader("Arquivo CSV", type=["csv"], key=f"imp_{nome}")
-        if arq is not None and st.button("Confirmar importação", key=f"conf_{nome}"):
-            try:
-                novo = params.importar_csv(nome, arq.getvalue())
-                params.salvar(nome, novo)
-                st.success(f"Importado: {len(novo)} linhas.")
-                st.rerun()
-            except ValueError as e:
-                st.error(str(e))
-    if nome == "param_produtos" and not df.empty:
-        ui.secao("Percentuais calculados (art. 450)", "Não editáveis: derivados de tipo de bem, TIPI e premissas.")
-        pc = simulacao.produtos_com_percentuais(df)
-        v = pc[["raiz_cnpj", "cod_item", "descricao", "tipo_bem", "aliq_tipi_2023", "nivel_credito_estimulo",
-                "p_ibs_450", "p_cbs_450", "alerta_ibs"]].copy()
-        v["p_ibs_450"] *= 100
-        v["p_cbs_450"] *= 100
-        ui.tabela(v.rename(columns={"p_ibs_450": "CP IBS (% do saldo)", "p_cbs_450": "CP CBS (% da venda)",
-                                    "alerta_ibs": "Crédito estímulo > CP IBS"}),
-                  moeda=[], pct=["CP IBS (% do saldo)", "CP CBS (% da venda)"])
-    if nome == "param_regras_cenario":
-        st.info("Frações da alíquota do ano: 1 = integral, 0 = zero, 0,7 = 70% (art. 446). As regras valem para "
-                "todas as empresas; o cenário de cada operação é definido pelo tipo ZFM (aba Empresas ZFM), pela "
-                "origem/destino e pelo CFOP. Ordem de dedução do IBS: premissa 'ordem_deducao_ibs'.",
-                icon=":material/info:")
-
-
-for aba, nome in zip(abas[1:], ORDEM):
-    with aba:
-        with ui.protegido(f"mostrar {params.TABELAS[nome].titulo}"):
-            editor(nome)

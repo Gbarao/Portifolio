@@ -348,7 +348,7 @@ ROTULOS = {
     "carga_base_operacoes": "Carga pela base (R$)", "tolerancia": "Tolerância (R$)", "fecha": "Fecha?",
     "receita_anual": "Receita anualizada (R$)", "vantagem_hoje": "Vantagem hoje (R$)",
     "vantagem_to_be": "Vantagem To Be (R$)", "perda_vantagem": "Perda de vantagem (R$)",
-    "classe_ipi": "Situação do IPI", "aliq_tipi_2023": "TIPI 31/12/2023 (%)", "cp_cbs_pct": "CP CBS (%)",
+    "classe_ipi": "Situação do IPI", "aliq_ipi": "IPI (%)", "fonte_aliq_ipi": "Origem da alíquota de IPI", "cp_cbs_pct": "CP CBS (%)",
     "cp_ibs_pct": "CP IBS (%)", "tipo_bem": "Tipo de bem", "beneficio": "Benefício (R$)",
     "situacao": "Situação", "cenario_candidato": "Cenário candidato", "status_elegibilidade": "Status",
     "requisitos": "Requisitos (falha, dado ausente ou não comprovado)", "estabelecimentos": "Estabelecimentos", "meses": "Meses", "faltando": "Faltando",
@@ -605,13 +605,13 @@ def contexto(titulo: str, texto: str, secao_nome: str = "", intragrupo: bool = F
         cabecalho(titulo, texto, secao_nome)
         vazio("Nenhuma empresa selecionada",
               "Marque 'Todas as empresas' na barra lateral ou escolha empresas. Empresas marcadas para não "
-              "entrar na análise (Parâmetros > Empresas) não aparecem.")
+              "entrar na análise (Cadastros > Empresas) não aparecem.")
         st.stop()
     ano, f = _periodo_estab(con, raizes)
     with st.sidebar:
         st.markdown("**Opções**")
         teses = _widget_persistente(st.toggle, "Com teses", CHAVE_TESES, False,
-                                    help="Aplica as teses cadastradas em Parâmetros > Teses.")
+                                    help="Aplica as teses cadastradas em Cadastros > Teses.")
         intra = False
         if intragrupo:
             intra = _widget_persistente(st.toggle, "Eliminar operações entre empresas do grupo",

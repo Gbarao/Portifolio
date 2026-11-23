@@ -46,20 +46,17 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
            "Uma linha por empresa (raiz do CNPJ). 'Nome curto' aparece nas telas. "
            "Desmarque 'incluir' para tirar a empresa da análise."),
     Tabela("param_produtos", "Produtos",
-           {"raiz_cnpj": "texto", "cod_item": "texto", "ncm": "texto", "descricao": "texto",
-            "incentivado": "bool", "tipo_bem": "texto", "aliq_tipi_2023": "num",
-            "aliq_tipi_2026": "num", "produzido_zfm_2024": "bool", "eh_tic": "bool",
-            "ipi_protegido": "bool", "nivel_credito_estimulo": "num", "ce_100_em_2023": "bool",
-            "fonte": "texto", "ex_tipi": "texto", "origem": "texto", "excluido_art441": "texto",
-            "motivo_exclusao": "texto", "uso_consumo_pessoal": "texto", "similar_nacional": "texto",
-            "projeto_cas_2022_2025": "texto", "art455_alternativa": "texto", "aliq_ipi_futura": "num",
-            "consumo_produtivo_comprovado": "texto", "classificacao_aprovada": "bool"},
+           {"raiz_cnpj": "texto", "cod_item": "texto", "descricao": "texto", "ncm": "texto",
+            "incentivado": "bool", "tipo_bem": "texto", "aliq_ipi": "num", "fonte_aliq_ipi": "texto",
+            "produzido_zfm_2024": "bool", "eh_tic": "bool", "ce_100_em_2023": "bool",
+            "nivel_credito_estimulo": "num", "excluido_art441": "texto", "origem": "texto",
+            "consumo_produtivo_comprovado": "texto", "revisado": "bool", "observacao": "texto"},
            ("raiz_cnpj", "cod_item"),
-           "Cadastro jurídico do produto (uma linha por item do 0200). tipo_bem: final, capital, intermediario ou "
-           "informatica. Alíquotas TIPI e crédito estímulo em %. origem: nacional, importada ou vazio (o programa "
-           "infere pela CST e sinaliza). excluido_art441 / uso_consumo_pessoal / similar_nacional / "
-           "projeto_cas_2022_2025 / consumo_produtivo_comprovado: sim, nao ou vazio (= não validado; nunca é "
-           "presumido). art455_alternativa: vazio, A_cp_cbs_6 ou B_ipi_6_5. Marque classificacao_aprovada ao validar."),
+           "Uma linha por item do 0200. aliq_ipi: alíquota do IPI lida da própria EFD (C170) — usada como TIPI do "
+           "produto; corrija só se a EFD estiver errada ou vazia. tipo_bem: final, capital, intermediario ou "
+           "informatica. produzido_zfm_2024: industrializado na ZFM em 2024 ou projeto aprovado pelo CAS entre "
+           "01/01/2022 e 16/01/2025 (art. 454). excluido_art441, origem e consumo_produtivo_comprovado: vazio = "
+           "não validado."),
     Tabela("param_aliquotas_cenario", "Alíquotas por cenário",
            {"cenario": "texto", "ano": "int", "aliq_cbs": "num", "aliq_ibs": "num",
             "fator_icms": "num", "fator_cp_entrada": "num", "aplica_cp_450": "bool",
@@ -92,12 +89,6 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
            "como receita de venda. 'devolucao_de' indica a operação de origem que a devolução "
            "abate (ex.: 1201 abate venda_producao; 5201 abate compra_industrializacao). "
            "Ao editar, desmarque 'automatico'."),
-    Tabela("param_regras_entradas", "Tratamento das entradas (pós-reforma)",
-           {"origem": "texto", "tratamento_cbs": "texto", "tratamento_ibs": "texto",
-            "base_cp_447": "bool", "base_cp_449": "bool", "observacao": "texto"},
-           ("origem",),
-           "Como cada origem de entrada é tratada na simulação: tributada, aliquota_zero ou "
-           "suspensa. base_cp_447/449: entra na base dos créditos presumidos de entrada."),
     Tabela("param_teses", "Teses",
            {"tese_id": "texto", "descricao": "texto", "raiz_cnpj": "texto", "tributo": "texto",
             "tipo_efeito": "texto", "parametro": "num", "vigencia_ini": "texto",
@@ -110,14 +101,13 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
     Tabela("param_empresas_zfm", "Empresas ZFM (tipo e regime)",
            {"cnpj": "texto", "raiz": "texto", "nome": "texto", "origem": "texto", "uf": "texto",
             "cod_mun": "texto", "suframa": "texto", "tipo": "texto", "regime": "texto",
-            "regra_automatica": "texto", "revisado": "bool", "observacao": "texto",
-            "status_habilitacao": "texto", "validade_ini": "texto", "validade_fim": "texto",
-            "evidencia": "texto"},
+            "status_habilitacao": "texto", "validade_fim": "texto", "revisado": "bool",
+            "regra_automatica": "texto", "observacao": "texto"},
            ("cnpj",),
            "Uma linha por CNPJ (estabelecimentos do grupo e participantes do Amazonas). tipo: "
            "industria_incentivada (Suframa + projeto com PPB aprovado), habilitado (Suframa sem projeto "
            "industrial: comércio/serviço) ou nao_habilitado. regime: regular ou simples. status_habilitacao: "
-           "ativa, suspensa, cancelada ou vazio. Validade em AAAA-MM-DD. O campo SUFRAMA da EFD não prova a "
+           "ativa, suspensa, cancelada ou vazio. validade_fim em AAAA-MM-DD. O campo SUFRAMA da EFD não prova a "
            "habilitação: sem 'revisado', o requisito fica 'não comprovado'."),
     Tabela("param_regras_cenario", "Regras To Be por cenário",
            {"cenario": "texto", "descricao": "texto", "sentido": "texto", "cbs_debito": "num",
@@ -162,17 +152,6 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
            ("chv_nfe",),
            "Comprovação de ingresso na ZFM por NF-e. status: confirmado, pendente ou negado. Sem linha = não "
            "comprovado (crédito presumido do art. 447 e alíquota zero ficam em risco de estorno)."),
-    Tabela("param_importacoes", "Importações (DI/DUIMP)",
-           {"chv_nfe": "texto", "di_duimp": "texto", "adicao": "texto", "cod_item": "texto",
-            "valor_aduaneiro": "num", "ii": "num", "ipi_importacao": "num", "imposto_seletivo": "num",
-            "despesas_aduaneiras": "num", "frete": "num", "seguro": "num", "afrmm": "num",
-            "data_desembaraco": "texto", "destinacao": "texto", "quantidade": "num", "qtd_consumida": "num",
-            "qtd_ativo": "num", "data_depreciacao_integral": "texto", "qtd_remetida_fora_zfm": "num",
-            "data_remessa_fora": "texto", "observacao": "texto"},
-           ("chv_nfe", "di_duimp", "adicao", "cod_item"),
-           "Complementa a EFD na importação (a EFD não traz todos os componentes da base). destinacao: "
-           "consumo_producao, ativo, revenda_presencial, revenda_outra ou uso_pessoal. Controle do art. 443: "
-           "quantidades consumidas, no ativo e remetidas para fora da ZFM antes da conversão em isenção."),
     Tabela("param_servicos_zfm", "Serviços prestados na ZFM",
            {"cnpj_estab": "texto", "documento": "texto", "municipio_prestacao": "texto",
             "local_fisico_zfm": "texto", "nfse": "texto", "tomador": "texto", "natureza": "texto",
@@ -280,14 +259,6 @@ _PREMISSAS = [
      "Base da simulação: 'liquida_sem_tributos' = VL_ITEM − VL_DESC − ICMS − PIS − COFINS "
      "(ICMS por item estimado pela proporção ICMS/valor do CFOP no mês); 'valor_liquido' = "
      "VL_ITEM − VL_DESC."),
-    ("anualizacao", "meses_observados_mais_media",
-     "Ano simulado = meses observados de 2026 + média mensal nos meses sem dado (= média × 12)."),
-    ("rateio_produto_uf", "proporcao_c190_por_cfop",
-     "Saídas sem destinatário por item (C180/C181): destino rateado pela proporção do C190 + "
-     "0150 da EFD ICMS/IPI no mesmo estabelecimento, mês e CFOP."),
-    ("alocacao_credito_estimulo", "receita_incentivada",
-     "Crédito estímulo e fundos alocados aos produtos pela receita incentivada do "
-     "estabelecimento no mês."),
     ("ordem_deducao_ibs", "debito-creditos-cp447_449-cp450",
      "Ordem de dedução do IBS: 'debito-creditos-cp447_449-cp450' (CP de entrada antes; o art. 450 "
      "incide sobre o saldo que sobra) ou 'debito-creditos-cp450-cp447_449' (art. 450 sobre o saldo "
@@ -300,9 +271,6 @@ _PREMISSAS = [
     ("cst_ipi_isento", "52", "CSTs de IPI de saída considerados isenção ZFM (separar por ;)."),
     ("ipi_sem_cst_assume_isento", "sim",
      "Saídas sem CST de IPI por item (C181): produto incentivado é tratado como isento."),
-    ("aliq_pis_zfm_validas", "0,65;1,3;0", "Alíquotas de PIS aceitas nas saídas incentivadas (Q9)."),
-    ("aliq_cofins_zfm_validas", "3;6;0", "Alíquotas de COFINS aceitas nas saídas incentivadas (Q9)."),
-    ("beneficio_entradas_no_total", "nao", "Benefícios nas entradas entram no total? (informativo)"),
     ("zfm_exige_suframa", "sim",
      "Destinatário/fornecedor só é tratado como ZFM se tiver SUFRAMA no cadastro 0150 (sim/nao)."),
     ("abater_devolucoes", "sim",
@@ -328,11 +296,6 @@ _PREMISSAS = [
     ("c3a_intermediario", "compra_industrializacao",
      "Quando a compra na ZFM é 'bem intermediário' (C3a): 'compra_industrializacao' (CFOP de compra para "
      "industrialização ou tipo_bem intermediário) ou 'tipo_bem' (só pelo tipo de bem do item)."),
-    ("ipi_protegido_regra", "tipi",
-     "Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= ART454_LIMITE_TIPI (Regras legais) "
-     "(até a lista oficial do § 3º); 'tabela' = coluna ipi_protegido de Produtos."),
-    ("simular_risco_ingresso_c2", "nao",
-     "C2 sem comprovação de ingresso perde a alíquota zero e estorna o crédito presumido. Padrão: só alerta."),
     ("fator_ipi_proprio", "0",
      "Fração do IPI próprio a recolher (E520) que permanece no To Be (0 = IPI zerado/ZFM isenta)."),
     ("aliq_ibs_teste", "0,1", "IBS de teste em 2027-2028, em % (LC 214/2025: 0,05% estadual + 0,05% municipal)."),
@@ -341,10 +304,6 @@ _PREMISSAS = [
     ("tratamento_nao_confirmados", "estimativa_com_incentivo",
      "Operações 'potencialmente elegíveis' ou com 'informação insuficiente': 'estimativa_com_incentivo' (calcula "
      "o incentivo e mostra o valor em risco) ou 'regra_geral' (conservador). Não elegíveis vão sempre à regra geral."),
-    ("criterio_alocacao_450", "proporcional_debito",
-     "Art. 450 de IBS: como os créditos de IBS do período são alocados às faixas de percentual (55/75/90,25/100% e "
-     "não elegível) para formar o saldo devedor de cada faixa. 'proporcional_debito' = na proporção dos débitos "
-     "de cada faixa (demonstrado no razão por faixa)."),
     ("taxa_juros_acrescimos_mes", "",
      "Acréscimos legais (art. 29, § 2º) para estornos/recuperações: juros em % ao mês. Vazio = pendente "
      "(acréscimos não calculados e sinalizados)."),
@@ -524,20 +483,6 @@ _MODELOS: dict[str, pd.DataFrame] = {
         {"cod_ibge": "1303536", "nome": "Presidente Figueiredo", "observacao": "conferir código IBGE"},
         {"cod_ibge": "1303569", "nome": "Rio Preto da Eva", "observacao": "conferir código IBGE"},
     ]),
-    "param_regras_entradas": pd.DataFrame([
-        {"origem": "nacional_fora_zfm", "tratamento_cbs": "aliquota_zero",
-         "tratamento_ibs": "aliquota_zero", "base_cp_447": True, "base_cp_449": False,
-         "observacao": "Art. 445 (alíquota zero) e art. 447 (CP de IBS 7,5% / 13,5%)"},
-        {"origem": "zfm", "tratamento_cbs": "aliquota_zero", "tratamento_ibs": "aliquota_zero",
-         "base_cp_447": False, "base_cp_449": True,
-         "observacao": "Arts. 448/451; CP de 7,5% do art. 449 sobre intermediários"},
-        {"origem": "am_fora_zfm", "tratamento_cbs": "tributada", "tratamento_ibs": "tributada",
-         "base_cp_447": False, "base_cp_449": False, "observacao": "Amazonas fora da área da ZFM"},
-        {"origem": "importacao", "tratamento_cbs": "suspensa", "tratamento_ibs": "suspensa",
-         "base_cp_447": False, "base_cp_449": False, "observacao": "Art. 443 (suspensão)"},
-        {"origem": "servicos", "tratamento_cbs": "tributada", "tratamento_ibs": "tributada",
-         "base_cp_447": False, "base_cp_449": False, "observacao": "Serviços tomados (A100/F100)"},
-    ]),
     "param_premissas": pd.DataFrame(_PREMISSAS, columns=["chave", "valor", "descricao"]),
 }
 
@@ -610,6 +555,30 @@ def caminho(nome: str) -> Path:
     return pasta_params() / f"{nome}.csv"
 
 
+def _migrar_colunas(nome: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Converte CSVs de versoes anteriores para o modelo enxuto (sem perder o que o usuario editou)."""
+    if nome == "param_produtos" and "aliq_ipi" not in df.columns and not df.empty:
+        df = df.copy()
+        a26 = df.get("aliq_tipi_2026", pd.Series("", index=df.index)).fillna("")
+        a23 = df.get("aliq_tipi_2023", pd.Series("", index=df.index)).fillna("")
+        df["aliq_ipi"] = a23.where(a23.str.strip() != "", a26)
+        df["fonte_aliq_ipi"] = df["aliq_ipi"].map(lambda v: "informada pelo usuário (versão anterior)" if str(v).strip() else "")
+        if "projeto_cas_2022_2025" in df.columns:
+            cas = df["projeto_cas_2022_2025"].astype(str).str.lower().eq("sim")
+            df.loc[cas, "produzido_zfm_2024"] = "sim"
+        if "classificacao_aprovada" in df.columns:
+            df["revisado"] = df["classificacao_aprovada"]
+        obs = df.get("fonte", pd.Series("", index=df.index)).fillna("")
+        if "motivo_exclusao" in df.columns:
+            obs = (obs + " " + df["motivo_exclusao"].fillna("")).str.strip()
+        df["observacao"] = obs
+    if nome == "param_empresas_zfm" and "evidencia" in df.columns and not df.empty:
+        df = df.copy()
+        ev = df["evidencia"].fillna("")
+        df["observacao"] = (df.get("observacao", pd.Series("", index=df.index)).fillna("") + " " + ev).str.strip()
+    return df
+
+
 def carregar(nome: str) -> pd.DataFrame:
     p = caminho(nome)
     if not p.exists():
@@ -620,6 +589,7 @@ def carregar(nome: str) -> pd.DataFrame:
             df = _MODELOS.get(nome, pd.DataFrame(columns=list(TABELAS[nome].colunas)))
             salvar(nome, df, registrar=False)
     df = pd.read_csv(p, sep=";", dtype=str, encoding="utf-8-sig", keep_default_na=False)
+    df = _migrar_colunas(nome, df)
     df = normalizar(nome, df)
     if nome == "param_cfops" and not df.empty:  # versao anterior nao tinha 'devolucao_de'
         vazio = df["automatico"] & (df["devolucao_de"] == "")
@@ -639,6 +609,8 @@ def carregar(nome: str) -> pd.DataFrame:
         faltam = [x for x in _REGRAS_LEGAIS if x["codigo"] not in set(df["codigo"])]
         if faltam:
             df = pd.concat([df, normalizar(nome, pd.DataFrame(faltam))], ignore_index=True)
+    if nome == "param_premissas" and not df.empty:  # premissas removidas (sem efeito no calculo) saem
+        df = df[df["chave"].isin({x[0] for x in _PREMISSAS})].reset_index(drop=True)
     if nome == "param_premissas":  # premissas criadas em versoes novas entram com o valor padrao
         faltam = [x for x in _PREMISSAS if x[0] not in set(df["chave"])]
         if faltam:
@@ -805,11 +777,12 @@ def preencher_a_partir_das_efds(con: duckdb.DuckDBPyConnection) -> dict[str, int
             "raiz_cnpj": raiz, "cod_item": cod, "ncm": ncm or "", "descricao": descr or "",
             "incentivado": bool(vende_prod),
             "tipo_bem": "intermediario" if tipo_item == "06" else "final",
-            "aliq_tipi_2023": None, "aliq_tipi_2026": None,
-            "produzido_zfm_2024": bool(vende_prod), "eh_tic": False, "ipi_protegido": False,
-            "nivel_credito_estimulo": None, "ce_100_em_2023": False,
-            "fonte": "automático (EFD): incentivado = vendido com CFOP de produção própria"})
+            "aliq_ipi": None, "fonte_aliq_ipi": "",
+            "produzido_zfm_2024": bool(vende_prod), "eh_tic": False,
+            "nivel_credito_estimulo": None, "ce_100_em_2023": False, "revisado": False,
+            "observacao": "automático (EFD): incentivado = vendido com CFOP de produção própria"})
     mesclar("param_produtos", pd.DataFrame(linhas))
+    preencher_aliquota_ipi(con)
     visoes.preparar(con)
 
     # Empresas ZFM: estabelecimentos do grupo no AM + participantes do AM
@@ -850,6 +823,63 @@ def preencher_a_partir_das_efds(con: duckdb.DuckDBPyConnection) -> dict[str, int
     mesclar("param_empresas_zfm", pd.DataFrame(linhas))
     visoes.preparar(con)
     return novos
+
+
+def aliquotas_ipi_da_efd(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Aliquota do IPI de cada item lida da propria escrituracao (C170, campo ALIQ_IPI), na ordem:
+    1) saidas do item na EFD Contribuicoes (C170); 2) saidas do item na EFD ICMS/IPI (C170);
+    3) qualquer C170 do item (entradas); 4) outro item com o mesmo NCM. So aliquotas maiores que zero
+    (saida isenta da ZFM costuma vir com aliquota zero e nao informa a TIPI)."""
+    return con.execute("""
+        WITH c AS (
+            SELECT a.raiz, i.COD_ITEM AS cod_item, CAST(i.ALIQ_IPI AS DOUBLE) AS aliq, d.IND_OPER AS ind_oper,
+                   'Contribuições' AS efd
+            FROM raw_contrib_c170 i JOIN raw_contrib_c100 d ON d.arquivo_id = i.arquivo_id AND d.linha_num = i.pai_linha
+            JOIN arquivos a ON a.arquivo_id = i.arquivo_id WHERE a.ativo AND i.ALIQ_IPI > 0
+            UNION ALL
+            SELECT a.raiz, i.COD_ITEM, CAST(i.ALIQ_IPI AS DOUBLE), d.IND_OPER, 'ICMS/IPI'
+            FROM raw_icms_c170 i JOIN raw_icms_c100 d ON d.arquivo_id = i.arquivo_id AND d.linha_num = i.pai_linha
+            JOIN arquivos a ON a.arquivo_id = i.arquivo_id WHERE a.ativo AND i.ALIQ_IPI > 0),
+        r AS (SELECT raiz, cod_item, ind_oper, efd, mode(aliq) AS aliq, count(*) AS n FROM c GROUP BY ALL)
+        SELECT raiz, cod_item,
+               arg_min(aliq, CASE WHEN ind_oper = '1' AND efd = 'Contribuições' THEN 1
+                                  WHEN ind_oper = '1' THEN 2 ELSE 3 END) AS aliq,
+               arg_min(CASE WHEN ind_oper = '1' THEN 'saídas' ELSE 'entradas' END || ' do item (C170 da EFD ' || efd || ')',
+                       CASE WHEN ind_oper = '1' AND efd = 'Contribuições' THEN 1
+                            WHEN ind_oper = '1' THEN 2 ELSE 3 END) AS fonte
+        FROM r GROUP BY ALL""").df()
+
+
+def preencher_aliquota_ipi(con: duckdb.DuckDBPyConnection) -> int:
+    """Preenche aliq_ipi dos produtos ainda nao revisados com a aliquota lida da EFD (o que o usuario ja
+    revisou nao e alterado). Sem aliquota do item, usa a de outro item com o mesmo NCM."""
+    prod = carregar("param_produtos")
+    if prod.empty:
+        return 0
+    efd = aliquotas_ipi_da_efd(con)
+    por_item = {(r.raiz, r.cod_item): (r.aliq, r.fonte) for r in efd.itertuples()}
+    ncm_de = prod.set_index(["raiz_cnpj", "cod_item"])["ncm"].to_dict()
+    por_ncm: dict[str, float] = {}
+    for (raiz, cod), (aliq, _) in por_item.items():
+        n = ncm_de.get((raiz, cod), "")
+        if n:
+            por_ncm.setdefault(n, aliq)
+    n = 0
+    for i, r in prod.iterrows():
+        if r["revisado"] or (pd.notna(r["aliq_ipi"]) and str(r["fonte_aliq_ipi"]).startswith("informada")):
+            continue
+        achou = por_item.get((r["raiz_cnpj"], r["cod_item"]))
+        if achou:
+            prod.at[i, "aliq_ipi"], prod.at[i, "fonte_aliq_ipi"] = achou[0], "EFD: " + achou[1]
+        elif r["ncm"] and r["ncm"] in por_ncm:
+            prod.at[i, "aliq_ipi"] = por_ncm[r["ncm"]]
+            prod.at[i, "fonte_aliq_ipi"] = "EFD: outro item com o mesmo NCM"
+        elif pd.isna(r["aliq_ipi"]):
+            prod.at[i, "fonte_aliq_ipi"] = "não encontrada na EFD (saída isenta sem alíquota): informe a TIPI"
+            continue
+        n += 1
+    salvar("param_produtos", prod)
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -937,26 +967,26 @@ def resumo_premissas() -> pd.DataFrame:
             f"{pct(r.cbs_referencia)} / {pct(r.ibs_referencia)}"
             + ("" if r.aplica_cp_450 else " · sem CP do art. 450")
             + (" · sem IPI protegido" if str(r.ipi_protegido_override).lower() in ("nao", "não") else ""),
-            "Parâmetros > Premissas e alíquotas", r.fonte)
+            "Cadastros > Premissas e alíquotas", r.fonte)
     a = carregar("param_aliquotas_cenario")
     if not a.empty:
         f = a[a.cenario == a.cenario.iloc[0]].set_index("ano")
         add("Transição", "Fator do ICMS por ano (fração que ainda existe)",
             " · ".join(f"{ano}: {v:g}".replace(".", ",") for ano, v in f["fator_icms"].items()),
-            "Parâmetros > Alíquotas por cenário", "ADCT art. 128 (redução de 10% a 40% em 2029-2032)")
+            "Cadastros > Alíquotas por cenário", "ADCT art. 128 (redução de 10% a 40% em 2029-2032)")
         add("Transição", "Fator dos créditos presumidos de entrada (arts. 447/449)",
             " · ".join(f"{ano}: {v:g}".replace(".", ",") for ano, v in f["fator_cp_entrada"].items()),
-            "Parâmetros > Alíquotas por cenário", "Inicial = proporção do IBS no ano (conferir art. 474)")
+            "Cadastros > Alíquotas por cenário", "Inicial = proporção do IBS no ano (conferir art. 474)")
         add("Transição", "Contribuição estadual (art. 457)",
             " · ".join(f"{ano}: {pct(v)}" for ano, v in f["aliq_contrib_art457"].items()),
-            "Parâmetros > Alíquotas por cenário", "LC 214/2025 art. 457 — preencher para sensibilidade")
+            "Cadastros > Alíquotas por cenário", "LC 214/2025 art. 457 — preencher para sensibilidade")
     for r in carregar("param_regras_legais").itertuples():
         add("Regras legais (LC 214/2025)", f"{r.codigo} – {r.descricao}",
             (pct(r.percentual) if r.percentual is not None and not pd.isna(r.percentual) else "—")
             + f" · vigência {r.inicio_vigencia or '—'} a {r.fim_vigencia or 'indeterminado'} · {r.status}",
-            "Parâmetros > Regras legais", f"{r.dispositivo}; {r.fonte_normativa}. {r.observacao}".strip())
+            "Cadastros > Regras legais", f"{r.dispositivo}; {r.fonte_normativa}. {r.observacao}".strip())
     for r in carregar("param_aliquotas_regime_geral").itertuples():
-        add("Regime geral (fora da ZFM)", r.tributo, pct(r.aliquota), "Parâmetros > Regime geral", r.observacao)
+        add("Regime geral (fora da ZFM)", r.tributo, pct(r.aliquota), "Cadastros > Regime geral", r.observacao)
     def fr(v):
         return "-" if v is None or pd.isna(v) else f"{float(v):g}".replace(".", ",")
 
@@ -977,40 +1007,40 @@ def resumo_premissas() -> pd.DataFrame:
             partes.append(f"CP IBS de entrada art. {r.cp_ibs_entrada}"
                           )
         add("Regras por cenário", f"{r.cenario} – {r.descricao}", "; ".join(partes) or "sem CBS/IBS",
-            "Parâmetros > Regras por cenário", r.base_legal)
+            "Cadastros > Regras por cenário", r.base_legal)
     ez = carregar("param_empresas_zfm")
     if not ez.empty:
         cont = ez["tipo"].value_counts()
         add("Perímetro", "Tipo ZFM dos CNPJs (grupo e participantes do AM)",
             " · ".join(f"{k}: {v}" for k, v in cont.items()) + f" · revisados: {int(ez['revisado'].sum())}",
-            "Parâmetros > Empresas ZFM", "Pré-preenchido pelas EFDs (0000/0005, 0150 SUFRAMA e município)")
+            "Cadastros > Empresas ZFM", "Pré-preenchido pelas EFDs (0000/0005, 0150 SUFRAMA e município)")
     for r in carregar("param_premissas").itertuples():
-        add("Premissas de cálculo", r.chave, r.valor, "Parâmetros > Premissas", r.descricao)
+        add("Premissas de cálculo", r.chave, r.valor, "Cadastros > Premissas", r.descricao)
     mun = carregar("param_municipios_zfm")
     add("Perímetro", "Municípios da ZFM", ", ".join(f"{r.nome} ({r.cod_ibge})" for r in mun.itertuples()),
-        "Parâmetros > Municípios da ZFM", "Destinatário/fornecedor ZFM = AM + município da lista + SUFRAMA")
+        "Cadastros > Municípios da ZFM", "Destinatário/fornecedor ZFM = AM + município da lista + SUFRAMA")
     pe = carregar("param_empresas")
     if not pe.empty:
         fora = pe.loc[~pe["incluir_na_analise"], "raiz_cnpj"].tolist()
-        add("Perímetro", "Empresas fora da análise", ", ".join(fora) or "nenhuma", "Parâmetros > Empresas")
+        add("Perímetro", "Empresas fora da análise", ", ".join(fora) or "nenhuma", "Cadastros > Empresas")
     pr = carregar("param_produtos")
     if not pr.empty:
         inc = pr[pr["incentivado"]]
-        add("Produtos", "Produtos incentivados", f"{len(inc)} de {len(pr)}", "Parâmetros > Produtos",
+        add("Produtos", "Produtos incentivados", f"{len(inc)} de {len(pr)}", "Cadastros > Produtos",
             "Automático: item vendido com CFOP de produção própria")
-        add("Produtos", "Incentivados sem alíquota TIPI", str(int(inc["aliq_tipi_2023"].isna().sum())),
-            "Parâmetros > Produtos", "Sem TIPI: benefício de IPI = 0 e CP de CBS no percentual menor")
+        add("Produtos", "Incentivados sem alíquota de IPI", str(int(inc["aliq_ipi"].isna().sum())),
+            "Cadastros > Produtos", "Sem TIPI: benefício de IPI = 0 e CP de CBS no percentual menor")
     cod = carregar("param_codigos_ajuste_icms")
     if not cod.empty:
         for classe, g in cod.groupby("classe"):
             add("Códigos de ajuste do ICMS", classe, ", ".join(g["codigo"]),
-                "Parâmetros > Códigos de ajuste", "Classificação automática pela descrição/estrutura do código")
+                "Cadastros > Códigos de ajuste", "Classificação automática pela descrição/estrutura do código")
     cf = carregar("param_cfops")
     if not cf.empty:
         add("CFOPs", "CFOPs tratados como receita", ", ".join(sorted(cf.loc[cf["eh_receita"], "cfop"])),
-            "Parâmetros > CFOPs")
+            "Cadastros > CFOPs")
     t = carregar("param_teses")
-    add("Teses", "Teses cadastradas", str(len(t)), "Parâmetros > Teses", "Aplicadas só com o filtro 'Com teses'")
+    add("Teses", "Teses cadastradas", str(len(t)), "Cadastros > Teses", "Aplicadas só com o filtro 'Com teses'")
     for regra, texto in [
         ("Resultado principal", "Diferença = carga To Be − carga As Is, por empresa, ano e tributo "
                                 "(positivo = aumento de carga/perda) — DECISOES D-023"),

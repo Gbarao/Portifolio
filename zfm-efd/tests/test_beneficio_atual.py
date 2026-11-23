@@ -44,7 +44,7 @@ def test_rastreabilidade(con_param):
 def test_sem_tipi_gera_alerta_e_zero(con_param):
     from zfm import visoes
     pr = params.carregar("param_produtos")
-    pr["aliq_tipi_2023"] = None
+    pr["aliq_ipi"] = None
     params.salvar("param_produtos", pr)
     visoes.preparar(con_param)
     det = ba.calcular(con_param)

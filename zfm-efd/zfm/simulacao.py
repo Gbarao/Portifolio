@@ -75,20 +75,20 @@ def p_ibs_450(tipo_bem: str, ce_100: bool, pc: dict | None = None) -> float:
     return pc[chave] / 100
 
 
-def enquadrado_art454(aliq_tipi_2023, produzido_zfm_2024: bool, eh_tic: bool, projeto_cas: bool = False,
+def enquadrado_art454(aliq_ipi, produzido_zfm_2024: bool, eh_tic: bool, projeto_cas: bool = False,
                       pc: dict | None = None) -> bool:
-    """Art. 454: TIPI de 31/12/2023 abaixo do limite + (industrializado na ZFM em 2024 OU projeto aprovado pelo
-    CAS na janela do art. 454) + nao ser TIC excluido da reducao."""
+    """Art. 454: aliquota do IPI (lida da EFD; TIPI) abaixo do limite + industrializado na ZFM em 2024 ou projeto
+    aprovado pelo CAS na janela do art. 454 (campo produzido_zfm_2024) + nao ser TIC excluido da reducao."""
     pc = pc or percentuais()
-    if aliq_tipi_2023 is None or pd.isna(aliq_tipi_2023):
+    if aliq_ipi is None or pd.isna(aliq_ipi):
         return False
-    return float(aliq_tipi_2023) < pc["limite_tipi_ipi"] and (produzido_zfm_2024 or projeto_cas) and not eh_tic
+    return float(aliq_ipi) < pc["limite_tipi_ipi"] and (produzido_zfm_2024 or projeto_cas) and not eh_tic
 
 
-def p_cbs_450(aliq_tipi_2023, produzido_zfm_2024: bool, eh_tic: bool, pc: dict | None = None,
+def p_cbs_450(aliq_ipi, produzido_zfm_2024: bool, eh_tic: bool, pc: dict | None = None,
               projeto_cas: bool = False) -> float:
     pc = pc or percentuais()
-    if enquadrado_art454(aliq_tipi_2023, produzido_zfm_2024, eh_tic, projeto_cas, pc):
+    if enquadrado_art454(aliq_ipi, produzido_zfm_2024, eh_tic, projeto_cas, pc):
         return pc["p_cbs_450_ipi_zerado"] / 100  # produto do art. 454: CP de CBS maior
     return pc["p_cbs_450_demais"] / 100
 
@@ -98,14 +98,12 @@ def produtos_com_percentuais(prod: pd.DataFrame) -> pd.DataFrame:
         return prod.assign(p_ibs_450=[], p_cbs_450=[], alerta_ibs=[], faixa_450=[], art454=[])
     pc = percentuais()
     out = prod.copy()
-    cas = out["projeto_cas_2022_2025"].astype(str).str.lower().eq("sim") if "projeto_cas_2022_2025" in out \
-        else pd.Series(False, index=out.index)
     out["p_ibs_450"] = [p_ibs_450(t, c, pc) for t, c in zip(out["tipo_bem"], out["ce_100_em_2023"])]
     out["faixa_450"] = [faixa_450(t, c) for t, c in zip(out["tipo_bem"], out["ce_100_em_2023"])]
-    out["art454"] = [enquadrado_art454(a, z, t, k, pc) for a, z, t, k in
-                     zip(out["aliq_tipi_2023"], out["produzido_zfm_2024"], out["eh_tic"], cas)]
-    out["p_cbs_450"] = [p_cbs_450(a, z, t, pc, k) for a, z, t, k in
-                        zip(out["aliq_tipi_2023"], out["produzido_zfm_2024"], out["eh_tic"], cas)]
+    out["art454"] = [enquadrado_art454(a, z, t, False, pc) for a, z, t in
+                     zip(out["aliq_ipi"], out["produzido_zfm_2024"], out["eh_tic"])]
+    out["p_cbs_450"] = [p_cbs_450(a, z, t, pc) for a, z, t in
+                        zip(out["aliq_ipi"], out["produzido_zfm_2024"], out["eh_tic"])]
     out["alerta_ibs"] = out["nivel_credito_estimulo"].astype(float) > 100 * out["p_ibs_450"]
     return out
 
@@ -161,9 +159,7 @@ def sql_base_cenarios(f: Filtro, conservador: bool | None = None) -> str:
     pc = percentuais()
     liquida = params.premissa(None, "base_cbs_ibs", "liquida_sem_tributos") == "liquida_sem_tributos"
     transf = _sim("transferencias_na_base_cbs_ibs", "nao")
-    tipi_regra = params.premissa(None, "ipi_protegido_regra", "tipi").strip().lower()
-    prot = (f"c.aliq_tipi >= {pc['limite_tipi_ipi']}" if tipi_regra == "tipi"
-            else f"c.ipi_protegido AND c.aliq_tipi >= {pc['limite_tipi_ipi']}")
+    prot = f"c.aliq_tipi >= {pc['limite_tipi_ipi']}"  # IPI mantido para o concorrente (art. 454)
     return f"""
         SELECT c.*,
                c.valor - CASE WHEN {liquida} THEN c.icms + c.pis + c.cofins ELSE 0 END AS base,

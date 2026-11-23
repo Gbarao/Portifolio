@@ -14,7 +14,7 @@ def _alterar(pasta, nome, de, para):
 
 
 def test_conciliacoes_fecham_nas_fixtures(con_param):
-    for k in ("Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10", "Q13"):
+    for k in ("Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q13"):
         assert c.CHECAGENS[k][1](con_param).empty, k
 
 
@@ -40,7 +40,7 @@ def test_divergencias_detectadas(con, pasta_efd):
     _alterar(pasta_efd, nome, "|C170|1|INS01||10,00000|UN|100000,00|", "|C170|1|INS01||10,00000|UN|100500,00|")
     _alterar(pasta_efd, nome, "|C190|000|2101|7,00|100000,00|100000,00|7000,00|",
              "|C190|000|2101|7,00|100000,00|100000,00|7100,00|")
-    # Q9/Q10: aliquota de COFINS fora do padrao na Contribuicoes da Alfa
+    # conferencia por cenario: aliquota de COFINS fora do padrao na Contribuicoes da Alfa
     _alterar(pasta_efd, "EFD_CONTRIB_11111111000191_202601.txt", "|C185|02|6101|400000,00|0,00|400000,00|3,0000|",
              "|C185|02|6101|400000,00|0,00|400000,00|2,0000|")
     for p in sorted(pasta_efd.glob("*.txt")):
@@ -52,7 +52,9 @@ def test_divergencias_detectadas(con, pasta_efd):
     assert len(c.q4_c190_x_c100(con)) == 1
     q5 = c.q5_docs_x_e110(con)
     assert len(q5) == 1 and abs(float(q5["dif_creditos"].iloc[0]) - 100) < 0.01
-    assert len(c.q9_aliquotas_pis_cofins(con)) == 1
+    from zfm import cenarios
+    conf = cenarios.conferencias(con)
+    assert (conf["tributo"] == "COFINS").any() and (conf["raiz"] == "11111111").any()
     # Q11: codigo novo sem classificacao
     cod = params.carregar("param_codigos_ajuste_icms")
     params.salvar("param_codigos_ajuste_icms", cod[cod.codigo != "FTI9"])
@@ -61,13 +63,16 @@ def test_divergencias_detectadas(con, pasta_efd):
     assert set(q11["codigo"]) == {"FTI9", "AM009001"}
 
 
-def test_q10_cst_ipi_diferente_de_isento(con_param):
-    # Gama (detalhada) traz CST de IPI por item; troca a premissa para que 52 nao seja isento
-    pr = params.carregar("param_premissas")
-    pr.loc[pr.chave == "cst_ipi_isento", "valor"] = "50"
-    params.salvar("param_premissas", pr)
-    q10 = c.q10_cst_ipi_incentivado(con_param)
-    assert set(q10["raiz"]) == {"33333333"} and len(q10) == 3
+def test_conferencia_cst_ipi_nas_vendas_incentivadas(con_param):
+    # Gama (detalhada) traz CST de IPI por item; a conferencia passa a exigir CST 50 em vez de 52
+    from zfm import cenarios
+    cf = params.carregar("param_conferencia_cenario")
+    cf.loc[(cf.tributo == "IPI") & (cf.regra == "cst_em"), "valores"] = "50"
+    params.salvar("param_conferencia_cenario", cf)
+    visoes.preparar(con_param)
+    d = cenarios.conferencias(con_param)
+    ipi = d[d.tributo == "IPI"]
+    assert set(ipi["raiz"]) == {"33333333"}
 
 
 def test_r1_r5_detectam_base_incompleta(con, pasta_efd):

@@ -42,7 +42,7 @@ def saidas_incentivadas(con: duckdb.DuckDBPyConnection, eliminar_intragrupo: boo
                b.valor AS receita_r, b.valor_cofins AS receita_cofins_r, b.aliq_pis, b.aliq_cofins,
                b.pis AS pis_r, b.cofins AS cofins_r, b.icms AS icms_est_r, b.cst_ipi, b.reg_origem,
                b.arquivo_id, b.linha_num, b.rateado, b.aliq_tipi,
-               p.tipo_bem, p.aliq_tipi_2023, p.produzido_zfm_2024, p.eh_tic, p.ipi_protegido,
+               p.tipo_bem, p.aliq_ipi, p.produzido_zfm_2024, p.eh_tic,
                p.ce_100_em_2023, p.nivel_credito_estimulo
         FROM v_base_operacoes b
         JOIN param_produtos p ON p.raiz_cnpj = b.raiz AND p.cod_item = b.cod_item
@@ -79,7 +79,7 @@ def calcular(con: duckdb.DuckDBPyConnection, com_teses: bool = False,
         obs = pd.Series("", index=s.index)
         obs = obs.mask(cst == "", "CST de IPI não informado por item: premissa de isenção")
         obs = obs.mask(~cst_ok, "CST de IPI não é de isenção: fora do benefício")
-        obs = obs.mask(tipi.isna(), "Alíquota TIPI não preenchida em Parâmetros > Produtos")
+        obs = obs.mask(tipi.isna(), "Alíquota TIPI não preenchida em Cadastros > Produtos")
         ipi["observacao"] = obs
         partes.append(ipi)
         # ---- PIS / COFINS

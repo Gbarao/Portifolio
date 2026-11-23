@@ -18,7 +18,8 @@ classificados. Importação em segundo plano; visões materializadas por versão
 ```
 iniciar.bat / diagnostico.bat / testar.bat   duplo clique (Windows)
 ferramentas/        scripts dos .bat (só biblioteca padrão)
-app.py, telas/      telas Streamlit (st.navigation)
+app.py, telas/      9 telas Streamlit (st.navigation)
+zfm/secoes/         conteúdo das abas reutilizado pelas telas (saídas, entradas, base, carga As Is, To Be, benefício, metodologia)
 zfm/layouts/        dicionários de campos por registro, com versões
 zfm/parsers/base.py leitura em streaming → arquivos temporários → DuckDB (read_csv)
 zfm/importacao.py   importação em segundo plano (thread), progresso e cancelamento

@@ -154,7 +154,7 @@ def _prod(con, cod, **campos):
 def test_11_art441_bebida_alcoolica(con_param):
     vendas = con_param.execute("SELECT DISTINCT cod_item FROM v_cenarios WHERE cenario LIKE 'C4%'").fetchall()
     cod = vendas[0][0]
-    _prod(con_param, cod, excluido_art441="sim", motivo_exclusao="bebida alcoólica")
+    _prod(con_param, cod, excluido_art441="sim", observacao="bebida alcoólica")
     linhas = con_param.execute(f"""SELECT DISTINCT cenario, status_elegibilidade, motivo FROM v_cenarios
                                    WHERE cod_item = '{cod}' AND cenario_candidato LIKE 'C4%'""").fetchall()
     assert linhas and all(c == "GER_S" and s == "Não elegível" and "bebida alcoólica" in m for c, s, m in linhas)

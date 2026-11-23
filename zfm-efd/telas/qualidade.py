@@ -3,7 +3,7 @@ import streamlit as st
 from zfm import conciliacoes, qualidade, ui
 
 ctx = ui.contexto(
-    "Qualidade e reconciliação",
+    "Qualidade e conferências",
     "Confere se os arquivos estão completos e íntegros e se a base de operações explica a apuração "
     "(R5) antes de qualquer simulação. Divergências não impedem a análise, mas aparecem como alerta e, "
     "no caso do R5, como ajuste de reconciliação.", "Dados")
@@ -29,7 +29,7 @@ with ui.protegido("verificar a qualidade"):
     n_div = sum(len(d) > 0 for d in resultados.values())
     ui.cartoes({"Completude (Q1)": ("OK" if faltas == 0 else f"{faltas} falta(s)", "estabelecimento × mês"),
                 "Integridade (Q2)": ("OK" if q2.empty else f"{len(q2)} divergência(s)", "bloco 9 × lido"),
-                "Conciliações Q3–Q21": ("OK" if n_div == 0 else f"{n_div} com divergência",
+                "Conferências entre registros": ("OK" if n_div == 0 else f"{n_div} com divergência",
                                         f"{len(resultados)} checagens"),
                 "Reconciliação R5": ("OK" if r5_nao.empty else f"{len(r5_nao)} não fecham",
                                      "base de operações × apuração")})
@@ -115,10 +115,12 @@ with ui.protegido("verificar a qualidade"):
             ui.tabela(q2, moeda=[])
     with t2:
         ui.secao("Conciliações entre registros", "Cada checagem lista o que não fecha (tolerâncias em "
-                 "Parâmetros > Premissas).")
-        resumo = [{"Checagem": cod, "Descrição": titulo, "Situação": "OK" if resultados[cod].empty else
-                   f"{len(resultados[cod])} divergência(s)"} for cod, (titulo, _) in conciliacoes.CHECAGENS.items()]
-        st.dataframe(resumo, hide_index=True, width="stretch")
+                 "Cadastros > Premissas).")
+        resumo = [{"Grupo": conciliacoes.grupo_de(cod), "Checagem": cod, "Descrição": titulo,
+                   "Situação": "✓ OK" if resultados[cod].empty else f"⚠ {len(resultados[cod])} divergência(s)"}
+                  for cod, (titulo, _) in conciliacoes.CHECAGENS.items()]
+        resumo.sort(key=lambda r: (r["Grupo"], r["Checagem"]))
+        st.dataframe(resumo, hide_index=True, width="stretch", height=36 * (len(resumo) + 1) + 4)
         com = [c for c in conciliacoes.CHECAGENS if not resultados[c].empty]
         if com:
             cod = st.selectbox("Ver divergências de", com,

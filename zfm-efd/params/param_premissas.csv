@@ -1,18 +1,12 @@
 ﻿chave;valor;descricao
 ano_base;auto;Ano das EFDs usadas como base (YTD). 'auto' = ano mais recente carregado. Se o ano informado não tiver arquivo, o programa usa o mais recente.
 base_cbs_ibs;liquida_sem_tributos;"Base da simulação: 'liquida_sem_tributos' = VL_ITEM − VL_DESC − ICMS − PIS − COFINS (ICMS por item estimado pela proporção ICMS/valor do CFOP no mês); 'valor_liquido' = VL_ITEM − VL_DESC."
-anualizacao;meses_observados_mais_media;Ano simulado = meses observados de 2026 + média mensal nos meses sem dado (= média × 12).
-rateio_produto_uf;proporcao_c190_por_cfop;Saídas sem destinatário por item (C180/C181): destino rateado pela proporção do C190 + 0150 da EFD ICMS/IPI no mesmo estabelecimento, mês e CFOP.
-alocacao_credito_estimulo;receita_incentivada;Crédito estímulo e fundos alocados aos produtos pela receita incentivada do estabelecimento no mês.
 ordem_deducao_ibs;debito-creditos-cp447_449-cp450;"Ordem de dedução do IBS: 'debito-creditos-cp447_449-cp450' (CP de entrada antes; o art. 450 incide sobre o saldo que sobra) ou 'debito-creditos-cp450-cp447_449' (art. 450 sobre o saldo após créditos; CP de entrada depois). CONFERIR na Resolução CGIBS / NT 2025.002."
 prazo_cp_anos;5;Prazo para usar crédito presumido (art. 452).
 nivel_apuracao_cbs_ibs;raiz;Apuração de CBS/IBS: 'raiz' (empresa, centralizada) ou 'estabelecimento' (CNPJ completo). Conferir a regra de centralização na LC 214/2025.
 tolerancia_conciliacao;1,00;Tolerância das conciliações (R1, R2, R4, R5), em R$ por estabelecimento/mês.
 cst_ipi_isento;52;"CSTs de IPI de saída considerados isenção ZFM (separar por ;)."
 ipi_sem_cst_assume_isento;sim;Saídas sem CST de IPI por item (C181): produto incentivado é tratado como isento.
-aliq_pis_zfm_validas;"0,65;1,3;0";Alíquotas de PIS aceitas nas saídas incentivadas (Q9).
-aliq_cofins_zfm_validas;"3;6;0";Alíquotas de COFINS aceitas nas saídas incentivadas (Q9).
-beneficio_entradas_no_total;nao;Benefícios nas entradas entram no total? (informativo)
 zfm_exige_suframa;sim;Destinatário/fornecedor só é tratado como ZFM se tiver SUFRAMA no cadastro 0150 (sim/nao).
 abater_devolucoes;sim;Devoluções de venda abatem as saídas de origem e devoluções de compra abatem as entradas (sim/nao).
 transferencias_na_base_cbs_ibs;nao;Transferências entre estabelecimentos entram como débito/crédito de CBS/IBS? (sim/nao). Padrão 'nao' (conferir o tratamento na LC 214/2025). Sempre mostradas à parte.
@@ -23,12 +17,9 @@ teses_ativas_ja_na_apuracao;sim;Teses com status 'ativa' já estão refletidas n
 anualizacao_mensal;perfil_observado;Perfil mês a mês do ano simulado: 'perfil_observado' (meses de 2026 + média nos demais) ou 'media_constante' (sensibilidade sem sazonalidade). O total anual é sempre média × 12.
 revenda_presencial;sim;Importações de mercadoria para revenda por habilitado são 'revenda presencial' (C1b, art. 444)? sim/nao.
 c3a_intermediario;compra_industrializacao;Quando a compra na ZFM é 'bem intermediário' (C3a): 'compra_industrializacao' (CFOP de compra para industrialização ou tipo_bem intermediário) ou 'tipo_bem' (só pelo tipo de bem do item).
-ipi_protegido_regra;tipi;"Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= ART454_LIMITE_TIPI (Regras legais) (até a lista oficial do § 3º); 'tabela' = coluna ipi_protegido de Produtos."
-simular_risco_ingresso_c2;nao;C2 sem comprovação de ingresso perde a alíquota zero e estorna o crédito presumido. Padrão: só alerta.
 fator_ipi_proprio;0;Fração do IPI próprio a recolher (E520) que permanece no To Be (0 = IPI zerado/ZFM isenta).
 aliq_ibs_teste;0,1;IBS de teste em 2027-2028, em % (LC 214/2025: 0,05% estadual + 0,05% municipal).
 reducao_cbs_2027_2028;0,1;Redução da CBS em 2027-2028, em p.p. (IBS-teste de 0,1% compensável com a CBS).
 tratamento_nao_confirmados;estimativa_com_incentivo;Operações 'potencialmente elegíveis' ou com 'informação insuficiente': 'estimativa_com_incentivo' (calcula o incentivo e mostra o valor em risco) ou 'regra_geral' (conservador). Não elegíveis vão sempre à regra geral.
-criterio_alocacao_450;proporcional_debito;Art. 450 de IBS: como os créditos de IBS do período são alocados às faixas de percentual (55/75/90,25/100% e não elegível) para formar o saldo devedor de cada faixa. 'proporcional_debito' = na proporção dos débitos de cada faixa (demonstrado no razão por faixa).
 taxa_juros_acrescimos_mes;;Acréscimos legais (art. 29, § 2º) para estornos/recuperações: juros em % ao mês. Vazio = pendente (acréscimos não calculados e sinalizados).
 multa_acrescimos_pct;;Multa de mora em % para estornos/recuperações. Vazio = pendente.

@@ -235,33 +235,21 @@ def ipi_por_produto(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS, sem_ipi_p
     rec["receita_anual"] = rec["receita_periodo"] / rec["raiz"].map(n).replace(0, pd.NA) * 12
     prod = simulacao.produtos_com_percentuais(params.carregar("param_produtos"))
     pc = simulacao.percentuais()
-    from . import regras
-    tab = regras.carregar()
-    regra = params.premissa(None, "ipi_protegido_regra", "tipi").strip().lower()
     d = rec.merge(prod, left_on=["raiz", "cod_item"], right_on=["raiz_cnpj", "cod_item"], how="left")
-    tipi = d["aliq_tipi_2023"].astype(float)
-    tipi_atual = d["aliq_tipi_2026"].fillna(d["aliq_tipi_2023"]).astype(float)
+    aliq = d["aliq_ipi"].astype(float)          # aliquota do IPI lida da EFD (TIPI do produto)
     lim = pc["limite_tipi_ipi"]
     art454 = d["art454"].fillna(False).astype(bool)
-    sem_similar = d["similar_nacional"].fillna("").str.lower().eq("nao")
-    alt = d["art455_alternativa"].fillna("").str.strip()
-    alt_b_vigente = regras.fator("ART455_IPI_MIN", 2027, tab) > 0
-    protegido = (tipi >= lim) if regra == "tipi" else (d["ipi_protegido"].fillna(False).astype(bool) & (tipi >= lim))
-    protegido = protegido | (sem_similar & alt.eq("B_ipi_6_5") & alt_b_vigente)
-    if sem_ipi_protegido:
-        protegido = protegido & False
-    classe = pd.Series("TIPI < limite e sem industrialização em 2024 nem projeto CAS 2022–2025: conferir", index=d.index)
-    classe = classe.mask(art454, "Art. 454: TIPI < 6,5% e industrializado em 2024 ou projeto CAS — IPI zero para todos")
-    classe = classe.mask(tipi >= lim, "TIPI ≥ 6,5%: IPI mantido para o concorrente (vantagem mantida)")
-    classe = classe.mask(sem_similar & alt.ne(""), "Art. 455 (sem similar nacional): alternativa " + alt
-                         + (" — pendente de regulamentação" if not alt_b_vigente else ""))
+    protegido = (aliq >= lim) & ~sem_ipi_protegido
+    classe = pd.Series("IPI abaixo do limite, sem industrialização em 2024: conferir", index=d.index)
+    classe = classe.mask(art454, "Art. 454: IPI < 6,5% e industrializado na ZFM em 2024 — IPI zero para todos")
+    classe = classe.mask(aliq >= lim, "IPI ≥ 6,5%: IPI mantido para o concorrente (vantagem mantida)")
     classe = classe.mask(d["eh_tic"].fillna(False).astype(bool), "TIC: excluído da redução do art. 454 — análise manual")
     classe = classe.mask(d["excluido_art441"].fillna("").str.lower().eq("sim"), "Excluído do regime (art. 441)")
-    classe = classe.mask(tipi.isna(), "Sem alíquota TIPI: preencher em Parâmetros > Produtos")
+    classe = classe.mask(aliq.isna(), "Sem alíquota de IPI na EFD: informar em Cadastros > Produtos")
     d["classe_ipi"] = classe
     d["enquadrado_art454"] = art454
-    d["aliq_ipi_futura"] = d["aliq_ipi_futura"].where(d["aliq_ipi_futura"].notna(), tipi.where(protegido, 0.0))
-    d["vantagem_hoje"] = d["receita_anual"] * tipi_atual.fillna(0) / 100
+    d["aliq_ipi_futura"] = aliq.where(protegido, 0.0)
+    d["vantagem_hoje"] = d["receita_anual"] * aliq.fillna(0) / 100
     d["vantagem_to_be"] = d["vantagem_hoje"].where(protegido, 0.0)
     d["perda_vantagem"] = d["vantagem_hoje"] - d["vantagem_to_be"]
     d["cp_cbs_pct"] = d["p_cbs_450"] * 100
@@ -269,10 +257,10 @@ def ipi_por_produto(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS, sem_ipi_p
     d["alerta_credito_estimulo"] = d["alerta_ibs"].fillna(False)
     d["comprador_perde_credito_ipi"] = art454
     d["carga_propria_ipi"] = 0.0
-    return d[["raiz", "cod_item", "ncm", "descricao", "tipo_bem", "aliq_tipi_2023", "produzido_zfm_2024", "eh_tic",
-              "enquadrado_art454", "aliq_ipi_futura", "classe_ipi", "receita_anual", "carga_propria_ipi", "vantagem_hoje", "vantagem_to_be",
-              "perda_vantagem", "cp_cbs_pct", "cp_ibs_pct", "nivel_credito_estimulo", "alerta_credito_estimulo",
-              "comprador_perde_credito_ipi"]]
+    return d[["raiz", "cod_item", "ncm", "descricao", "tipo_bem", "aliq_ipi", "fonte_aliq_ipi", "produzido_zfm_2024",
+              "eh_tic", "enquadrado_art454", "aliq_ipi_futura", "classe_ipi", "receita_anual", "carga_propria_ipi",
+              "vantagem_hoje", "vantagem_to_be", "perda_vantagem", "cp_cbs_pct", "cp_ibs_pct", "nivel_credito_estimulo",
+              "alerta_credito_estimulo", "comprador_perde_credito_ipi"]]
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +329,7 @@ def alertas(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
             "Não elegível": ("Não elegível: requisito não atendido (vai para a regra geral)", "alta",
                              "Conferir o requisito; a operação foi simulada pela regra geral (art. 453)"),
             "Informação insuficiente para determinar": ("Informação insuficiente para determinar", "alta",
-                                                        "Parâmetros > Produtos / Empresas ZFM"),
+                                                        "Cadastros > Produtos / Empresas ZFM"),
         }.get(x.status_elegibilidade, ("Potencialmente elegível: requisito não comprovado", "média",
                                        "Cadastros complementares (Parâmetros)"))
         out.append((tipo, grav, x.raiz, x.cenario_candidato, x.req, x.n, x.v, onde))
@@ -349,33 +337,26 @@ def alertas(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
     tab = regras.carregar()
     for r in regras.pendencias(tab):
         out.append(("Regra pendente de regulamentação", "baixa", "", "", f"{r.codigo} ({r.dispositivo}): {r.descricao}"
-                    " — não aplicada; sem conclusão definitiva", 1, None, "Parâmetros > Regras legais"))
+                    " — não aplicada; sem conclusão definitiva", 1, None, "Cadastros > Regras legais"))
     for cod in ("ART444_CP_IBS", "ART446_IBS_ENTRADA", "ART447_SS", "ART447_DEMAIS", "ART449_CP_IBS",
                 "ART450_IBS_FINAL", "ART450_IBS_CAPITAL", "ART450_IBS_INTERMEDIARIO", "ART450_IBS_INFORMATICA",
                 "ART450_IBS_CE100", "ART450_CBS_454", "ART450_CBS_DEMAIS", "ART454_LIMITE_TIPI"):
         if regras.pct(cod, tab) is None:
-            out.append(("Percentual legal não parametrizado", "alta", "", "", cod, 1, None, "Parâmetros > Regras legais"))
+            out.append(("Percentual legal não parametrizado", "alta", "", "", cod, 1, None, "Cadastros > Regras legais"))
     cen_al = params.carregar("param_aliquotas_cenario")
     sem = cen_al[cen_al["aliq_cbs"].isna() | cen_al["aliq_ibs"].isna()]
     for x in sem.itertuples():
         out.append(("Alíquota não parametrizada", "alta", "", "", f"Cenário {x.cenario}, {x.ano}: CBS ou IBS vazia",
-                    1, None, "Parâmetros > Alíquotas por ano"))
+                    1, None, "Cadastros > Alíquotas por ano"))
     rc = params.carregar("param_regras_cenario").set_index("cenario")
     if "C4d" in rc.index and (rc.loc["C4d", "cp_ibs_450"] or rc.loc["C4d", "cp_cbs_450"]):
         out.append(("Operação do art. 448 recebendo crédito do art. 450", "alta", "", "C4d",
                     "A regra do cenário C4d concede crédito presumido do art. 450 (trava do art. 450 para operações do "
-                    "art. 448)", 1, None, "Parâmetros > Regras por cenário"))
+                    "art. 448)", 1, None, "Cadastros > Regras por cenário"))
     if "C3a" in rc.index and (rc.loc["C3a", "cp_ibs_450"] or rc.loc["C3a", "cp_cbs_450"]):
         out.append(("Crédito presumido duplicado (arts. 449 e 450)", "alta", "", "C3a",
                     "C3a com crédito do art. 449 e do art. 450 sobre a mesma operação", 1, None,
-                    "Parâmetros > Regras por cenário"))
-    imp = params.carregar("param_importacoes")
-    if not imp.empty:
-        for x in imp[(imp["qtd_remetida_fora_zfm"].fillna(0) > 0)].itertuples():
-            out.append(("Bem importado remetido para fora da ZFM (art. 443)", "alta", "", "C1a",
-                        f"DI/DUIMP {x.di_duimp}, item {x.cod_item}: {x.qtd_remetida_fora_zfm:g} un. remetidas em "
-                        f"{x.data_remessa_fora or 'data não informada'} — verificar conversão em isenção (48 meses)",
-                        1, None, "Parâmetros > Importações"))
+                    "Cadastros > Regras por cenário"))
     for x in conferencias(con, f).itertuples():
         out.append(("Divergência CST/alíquota", "média", x.raiz, x.cenario,
                     f"{x.mensagem} (encontrado: {x.encontrado}; ex.: arquivo {x.arquivo_exemplo}, linha {x.linha_exemplo})",
@@ -386,8 +367,8 @@ def alertas(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
     for x in c2.itertuples():
         out.append(("Comprovação de ingresso (risco)", "média", x.raiz, x.cenario,
                     "Sem comprovação de ingresso (internamento Suframa), a alíquota zero cai e o crédito presumido é "
-                    "estornado com acréscimos. Valor em risco: compare com a simulação conservadora (tela To Be).",
-                    x.n, x.v, "Parâmetros > Controle de internamento"))
+                    "estornado com acréscimos. Valor em risco: compare com a simulação conservadora (Cenários ZFM > Pendências).",
+                    x.n, x.v, "Cadastros > Controle de internamento"))
     c1 = con.execute(f"""SELECT raiz, count(*) AS n, sum(valor) AS v FROM v_cenarios
                          WHERE cenario = 'C1a' AND categoria_origem = 'uso_consumo' AND {f.sql()} GROUP BY ALL""").df()
     for x in c1.itertuples():
@@ -398,10 +379,10 @@ def alertas(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
         for x in ipi[ipi["alerta_credito_estimulo"]].itertuples():
             out.append(("Produto candidato a perda no IBS", "alta", x.raiz, "C6",
                         f"{x.cod_item}: crédito estímulo atual {x.nivel_credito_estimulo:g}% > crédito presumido "
-                        f"do art. 450 ({x.cp_ibs_pct:g}%)", 1, x.receita_anual, "Parâmetros > Produtos"))
-        for x in ipi[ipi["aliq_tipi_2023"].isna()].itertuples():
-            out.append(("Produto sem alíquota TIPI", "alta", x.raiz, "C6", f"{x.cod_item} – {x.descricao}", 1,
-                        x.receita_anual, "Parâmetros > Produtos"))
+                        f"do art. 450 ({x.cp_ibs_pct:g}%)", 1, x.receita_anual, "Cadastros > Produtos"))
+        for x in ipi[ipi["aliq_ipi"].isna()].itertuples():
+            out.append(("Produto sem alíquota de IPI na EFD", "alta", x.raiz, "C6", f"{x.cod_item} – {x.descricao}", 1,
+                        x.receita_anual, "Cadastros > Produtos"))
         for x in ipi[ipi["eh_tic"].fillna(False).astype(bool)].itertuples():
             out.append(("Produto TIC", "média", x.raiz, "C6",
                         f"{x.cod_item}: regra própria do art. 454, § 2º (análise manual)", 1, x.receita_anual,
@@ -412,7 +393,7 @@ def alertas(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
         if len(pend):
             out.append(("Tipo ZFM definido automaticamente", "baixa", "", "", f"{len(pend)} CNPJ(s) sem revisão "
                         "(indústria incentivada/habilitado/não habilitado e regime)", len(pend), None,
-                        "Parâmetros > Empresas ZFM"))
+                        "Cadastros > Empresas ZFM"))
     r5 = _as_is.reconciliacao_r5(con, f)
     if not r5.empty and (~r5["fecha"]).any():
         d = r5[~r5["fecha"]].groupby(["raiz", "tributo"], as_index=False)["diferenca"].agg(["sum", "count"])

@@ -373,6 +373,25 @@ controle de acesso por perfil; banco PostgreSQL; integração com campos da NF-e
 LC 227/2026: não foi possível conferir o texto; as regras atribuídas a ela (trava 448/450 e § 6º do art. 450) estão
 marcadas "conferir".
 
+**D-057 — Simplificação (23/11/2026).** A pedido do usuário ("o programa está virando uma salada"):
+(1) **Telas de 15 para 9**: Saídas, Entradas e Base viraram abas de *Operações*; Carga As Is, To Be e Benefício
+viraram abas de *Resultado As Is × To Be*; Metodologia virou a aba *Como é calculado* de Cenários ZFM; Alertas,
+Não classificados e Elegibilidade viraram a aba *Pendências*. O conteúdo das telas antigas está em `zfm/secoes/`.
+(2) **Cadastros** (antes "Parâmetros"): 4 abas principais (Empresas ZFM, Produtos, Alíquotas CBS/IBS,
+Comprovações) + Avançado + Premissas adotadas; cada tabela mostra só as colunas essenciais; lista do que falta no
+topo. (3) **IPI lido da EFD**: a alíquota do IPI do produto (`aliq_ipi`) é lida do C170 (ALIQ_IPI): saídas na EFD
+Contribuições → saídas na EFD ICMS/IPI → qualquer nota do produto → outro produto com o mesmo NCM; a origem fica em
+`fonte_aliq_ipi`; produto revisado não é alterado. Substitui `aliq_tipi_2023`, `aliq_tipi_2026`, `ipi_protegido` e a
+premissa `ipi_protegido_regra` (o IPI fica mantido para o concorrente quando a alíquota ≥ limite do art. 454). Saída
+isenta com alíquota zero não informa a TIPI: o usuário informa. (4) **Removidos por não terem efeito no cálculo**:
+tabelas de tratamento de entradas e de importações; campos de produto similar nacional, alternativa do art. 455,
+IPI futuro, EX TIPI, uso e consumo pessoal (requisito deixa de ser testado), projeto CAS (agora dentro de
+"industrializado em 2024"); premissas que eram só texto (anualizacao, rateio_produto_uf, alocacao_credito_estimulo,
+beneficio_entradas_no_total, simular_risco_ingresso_c2, criterio_alocacao_450) e as que serviam a checagens
+duplicadas. (5) **Checagens Q9 e Q10 removidas**: repetiam as conferências por cenário (alíquotas de PIS/COFINS e
+CST de IPI). As 19 checagens restantes aparecem em 4 grupos. Arquivos de parâmetros de versões anteriores são
+convertidos sozinhos (nada do que foi editado se perde).
+
 ---
 
 ## Perguntas pendentes

@@ -9,7 +9,7 @@ from zfm import params, regras_zfm as rz, ui
 ui.marca()
 ui.cabecalho("Simulador individual",
              "Calcula uma operação em qualquer um dos seis cenários (LC 214/2025, arts. 443 a 455), com os requisitos, "
-             "a memória de cálculo e o efeito no preço. Percentuais e vigências vêm de Parâmetros > Regras legais; "
+             "a memória de cálculo e o efeito no preço. Percentuais e vigências vêm de Cadastros > Regras legais; "
              "as alíquotas de CBS/IBS/IPI são premissas de simulação.", "Análise")
 
 CENARIOS = {

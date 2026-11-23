@@ -159,37 +159,6 @@ def q8_receita_contrib_x_icms(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         ORDER BY 1, 2""", [_tol(), _pct()]).df()
 
 
-def q9_aliquotas_pis_cofins(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    pis = params.premissa_lista_num("aliq_pis_zfm_validas") or [0.65, 1.3, 0]
-    cof = params.premissa_lista_num("aliq_cofins_zfm_validas") or [3, 6, 0]
-    df = con.execute("""
-        SELECT s.raiz, s.cnpj_estab, s.mes, s.cod_item, s.cfop, s.reg_origem, s.arquivo_id, s.linha_num,
-               s.receita, CAST(s.aliq_pis AS DOUBLE) AS aliq_pis, CAST(s.aliq_cofins AS DOUBLE) AS aliq_cofins
-        FROM v_saidas_item s JOIN param_produtos p ON p.raiz_cnpj = s.raiz AND p.cod_item = s.cod_item
-        WHERE p.incentivado AND s.categoria_cfop = 'venda_producao' AND s.estab_no_am
-          AND s.cfop NOT LIKE '7%'""").df()
-    if df.empty:
-        return df
-    pares_validos = {(0.65, 3.0), (1.3, 6.0), (0.0, 0.0)}
-    ok_pis = df["aliq_pis"].round(4).isin([round(x, 4) for x in pis])
-    ok_cof = df["aliq_cofins"].round(4).isin([round(x, 4) for x in cof])
-    par = [(round(a, 4) if pd.notna(a) else None, round(b, 4) if pd.notna(b) else None) in pares_validos
-           for a, b in zip(df["aliq_pis"], df["aliq_cofins"])]
-    return df[~(ok_pis & ok_cof & pd.Series(par, index=df.index))].reset_index(drop=True)
-
-
-def q10_cst_ipi_incentivado(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    isentos = [c.strip() for c in params.premissa(None, "cst_ipi_isento", "52").split(";") if c.strip()]
-    lista = ", ".join(f"'{c}'" for c in isentos) or "'52'"
-    return con.execute(f"""
-        SELECT s.raiz, s.cnpj_estab, s.mes, s.cod_item, s.cfop, s.cst_ipi, s.reg_origem,
-               s.arquivo_id, s.linha_num, s.receita
-        FROM v_saidas_item s JOIN param_produtos p ON p.raiz_cnpj = s.raiz AND p.cod_item = s.cod_item
-        WHERE p.incentivado AND s.categoria_cfop = 'venda_producao' AND s.cst_ipi IS NOT NULL
-          AND s.cst_ipi NOT IN ({lista}) AND s.cfop NOT LIKE '7%'
-        ORDER BY 1, 2, 3""").df()
-
-
 def q11_codigos_nao_classificados(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return con.execute("""
         SELECT registro, codigo, any_value(descricao) AS descricao, count(*) AS ocorrencias,
@@ -232,8 +201,6 @@ CHECAGENS = {
     "Q6": ("R2 – Documentos × E520 (IPI)", q6_docs_x_e520),
     "Q7": ("R4 – Mesmo documento nas duas EFDs (chave da NF-e)", q7_icms_x_contrib),
     "Q8": ("R3 – Receitas da base × bloco M (M210/M610 + M400/M800)", q8_receita_contrib_x_icms),
-    "Q9": ("Alíquotas de PIS/COFINS nas saídas incentivadas", q9_aliquotas_pis_cofins),
-    "Q10": ("CST de IPI nas saídas incentivadas", q10_cst_ipi_incentivado),
     "Q11": ("Códigos de ajuste E111/E116 sem classificação", q11_codigos_nao_classificados),
     "Q12": ("E116 × E110 (obrigações × ICMS a recolher)", q12_e116_x_e110),
     "Q13": ("C180 × C181/C185 (Contribuições consolidada)", q13_c180_x_c181_c185),
@@ -271,3 +238,16 @@ def filtrar(df: pd.DataFrame, f: "Filtro | list[str] | None") -> pd.DataFrame:
     if "mes" in df.columns:
         m &= df["mes"].between(f.mes_ini, f.mes_fim) | df["mes"].isna()
     return df[m]
+
+
+# Agrupamento das checagens para a tela (do mais basico ao mais especifico)
+GRUPOS = {
+    "1. Arquivos e cobertura": ["Q17"],
+    "2. Dentro de cada EFD": ["Q3", "Q4", "Q14", "Q13", "Q16", "Q11", "Q12"],
+    "3. Documentos × apuração": ["Q5", "Q6", "Q8"],
+    "4. EFD ICMS/IPI × EFD Contribuições": ["Q7", "Q15", "Q18", "Q19", "Q20", "Q21"],
+}
+
+
+def grupo_de(cod: str) -> str:
+    return next((g for g, lst in GRUPOS.items() if cod in lst), "")

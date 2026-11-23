@@ -19,9 +19,9 @@ if not tem or (ui.importacao_rodando() and not ui.analises_prontas(con)):
              "Comece pela tela Importação das EFDs (menu à esquerda, seção Dados).")
     ui.passos([
         ("1. Importar as EFD ICMS/IPI e EFD Contribuições (.txt)", False, "Dados > Importação das EFDs"),
-        ("2. Conferir completude e reconciliação", False, "Dados > Qualidade e reconciliação"),
+        ("2. Conferir completude e reconciliação", False, "Dados > Qualidade e conferências"),
         ("3. Revisar parâmetros: Empresas ZFM, Produtos (TIPI), códigos de ajuste", False,
-         "Dados > Parâmetros e premissas"),
+         "Dados > Cadastros"),
         ("4. Analisar cenários e diferença As Is × To Be", False, "Análise"),
         ("5. Exportar para Excel", False, "Relatórios"),
     ])
@@ -60,10 +60,10 @@ with ui.protegido("montar o painel"):
         problemas.append("Nenhuma EFD ICMS/IPI carregada: ICMS, IPI e entradas ficam vazios.")
     if n_base == 0 and d[0]:
         problemas.append("A base de operações está vazia. Verifique se os CFOPs foram classificados "
-                         "(Parâmetros > CFOPs) e se os arquivos são do período esperado.")
+                         "(Cadastros > CFOPs) e se os arquivos são do período esperado.")
     if not raizes:
         problemas.append("Nenhuma empresa selecionada (barra lateral) ou todas marcadas para não entrar na "
-                         "análise (Parâmetros > Empresas).")
+                         "análise (Cadastros > Empresas).")
     for p in problemas:
         st.warning(p, icon=":material/warning:")
     if not raizes:
@@ -82,7 +82,7 @@ with ui.protegido("montar o painel"):
     ez = params.carregar("param_empresas_zfm")
     ez_pend = int((~ez["revisado"]).sum()) if not ez.empty else 0
     prod = params.carregar("param_produtos")
-    sem_tipi = int((prod["incentivado"] & prod["aliq_tipi_2023"].isna()).sum()) if not prod.empty else 0
+    sem_tipi = int((prod["incentivado"] & prod["aliq_ipi"].isna()).sum()) if not prod.empty else 0
     mat = ui.calcular("matriz", f)
     nc = mat[mat["cenario"].isin(["NC_S", "NC_E"])] if not mat.empty else mat
     nc_v = float(nc["valor"].sum()) if not nc.empty else 0.0
@@ -136,7 +136,7 @@ with ui.protegido("montar o painel"):
             moeda=["As Is (R$)", "To Be 2033 (R$)", "Diferença (R$)", "Perda de vantagem IPI (R$)"])
 
     al = ui.calcular("alertas", f)
-    ui.secao("Alertas principais", "Lista completa em Análise > Cenários ZFM > Alertas.")
+    ui.secao("Alertas principais", "Lista completa em Análise > Cenários ZFM > Pendências.")
     if al.empty:
         st.success("Nenhum alerta.", icon=":material/check_circle:")
     else:

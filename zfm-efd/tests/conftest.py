@@ -66,8 +66,8 @@ def con_param(con_carregado):
     visoes.preparar(con_carregado)
     params.preencher_a_partir_das_efds(con_carregado)
     pr = params.carregar("param_produtos")
-    pr.loc[pr.cod_item == "PROD01", "aliq_tipi_2023"] = 15.0
-    pr.loc[pr.cod_item == "PROD02", "aliq_tipi_2023"] = 5.0
+    pr.loc[pr.cod_item == "PROD01", "aliq_ipi"] = 15.0
+    pr.loc[pr.cod_item == "PROD02", "aliq_ipi"] = 5.0
     params.salvar("param_produtos", pr)
     visoes.preparar(con_carregado)
     return con_carregado

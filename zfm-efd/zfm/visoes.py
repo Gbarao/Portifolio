@@ -414,8 +414,7 @@ VIEWS: list[tuple[str, str]] = [
           UNION ALL SELECT * FROM dc UNION ALL SELECT * FROM sv UNION ALL SELECT * FROM sp)
     SELECT u.*, coalesce(nullif(u.ncm, ''), p.ncm) AS ncm_produto,
            coalesce(p.incentivado, FALSE) AND u.categoria_origem = 'venda_producao' AS incentivado,
-           p.tipo_bem, coalesce(p.aliq_tipi_2026, p.aliq_tipi_2023) AS aliq_tipi,
-           coalesce(p.ipi_protegido, FALSE) AS ipi_protegido
+           p.tipo_bem, p.aliq_ipi AS aliq_tipi
     FROM u LEFT JOIN param_produtos p ON p.raiz_cnpj = u.raiz AND p.cod_item = u.cod_item
     """),
     ("v_cenarios", """
@@ -435,8 +434,7 @@ VIEWS: list[tuple[str, str]] = [
     b AS (
         SELECT b.*, coalesce(nullif(e.tipo, ''), 'nao_habilitado') AS tipo_estab,
                coalesce(nullif(e.regime, ''), 'regular') AS regime_estab, coalesce(e.revisado, FALSE) AS estab_revisado,
-               lower(coalesce(e.status_habilitacao, '')) AS st_hab, try_cast(e.validade_ini AS DATE) AS hab_ini,
-               try_cast(e.validade_fim AS DATE) AS hab_fim, es.cod_mun AS cod_mun_estab,
+               lower(coalesce(e.status_habilitacao, '')) AS st_hab, try_cast(e.validade_fim AS DATE) AS hab_fim, es.cod_mun AS cod_mun_estab,
                es.cod_mun IN (SELECT cod_ibge FROM param_municipios_zfm) AS estab_area_zfm,
                make_date(CAST(b.ano AS INTEGER), CAST(b.mes AS INTEGER), 1) AS dt_ref,
                coalesce(ef.revisado, FALSE) AS part_revisado,
@@ -444,8 +442,8 @@ VIEWS: list[tuple[str, str]] = [
                                       'insumo_servico') AS compra,
                CASE WHEN b.natureza = 'devolucao_compra' THEN translate(substr(b.cfop, 1, 1), '567', '123')
                     ELSE substr(b.cfop, 1, 1) END AS dig,
-               lower(coalesce(pp.excluido_art441, '')) AS x441, coalesce(pp.motivo_exclusao, '') AS motivo_441,
-               lower(coalesce(pp.uso_consumo_pessoal, '')) AS xpes, lower(coalesce(pp.origem, '')) AS xorig,
+               lower(coalesce(pp.excluido_art441, '')) AS x441, coalesce(pp.observacao, '') AS motivo_441,
+               lower(coalesce(pp.origem, '')) AS xorig,
                lower(coalesce(pp.consumo_produtivo_comprovado, '')) AS xcons,
                lower(coalesce(it.status, '')) AS st_ing, lower(coalesce(sv.local_fisico_zfm, '')) AS st_srv
         FROM v_base_operacoes b
@@ -524,7 +522,6 @@ VIEWS: list[tuple[str, str]] = [
             CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[1-4].*' THEN ''
                  WHEN c.st_hab IN ('suspensa', 'cancelada', 'vencida') THEN 'falha'
                  WHEN c.hab_fim IS NOT NULL AND c.dt_ref > c.hab_fim THEN 'falha'
-                 WHEN c.hab_ini IS NOT NULL AND c.dt_ref < date_trunc('month', c.hab_ini) THEN 'falha'
                  WHEN c.estab_revisado THEN 'ok' ELSE 'pendente' END AS req_habilitacao,
             CASE WHEN c.cenario_candidato <> 'C3a' THEN ''
                  WHEN c.part_revisado THEN 'ok' ELSE 'pendente' END AS req_fornecedor,
@@ -547,9 +544,6 @@ VIEWS: list[tuple[str, str]] = [
                  WHEN coalesce(c.ncm_produto, '') <> '' THEN 'ok' ELSE 'insuficiente' END AS req_ncm,
             CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[1-4].*' AND c.cenario_candidato <> 'C5M' THEN ''
                  WHEN c.x441 = 'sim' THEN 'falha' WHEN c.x441 = 'nao' THEN 'ok' ELSE 'pendente' END AS req_art441,
-            CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[12].*' THEN ''
-                 WHEN c.xpes = 'sim' THEN 'falha' WHEN c.xpes = 'nao' THEN 'ok'
-                 WHEN c.categoria_origem = 'uso_consumo' THEN 'pendente' ELSE 'ok' END AS req_uso_pessoal,
             CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C2.*' AND c.cenario_candidato <> 'C5M' THEN ''
                  WHEN c.xorig = 'nacional' THEN 'ok' WHEN c.xorig IN ('importada', 'estrangeira') THEN 'falha'
                  WHEN substr(coalesce(c.cst_icms, ''), 1, 1) IN ('0', '3', '4', '5', '8') AND length(c.cst_icms) = 3 THEN 'ok'
@@ -574,7 +568,6 @@ VIEWS: list[tuple[str, str]] = [
                      THEN 'produto fora do projeto SUFRAMA aprovado' ELSE 'sem projeto SUFRAMA ativo' END END,
                 CASE WHEN req_art441 = 'falha' THEN 'produto excluído pelo art. 441'
                      || CASE WHEN motivo_441 <> '' THEN ' (' || motivo_441 || ')' ELSE '' END END,
-                CASE WHEN req_uso_pessoal = 'falha' THEN 'uso e consumo pessoal' END,
                 CASE WHEN req_origem = 'falha' THEN 'bem de origem estrangeira'
                      || CASE WHEN origem_inferida THEN ' (inferido pela CST)' ELSE '' END END,
                 CASE WHEN req_ingresso = 'falha' THEN 'ingresso na ZFM negado' END,
@@ -590,7 +583,6 @@ VIEWS: list[tuple[str, str]] = [
                 CASE WHEN req_fornecedor = 'pendente' THEN 'tipo do fornecedor não validado' END,
                 CASE WHEN req_projeto = 'pendente' THEN 'projeto SUFRAMA não cadastrado' END,
                 CASE WHEN req_art441 = 'pendente' THEN 'exclusão do art. 441 não validada' END,
-                CASE WHEN req_uso_pessoal = 'pendente' THEN 'uso e consumo: confirmar que não é pessoal' END,
                 CASE WHEN req_origem = 'ok' AND origem_inferida THEN 'origem nacional inferida pela CST' END,
                 CASE WHEN req_ingresso = 'pendente' THEN 'ingresso na ZFM não comprovado' END,
                 CASE WHEN req_consumo_produtivo = 'pendente' THEN 'depende de comprovação produtiva' END,
@@ -708,7 +700,7 @@ MATERIALIZAR = ["v_estabelecimentos", "v_participantes", "v_participantes_contri
                 "v_saidas_doc", "v_saidas_item", "v_saidas_dest", "v_entradas_linhas", "v_entradas_pc",
                 "v_entradas_item",
                 "v_entradas_servicos", "v_base_operacoes", "v_cenarios"]
-VERSAO_CODIGO = "7"  # mudar quando o SQL das visoes mudar (forca reconstrucao)
+VERSAO_CODIGO = "8"  # mudar quando o SQL das visoes mudar (forca reconstrucao)
 
 
 def criar(con: duckdb.DuckDBPyConnection) -> None:

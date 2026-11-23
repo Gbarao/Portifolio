@@ -93,7 +93,7 @@ def validacao_previa(caminhos) -> None:
             st.success("Todas as empresas terão as duas EFDs (ICMS/IPI e Contribuições) em todos os meses.",
                        icon=":material/check_circle:")
         else:
-            st.caption("Você pode importar mesmo assim; o que faltar fica apontado em Qualidade e reconciliação.")
+            st.caption("Você pode importar mesmo assim; o que faltar fica apontado em Qualidade e conferências.")
 
 
 @st.fragment(run_every=1.5)

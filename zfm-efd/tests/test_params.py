@@ -103,15 +103,19 @@ def test_resumo_lista_todas_as_premissas():
     assert {"Alíquotas CBS/IBS", "Transição", "Regime geral (fora da ZFM)", "Regras por cenário",
             "Premissas de cálculo", "Perímetro", "Método"} <= set(r["grupo"])
     chaves = set(r.loc[r.grupo == "Premissas de cálculo", "premissa"])
-    assert {"prazo_cp_anos", "tratamento_nao_confirmados", "criterio_alocacao_450"} <= chaves
+    assert {"prazo_cp_anos", "tratamento_nao_confirmados"} <= chaves
     legais = " ".join(r.loc[r.grupo == "Regras legais (LC 214/2025)", "premissa"])
     assert "ART447_DEMAIS" in legais and "ART450_IBS_FINAL" in legais and "ART454_LIMITE_TIPI" in legais
 
 
 def test_premissa_nova_entra_em_arquivo_antigo():
     pr = params.carregar("param_premissas")
-    params.salvar("param_premissas", pr[pr.chave != "criterio_alocacao_450"])
-    assert "criterio_alocacao_450" in set(params.carregar("param_premissas")["chave"])
+    params.salvar("param_premissas", pr[pr.chave != "tratamento_nao_confirmados"])
+    assert "tratamento_nao_confirmados" in set(params.carregar("param_premissas")["chave"])
+    # premissa obsoleta de versao anterior sai sozinha
+    params.salvar("param_premissas", pd.concat([pr, pd.DataFrame([{"chave": "anualizacao", "valor": "x",
+                                                                   "descricao": ""}])]))
+    assert "anualizacao" not in set(params.carregar("param_premissas")["chave"])
 
 
 def test_migracao_de_codigos_da_versao_anterior():
@@ -148,3 +152,35 @@ def test_banco_de_versao_anterior_e_atualizado(con_carregado):
         "SELECT column_name FROM information_schema.columns WHERE table_name = 'param_cfops'").fetchall()]
     assert "devolucao_de" in cols
     assert con_carregado.execute("SELECT count(*) FROM v_base_operacoes").fetchall()[0][0] > 0
+
+
+def test_aliquota_ipi_lida_da_efd(con_param):
+    """A alíquota do IPI do produto vem da própria EFD (C170); produto revisado não é alterado."""
+    raiz, cod = con_param.execute("""SELECT a.raiz, i.COD_ITEM FROM raw_contrib_c170 i
+        JOIN raw_contrib_c100 d ON d.arquivo_id = i.arquivo_id AND d.linha_num = i.pai_linha
+        JOIN arquivos a ON a.arquivo_id = i.arquivo_id WHERE d.IND_OPER = '1' LIMIT 1""").fetchall()[0]
+    con_param.execute(f"UPDATE raw_contrib_c170 SET ALIQ_IPI = 9.75 WHERE COD_ITEM = '{cod}'")
+    pr = params.carregar("param_produtos")
+    m = (pr.raiz_cnpj == raiz) & (pr.cod_item == cod)
+    pr.loc[m, ["aliq_ipi", "fonte_aliq_ipi", "revisado"]] = [None, "", False]
+    params.salvar("param_produtos", pr)
+    params.preencher_aliquota_ipi(con_param)
+    pr = params.carregar("param_produtos").set_index(["raiz_cnpj", "cod_item"])
+    assert pr.loc[(raiz, cod), "aliq_ipi"] == 9.75
+    assert "C170 da EFD Contribuições" in pr.loc[(raiz, cod), "fonte_aliq_ipi"]
+    # revisado pelo usuario: a EFD nao sobrescreve
+    pr = pr.reset_index()
+    pr.loc[(pr.raiz_cnpj == raiz) & (pr.cod_item == cod), ["aliq_ipi", "revisado"]] = [4.0, True]
+    params.salvar("param_produtos", pr)
+    params.preencher_aliquota_ipi(con_param)
+    assert params.carregar("param_produtos").set_index(["raiz_cnpj", "cod_item"]).loc[(raiz, cod), "aliq_ipi"] == 4.0
+
+
+def test_produtos_de_versao_anterior_sao_migrados():
+    antigo = pd.DataFrame([{"raiz_cnpj": "11111111", "cod_item": "X", "aliq_tipi_2023": "15", "aliq_tipi_2026": "",
+                            "classificacao_aprovada": "sim", "fonte": "manual", "motivo_exclusao": "bebida",
+                            "projeto_cas_2022_2025": "sim", "produzido_zfm_2024": "nao", "incentivado": "sim"}])
+    params.caminho("param_produtos").write_text(antigo.to_csv(sep=";", index=False), encoding="utf-8-sig")
+    p = params.carregar("param_produtos").iloc[0]
+    assert p["aliq_ipi"] == 15 and p["revisado"] and p["produzido_zfm_2024"]
+    assert "bebida" in p["observacao"] and "versão anterior" in p["fonte_aliq_ipi"]

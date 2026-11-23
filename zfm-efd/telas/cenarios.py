@@ -25,8 +25,7 @@ with ui.protegido("montar a análise por cenário"):
     if mat.empty:
         ui.vazio("Sem operações classificadas", "Confira o período e as empresas na barra lateral.")
         st.stop()
-    abas = st.tabs(["Matriz", "Elegibilidade", "As Is × To Be", "Ponte e ranking", "IPI por produto (C6)",
-                    "Alertas", "Não classificados"])
+    abas = st.tabs(["Resumo", "Resultado por cenário", "IPI por produto (C6)", "Pendências", "Como é calculado"])
 
     # ------------------------------------------------------------------ 1. matriz
     with abas[0]:
@@ -53,7 +52,7 @@ with ui.protegido("montar a análise por cenário"):
                        "classificadas: veja a aba 'Não classificados'.", icon=":material/warning:")
 
     # ------------------------------------------------------------------ 1b. elegibilidade
-    with abas[1]:
+    with abas[3]:
         ui.secao("Elegibilidade por requisito", "Cada operação candidata a incentivo tem os requisitos testados "
                  "(área ZFM, habilitação, projeto, NCM, art. 441, uso pessoal, origem, ingresso, consumo produtivo, "
                  "local do serviço). Nada é presumido: o que não está comprovado fica pendente. Requisito não atendido "
@@ -94,11 +93,11 @@ with ui.protegido("montar a análise por cenário"):
                                    "to_be_conservador": b.reindex(a.index).values})
                 vr["valor_em_risco"] = vr["to_be_conservador"] - vr["to_be_com_incentivo_estimado"]
                 ui.tabela(vr.astype({"ano": str}))
-                st.caption("Tratamento usado nas demais telas: Parâmetros > Premissas > tratamento_nao_confirmados.")
+                st.caption("Tratamento usado nas demais telas: Cadastros > Premissas > tratamento_nao_confirmados.")
 
     # ------------------------------------------------------------------ 2. As Is x To Be
     res = None
-    with abas[2]:
+    with abas[1]:
         with st.spinner("Simulando por cenário..."):
             res = ui.calcular("resultado_cenarios", f, ctx.teses)
         if res.empty:
@@ -144,7 +143,7 @@ with ui.protegido("montar a análise por cenário"):
             ui.tabela(ev)
 
     # ------------------------------------------------------------------ 3. ponte e ranking
-    with abas[3]:
+    with abas[1]:
         if res is None or res.empty:
             ui.vazio("Sem resultado")
         else:
@@ -182,7 +181,7 @@ with ui.protegido("montar a análise por cenário"):
                 ui.tabela(re_.sort_values("diferenca", ascending=False).drop(columns=["raiz"]))
 
     # ------------------------------------------------------------------ 4. IPI por produto
-    with abas[4]:
+    with abas[2]:
         ui.secao("IPI por produto (C6)", "Duas métricas separadas: carga própria de IPI (zero na ZFM antes e depois) "
                  "e vantagem competitiva (IPI que o concorrente de fora paga). TIPI ≥ 6,5% em 31/12/2023: IPI mantido "
                  "para o concorrente; TIPI < 6,5% e produzido na ZFM em 2024: IPI zero para todos (vantagem perdida; "
@@ -212,10 +211,10 @@ with ui.protegido("montar a análise por cenário"):
                       pct=["cp_cbs_pct", "cp_ibs_pct"], altura=420)
             ui.baixar_csv(v, "ipi_por_produto")
             st.caption("Valores anualizados. TIPI, produção em 2024, TIC e nível de crédito estímulo são editados em "
-                       "Parâmetros > Produtos.")
+                       "Cadastros > Produtos.")
 
     # ------------------------------------------------------------------ 5. alertas
-    with abas[5]:
+    with abas[3]:
         al = ui.calcular("alertas", f)
         if al.empty:
             st.success("Nenhum alerta.", icon=":material/check_circle:")
@@ -231,10 +230,10 @@ with ui.protegido("montar a análise por cenário"):
             ui.baixar_csv(al, "alertas")
 
     # ------------------------------------------------------------------ 6. nao classificados
-    with abas[6]:
+    with abas[3]:
         ui.secao("Operações não classificadas", "Entram na simulação com a regra conservadora (saída tributada, "
                  "entrada com crédito do fornecedor). Para classificar: revise o tipo ZFM e o regime do CNPJ "
-                 "(Parâmetros > Empresas ZFM), a finalidade do CFOP (Parâmetros > CFOPs) ou o produto.")
+                 "(Cadastros > Empresas ZFM), a finalidade do CFOP (Cadastros > CFOPs) ou o produto.")
         nc = con.execute(f"""
             SELECT cenario, motivo, cfop, categoria_cfop, cnpj_part, uf_part, tipo_zfm_part, cod_item, raiz,
                    count(*) AS linhas, sum(valor) AS valor, min(arquivo_id) AS arquivo_exemplo,
@@ -248,3 +247,8 @@ with ui.protegido("montar a análise por cenário"):
             ui.tabela(nc.groupby(["cenario", "motivo"], as_index=False)[["linhas", "valor"]].sum(), moeda=["valor"])
             ui.tabela(nc.drop(columns=["raiz"]), moeda=["valor"], altura=420)
             ui.baixar_csv(nc, "nao_classificados")
+
+    # ------------------------------------------------------------------ 5. como e calculado
+    with abas[4]:
+        from zfm.secoes import metodologia
+        metodologia.render(ctx)

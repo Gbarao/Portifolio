@@ -21,17 +21,17 @@ F_ENTRADA = ("EFD ICMS/IPI do estabelecimento: C100 (IND_OPER = 0; COD_SIT 02–
 F_SAIDA = ("Produto e receita: EFD Contribuições — C170 (detalhada) ou C180 + C181/C185 (consolidada): COD_ITEM, "
            "CFOP, VL_ITEM − VL_DESC, CST/alíquota/valor de PIS e COFINS. Destino: C190 + 0150 da EFD ICMS/IPI do "
            "mesmo estabelecimento, mês e CFOP (destinatário exato pelo COD_PART na detalhada; rateado pela "
-           "proporção do C190 na consolidada). Produto: 0200 + Parâmetros > Produtos (incentivado, TIPI, tipo de bem).")
-F_TIPO = "Tipo ZFM e regime do estabelecimento do grupo: Parâmetros > Empresas ZFM (CNPJ do estabelecimento)."
-F_TIPO_PART = ("Tipo ZFM do participante: Parâmetros > Empresas ZFM (CNPJ); sem linha, automático = habilitado "
-               "se AM + município da ZFM (Parâmetros > Municípios ZFM) + CNPJ + SUFRAMA no 0150.")
+           "proporção do C190 na consolidada). Produto: 0200 + Cadastros > Produtos (incentivado, TIPI, tipo de bem).")
+F_TIPO = "Tipo ZFM e regime do estabelecimento do grupo: Cadastros > Empresas ZFM (CNPJ do estabelecimento)."
+F_TIPO_PART = ("Tipo ZFM do participante: Cadastros > Empresas ZFM (CNPJ); sem linha, automático = habilitado "
+               "se AM + município da ZFM (Cadastros > Municípios ZFM) + CNPJ + SUFRAMA no 0150.")
 F_SERV = "EFD Contribuições: A100/A170 (IND_OPER = 0) e F100 (IND_OPER = 0) dos estabelecimentos do AM."
 
 AS_IS_ENT = ("Crédito escriturado na própria operação (valor negativo): ICMS e IPI do C170/C190 da EFD ICMS/IPI; "
              "PIS/COFINS da EFD Contribuições (C170 ou C191/C195 ligados ao item), só com CST 50 a 66.")
 AS_IS_SAI = ("Débito escriturado na própria operação: ICMS, IPI, PIS e COFINS do item (ICMS estimado pela proporção "
              "do C190 quando a Contribuições não traz o ICMS do item).")
-AS_IS_C4 = (AS_IS_SAI + " Crédito estímulo e fundos do ICMS (E111/E116 classificados em Parâmetros > Códigos de "
+AS_IS_C4 = (AS_IS_SAI + " Crédito estímulo e fundos do ICMS (E111/E116 classificados em Cadastros > Códigos de "
             "ajuste) são distribuídos entre as vendas C4 pela proporção do ICMS debitado.")
 
 #              cenario, criterio, fontes, as_is, cruzamentos
@@ -58,7 +58,7 @@ _CENARIOS = [
     ("C4a", "Venda (CFOP de receita) de produção própria (categoria venda_producao) de produto incentivado, por "
             "estabelecimento indústria incentivada, para fora da ZFM (interna fora da ZFM ou interestadual), "
             "destinatário contribuinte (CNPJ + IE no 0150).", F_SAIDA + " " + F_TIPO, AS_IS_C4,
-     "R3/Q8, R4/Q7, Q13, Q15, R5, conferências (PIS 0,65/1,3; COFINS 3/6; CST IPI 52)"),
+     "R3/Q8, R4/Q7, Q13, Q15, R5, conferências por cenário (PIS 0,65/1,3; COFINS 3/6; CST IPI 52)"),
     ("C4b", "Como C4a, destinatário não contribuinte ou consumidor final.", F_SAIDA + " " + F_TIPO, AS_IS_C4,
      "R3/Q8, R4/Q7, Q13, Q15, R5, conferências"),
     ("C4c", "Venda de produto incentivado para destinatário na ZFM (AM + município da ZFM + SUFRAMA), exceto C4d.",
@@ -69,7 +69,7 @@ _CENARIOS = [
             "nacional que não é C4 (revenda, produto não incentivado). Fornecedor PJ na ZFM.",
      F_SAIDA + " " + F_TIPO_PART, AS_IS_SAI, "R3/Q8, R4/Q7, Q15; origem nacional pela CST (inferência sinalizada)"),
     ("C5S", "Serviço prestado (A100/A170 de saída) a tomador na ZFM; exige evidência do local físico da prestação "
-            "(Parâmetros > Serviços prestados na ZFM). Endereço do prestador ou tomador não é prova.",
+            "(Cadastros > Serviços prestados na ZFM). Endereço do prestador ou tomador não é prova.",
      "EFD Contribuições: A100/A170 (IND_OPER = 1), 0150 do tomador; NFS-e e evidência em cadastro complementar.",
      AS_IS_SAI, "R3/Q8"),
     ("GER_S", "Saída pela regra geral (art. 453): venda para fora da ZFM sem incentivo, ou operação que falhou em algum "
@@ -78,12 +78,12 @@ _CENARIOS = [
               "requisito.", F_ENTRADA, AS_IS_ENT, "—"),
     ("EXP", "Venda com CFOP 7xxx ou destinatário no exterior. Fora do escopo: fica na base sem débito.", F_SAIDA,
      AS_IS_SAI, "R3/Q8"),
-    ("TR", "Transferência entre estabelecimentos (CFOP com categoria 'transferencia' em Parâmetros > CFOPs). Tratada "
+    ("TR", "Transferência entre estabelecimentos (CFOP com categoria 'transferencia' em Cadastros > CFOPs). Tratada "
            "à parte (premissa 'transferencias_na_base_cbs_ibs').", F_SAIDA + " " + F_ENTRADA, AS_IS_SAI,
      "Q16 não acusa: a mesma NF-e é saída num estabelecimento e entrada no outro"),
     ("REM", "Remessas, retornos e outras operações sem receita (saída com 'eh_receita' = não) ou entrada cuja "
             "finalidade do CFOP não é compra.", F_SAIDA + " " + F_ENTRADA, "Escriturado na operação (normalmente zero).",
-     "Parâmetros > CFOPs"),
+     "Cadastros > CFOPs"),
     ("SRV", "Serviços tomados (A100/A170 e F100 de entrada).", F_SERV, "Crédito de PIS/COFINS na apuração.",
      "R3/Q8"),
     ("NC_S", "Saída de receita que não se encaixa: revenda, produto não incentivado ou estabelecimento que não é "
@@ -95,10 +95,10 @@ _CENARIOS = [
 C6 = ("C6", "IPI por produto (vendas C4) — arts. 454 e 455",
       "Receita C4 anualizada por produto × alíquota TIPI. TIPI de 31/12/2023 ≥ ART454_LIMITE_TIPI (6,5%): IPI mantido "
       "para o concorrente; abaixo e produzido na ZFM em 2024: IPI zero para todos. TIC: análise manual.",
-      "Vendas C4 (EFD Contribuições) + Parâmetros > Produtos (aliq_tipi_2023, produzido_zfm_2024, eh_tic, "
+      "Vendas C4 (EFD Contribuições) + Cadastros > Produtos (aliq_ipi lida da EFD, produzido_zfm_2024, eh_tic, "
       "nivel_credito_estimulo, tipo_bem).",
       "Carga própria de IPI da ZFM = 0 (CST 52). Vantagem competitiva = receita × TIPI (IPI do concorrente).",
-      "Q10 (CST de IPI nas saídas incentivadas), conferência CST 52")
+      "conferência por cenário: CST de IPI 52 nas vendas incentivadas")
 
 
 def _fr(v) -> str:
@@ -259,11 +259,7 @@ CRUZAMENTOS = [
      "Empresa × mês", "tolerancia_receita_pct (%)", "Receita não explicada pelos documentos."),
     ("Q13", "Consolidação da Contribuições", "C181 (PIS) e C185 (COFINS)", "C180 (VL_TOT_ITEM)", "Linha do C180",
      "tolerancia_conciliacao", "Receita do produto contada a mais ou a menos."),
-    ("Q9", "Alíquotas de PIS/COFINS", "C170/C181/C185 das vendas incentivadas", "Premissas aliq_pis/cofins_zfm_validas",
-     "Item", "—", "Alíquota fora da regra da ZFM (0,65/3 ou 1,3/6)."),
-    ("Q10", "CST de IPI", "C170 das vendas incentivadas", "Premissa cst_ipi_isento (52)", "Item", "—",
-     "IPI não isento em produto incentivado."),
-    ("Q11", "Códigos de ajuste", "E111/E116", "Parâmetros > Códigos de ajuste", "Código", "—",
+    ("Q11", "Códigos de ajuste", "E111/E116", "Cadastros > Códigos de ajuste", "Código", "—",
      "Código sem classe: crédito estímulo/fundos podem ficar fora."),
     ("Q12", "E116 × E110", "Soma do E116", "VL_ICMS_RECOLHER + DEB_ESP do E110", "Arquivo", "tolerancia_conciliacao",
      "Obrigação informada além da apuração (ex.: fundos)."),
@@ -296,7 +292,7 @@ FONTES = [
     ("Entradas (PIS/COFINS)", "Contribuições", "C170 (detalhada) ou C190/C191/C195 (consolidada), A170, F100",
      "CST, alíquota e valor de PIS e COFINS", "As Is das entradas por cenário; ligado ao item pelos níveis N1–N3"),
     ("Serviços tomados", "Contribuições", "A100/A170, F100", "VL_ITEM, VL_OPER", "Cenário SRV"),
-    ("Devoluções", "ICMS/IPI", "C190/C170 com CFOP de devolução", "CFOP (Parâmetros > CFOPs > devolucao_de)",
+    ("Devoluções", "ICMS/IPI", "C190/C170 com CFOP de devolução", "CFOP (Cadastros > CFOPs > devolucao_de)",
      "Abatem a operação de origem"),
     ("ICMS As Is", "ICMS/IPI", "E110, E111, E116", "VL_ICMS_RECOLHER, DEB_ESP, ajustes classificados",
      "Carga As Is, crédito estímulo, fundos"),
