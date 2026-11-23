@@ -76,7 +76,7 @@ def gerar_excel(con: duckdb.DuckDBPyConnection, f: Filtro | list[str] | None = N
                                           "cp_entrada_expirado", "cp_ibs_450", "meses_saldo_credor"]]
         abas["Absorção (mensal)"] = mensal
         abas["Simulação - detalhe"] = anual
-    # ---- cenarios ZFM (C1-C5)
+    # ---- cenarios ZFM (C1-C6)
     desc = cz.descricoes()
     mat = cz.matriz(con, f)
     if not mat.empty:
@@ -96,7 +96,7 @@ def gerar_excel(con: duckdb.DuckDBPyConnection, f: Filtro | list[str] | None = N
             ["cenario_aliq", "ano", "raiz", "cenario", "tributo"])
     ipi = cz.ipi_por_produto(con, f)
     if not ipi.empty:
-        abas["IPI por produto (C5)"] = ipi
+        abas["IPI por produto (C6)"] = ipi
     al = cz.alertas(con, f)
     if not al.empty:
         abas["Alertas"] = al
@@ -113,6 +113,12 @@ def gerar_excel(con: duckdb.DuckDBPyConnection, f: Filtro | list[str] | None = N
     abas["Pareamento Fiscal x Contrib"] = filtra(pr) if not pr.empty else pr
     abas["Cobertura das EFDs"] = filtra(cruzamentos.cobertura_banco(con))
     abas["Diagnóstico do cruzamento"] = filtra(cruzamentos.diagnostico_niveis(con))
+    abas["Elegibilidade"] = con.execute(f"""
+        SELECT raiz, cenario_candidato, cenario, status_elegibilidade, requisitos_falha, requisitos_insuficientes,
+               requisitos_pendentes, count(*) AS linhas, sum(valor) AS valor
+        FROM v_cenarios WHERE cenario_candidato SIMILAR TO 'C[0-9].*' AND {f.sql()} GROUP BY ALL
+        ORDER BY raiz, cenario_candidato, status_elegibilidade""").df()
+    abas["Regras legais"] = params.carregar("param_regras_legais")
     asis = as_is.carga_anual(con, f, com_teses)
     if not asis.empty:
         abas["Carga As Is (anual)"] = _por_empresa(

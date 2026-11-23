@@ -102,6 +102,19 @@ with ui.protegido("rodar a simulação"):
         cp = simulacao.diferenca_por_tributo(anual[anual.ano == ano])
         ui.tabela(cp[cp.tributo.isin(tribs)].groupby("cenario", as_index=False)[["as_is", "to_be", "diferenca"]].sum())
     with t3:
+        ui.secao("Art. 450 de IBS por faixa: saldo devedor e crédito presumido",
+                 "O crédito presumido de IBS incide sobre o saldo devedor do período (nunca sobre a receita), separado "
+                 "por faixa de percentual. Os créditos do período são alocados às faixas na proporção dos débitos "
+                 "(premissa criterio_alocacao_450). A parcela não elegível fica sem crédito presumido.")
+        fx = anual[anual.cenario == cenario][["raiz", "ano"] + [c for c in anual.columns
+                                                              if c.startswith("sd_") or c.startswith("cp450_")]].copy()
+        if not fx.empty:
+            fx.insert(0, "empresa", fx["raiz"].map(ctx.nome))
+            fx = fx.drop(columns=["raiz"]).rename(columns={
+                "sd_55": "Saldo devedor – final", "cp450_55": "CP 55%", "sd_75": "Saldo devedor – capital",
+                "cp450_75": "CP 75%", "sd_90_25": "Saldo devedor – intermediário", "cp450_90_25": "CP 90,25%",
+                "sd_100": "Saldo devedor – informática/CE 100%", "cp450_100": "CP 100%"})
+            ui.tabela(fx.astype({"ano": str}))
         ui.secao("Teste de absorção dos créditos presumidos", "O crédito presumido só abate CBS/IBS da própria "
                  "empresa, não é ressarcido e vence no prazo 'prazo_cp_anos'. Teórico = todo crédito aproveitado; "
                  "realizável = o que de fato abate a carga.")

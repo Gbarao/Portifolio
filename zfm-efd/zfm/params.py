@@ -50,11 +50,16 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
             "incentivado": "bool", "tipo_bem": "texto", "aliq_tipi_2023": "num",
             "aliq_tipi_2026": "num", "produzido_zfm_2024": "bool", "eh_tic": "bool",
             "ipi_protegido": "bool", "nivel_credito_estimulo": "num", "ce_100_em_2023": "bool",
-            "fonte": "texto"},
+            "fonte": "texto", "ex_tipi": "texto", "origem": "texto", "excluido_art441": "texto",
+            "motivo_exclusao": "texto", "uso_consumo_pessoal": "texto", "similar_nacional": "texto",
+            "projeto_cas_2022_2025": "texto", "art455_alternativa": "texto", "aliq_ipi_futura": "num",
+            "consumo_produtivo_comprovado": "texto", "classificacao_aprovada": "bool"},
            ("raiz_cnpj", "cod_item"),
-           "Uma linha por item (0200). tipo_bem: final, capital, intermediario ou informatica. "
-           "Alíquotas TIPI e nível de crédito estímulo em %. Sem TIPI preenchida, o benefício "
-           "de IPI do item fica zero e aparece alerta."),
+           "Cadastro jurídico do produto (uma linha por item do 0200). tipo_bem: final, capital, intermediario ou "
+           "informatica. Alíquotas TIPI e crédito estímulo em %. origem: nacional, importada ou vazio (o programa "
+           "infere pela CST e sinaliza). excluido_art441 / uso_consumo_pessoal / similar_nacional / "
+           "projeto_cas_2022_2025 / consumo_produtivo_comprovado: sim, nao ou vazio (= não validado; nunca é "
+           "presumido). art455_alternativa: vazio, A_cp_cbs_6 ou B_ipi_6_5. Marque classificacao_aprovada ao validar."),
     Tabela("param_aliquotas_cenario", "Alíquotas por cenário",
            {"cenario": "texto", "ano": "int", "aliq_cbs": "num", "aliq_ibs": "num",
             "fator_icms": "num", "fator_cp_entrada": "num", "aplica_cp_450": "bool",
@@ -105,30 +110,76 @@ TABELAS: dict[str, Tabela] = {t.nome: t for t in [
     Tabela("param_empresas_zfm", "Empresas ZFM (tipo e regime)",
            {"cnpj": "texto", "raiz": "texto", "nome": "texto", "origem": "texto", "uf": "texto",
             "cod_mun": "texto", "suframa": "texto", "tipo": "texto", "regime": "texto",
-            "regra_automatica": "texto", "revisado": "bool", "observacao": "texto"},
+            "regra_automatica": "texto", "revisado": "bool", "observacao": "texto",
+            "status_habilitacao": "texto", "validade_ini": "texto", "validade_fim": "texto",
+            "evidencia": "texto"},
            ("cnpj",),
            "Uma linha por CNPJ (estabelecimentos do grupo e participantes do Amazonas). tipo: "
            "industria_incentivada (Suframa + projeto com PPB aprovado), habilitado (Suframa sem projeto "
-           "industrial: comércio/serviço) ou nao_habilitado. regime: regular ou simples. Pré-preenchida "
-           "a partir das EFDs; confirme e marque 'revisado'."),
+           "industrial: comércio/serviço) ou nao_habilitado. regime: regular ou simples. status_habilitacao: "
+           "ativa, suspensa, cancelada ou vazio. Validade em AAAA-MM-DD. O campo SUFRAMA da EFD não prova a "
+           "habilitação: sem 'revisado', o requisito fica 'não comprovado'."),
     Tabela("param_regras_cenario", "Regras To Be por cenário",
            {"cenario": "texto", "descricao": "texto", "sentido": "texto", "cbs_debito": "num",
             "ibs_debito": "num", "cbs_entrada": "num", "ibs_entrada": "num", "entrada_creditavel": "texto",
             "cbs_credito_fornecedor": "num", "ibs_credito_fornecedor": "num", "cp_cbs_450": "bool",
-            "cp_ibs_450": "bool", "cp_ibs_entrada": "texto", "cp_444_pct": "num", "base_legal": "texto",
+            "cp_ibs_450": "bool", "cp_ibs_entrada": "texto", "base_legal": "texto",
             "observacao": "texto"},
            ("cenario",),
            "Tratamento simulado de cada cenário (frações da alíquota do ano, 1 = integral, 0 = zero). "
            "*_debito: débito sobre a venda. *_entrada: tributo devido pela empresa na entrada "
            "(importação, IBS de 70% do art. 446). entrada_creditavel: sim, nao ou regime (só regime "
            "regular credita). *_credito_fornecedor: crédito do tributo cobrado pelo fornecedor. "
-           "cp_ibs_entrada: 447 (7,5%/13,5% por origem), 449 (7,5%) ou 444 (cp_444_pct % da alíquota)."),
+           "cp_ibs_entrada: 447, 449 ou 444. Os PERCENTUAIS (447: 7,5/13,5%; 449: 7,5%; 444: 50%; IBS de entrada do "
+           "art. 446: 70%) e as vigências vêm de Regras legais, não desta tabela."),
     Tabela("param_conferencia_cenario", "Conferências As Is por cenário",
            {"cenarios": "texto", "tributo": "texto", "regra": "texto", "valores": "texto", "mensagem": "texto"},
            ("cenarios", "tributo", "regra"),
            "Alerta quando o escriturado diverge do esperado para o cenário. cenarios: lista separada por ';'. "
            "regra: aliquota_em (alíquota deve estar na lista), cst_em (CST na lista) ou valor_zero "
            "(o tributo não deveria estar destacado)."),
+    Tabela("param_regras_legais", "Regras legais (versionadas)",
+           {"codigo": "texto", "tributo": "texto", "dispositivo": "texto", "tipo_regra": "texto",
+            "descricao": "texto", "percentual": "num", "inicio_vigencia": "texto", "fim_vigencia": "texto",
+            "versao": "texto", "fonte_normativa": "texto", "data_atualizacao": "texto", "status": "texto",
+            "observacao": "texto"},
+           ("codigo",),
+           "Percentuais, prazos e vigências da LC 214/2025 usados nos cálculos. status: vigente, futura, "
+           "revogada ou pendente_regulamentacao (regra pendente ou revogada não é aplicada). Datas em AAAA-MM-DD; "
+           "a regra vale nos anos entre o início e o fim da vigência. Alíquotas gerais de CBS/IBS NÃO ficam aqui: "
+           "são premissas de simulação (aba Alíquotas por ano)."),
+    Tabela("param_projetos_suframa", "Projetos SUFRAMA",
+           {"cnpj": "texto", "projeto": "texto", "data_aprovacao_cas": "texto", "vigencia_ini": "texto",
+            "vigencia_fim": "texto", "cod_item": "texto", "ncm": "texto", "ppb": "texto", "capacidade": "texto",
+            "status": "texto", "observacao": "texto"},
+           ("cnpj", "projeto", "cod_item", "ncm"),
+           "Uma linha por produto aprovado no projeto (cod_item ou NCM; NCM pode ser prefixo). status: aprovado, "
+           "suspenso, cancelado. Sem projeto cadastrado para o estabelecimento, o requisito fica 'não comprovado' "
+           "(nunca presumido)."),
+    Tabela("param_internamento", "Controle de internamento",
+           {"chv_nfe": "texto", "data_ingresso": "texto", "status": "texto", "protocolo": "texto",
+            "confirmacao_suframa": "texto", "cnpj_destino": "texto", "evidencia": "texto"},
+           ("chv_nfe",),
+           "Comprovação de ingresso na ZFM por NF-e. status: confirmado, pendente ou negado. Sem linha = não "
+           "comprovado (crédito presumido do art. 447 e alíquota zero ficam em risco de estorno)."),
+    Tabela("param_importacoes", "Importações (DI/DUIMP)",
+           {"chv_nfe": "texto", "di_duimp": "texto", "adicao": "texto", "cod_item": "texto",
+            "valor_aduaneiro": "num", "ii": "num", "ipi_importacao": "num", "imposto_seletivo": "num",
+            "despesas_aduaneiras": "num", "frete": "num", "seguro": "num", "afrmm": "num",
+            "data_desembaraco": "texto", "destinacao": "texto", "quantidade": "num", "qtd_consumida": "num",
+            "qtd_ativo": "num", "data_depreciacao_integral": "texto", "qtd_remetida_fora_zfm": "num",
+            "data_remessa_fora": "texto", "observacao": "texto"},
+           ("chv_nfe", "di_duimp", "adicao", "cod_item"),
+           "Complementa a EFD na importação (a EFD não traz todos os componentes da base). destinacao: "
+           "consumo_producao, ativo, revenda_presencial, revenda_outra ou uso_pessoal. Controle do art. 443: "
+           "quantidades consumidas, no ativo e remetidas para fora da ZFM antes da conversão em isenção."),
+    Tabela("param_servicos_zfm", "Serviços prestados na ZFM",
+           {"cnpj_estab": "texto", "documento": "texto", "municipio_prestacao": "texto",
+            "local_fisico_zfm": "texto", "nfse": "texto", "tomador": "texto", "natureza": "texto",
+            "evidencia": "texto"},
+           ("cnpj_estab", "documento"),
+           "Evidência de prestação física do serviço na ZFM (art. 451). documento = número ou chave da NFS-e do "
+           "A100. local_fisico_zfm: sim, nao ou vazio. Endereço do prestador ou do tomador não é prova."),
     Tabela("param_premissas", "Premissas",
            {"chave": "texto", "valor": "texto", "descricao": "texto"},
            ("chave",),
@@ -278,40 +329,35 @@ _PREMISSAS = [
      "Quando a compra na ZFM é 'bem intermediário' (C3a): 'compra_industrializacao' (CFOP de compra para "
      "industrialização ou tipo_bem intermediário) ou 'tipo_bem' (só pelo tipo de bem do item)."),
     ("ipi_protegido_regra", "tipi",
-     "Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= limite_tipi_ipi "
+     "Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= ART454_LIMITE_TIPI (Regras legais) "
      "(até a lista oficial do § 3º); 'tabela' = coluna ipi_protegido de Produtos."),
     ("simular_risco_ingresso_c2", "nao",
      "C2 sem comprovação de ingresso perde a alíquota zero e estorna o crédito presumido. Padrão: só alerta."),
     ("fator_ipi_proprio", "0",
      "Fração do IPI próprio a recolher (E520) que permanece no To Be (0 = IPI zerado/ZFM isenta)."),
     ("aliq_ibs_teste", "0,1", "IBS de teste em 2027-2028, em % (LC 214/2025: 0,05% estadual + 0,05% municipal)."),
-    ("ano_inicio_cp450_ibs", "2029", "Ano a partir do qual vale o crédito presumido de IBS do art. 450 (§ 1º)."),
     ("reducao_cbs_2027_2028", "0,1",
      "Redução da CBS em 2027-2028, em p.p. (IBS-teste de 0,1% compensável com a CBS)."),
-    ("limite_tipi_ipi", "6,5",
-     "TIPI (%) a partir da qual o IPI é mantido para o produto da ZFM (art. 454); abaixo dela o "
-     "crédito presumido de CBS é o maior (art. 450)."),
-    ("p_cbs_450_ipi_zerado", "6", "Crédito presumido de CBS (art. 450), % da venda: produto com TIPI "
-     "abaixo do limite, produzido na ZFM em 2024 e não TIC."),
-    ("p_cbs_450_demais", "2", "Crédito presumido de CBS (art. 450), % da venda: demais produtos."),
-    ("p_ibs_450_final", "55", "Crédito presumido de IBS (art. 450), % do saldo devedor: bens de consumo final."),
-    ("p_ibs_450_capital", "75", "Idem, bens de capital."),
-    ("p_ibs_450_intermediario", "90,25", "Idem, bens intermediários."),
-    ("p_ibs_450_informatica_ou_ce100", "100",
-     "Idem, bens de informática ou produto com crédito estímulo de 100% até 2023."),
-    ("cp447_sul_sudeste_exceto_es", "7,5",
-     "Crédito presumido de IBS (art. 447), % das compras com alíquota zero de Sul/Sudeste exceto ES."),
-    ("cp447_demais_e_es", "13,5", "Idem, compras de Norte, Nordeste, Centro-Oeste e ES."),
-    ("cp449", "7,5", "Crédito presumido de IBS (art. 449), % das compras de intermediários da ZFM."),
+    ("tratamento_nao_confirmados", "estimativa_com_incentivo",
+     "Operações 'potencialmente elegíveis' ou com 'informação insuficiente': 'estimativa_com_incentivo' (calcula "
+     "o incentivo e mostra o valor em risco) ou 'regra_geral' (conservador). Não elegíveis vão sempre à regra geral."),
+    ("criterio_alocacao_450", "proporcional_debito",
+     "Art. 450 de IBS: como os créditos de IBS do período são alocados às faixas de percentual (55/75/90,25/100% e "
+     "não elegível) para formar o saldo devedor de cada faixa. 'proporcional_debito' = na proporção dos débitos "
+     "de cada faixa (demonstrado no razão por faixa)."),
+    ("taxa_juros_acrescimos_mes", "",
+     "Acréscimos legais (art. 29, § 2º) para estornos/recuperações: juros em % ao mês. Vazio = pendente "
+     "(acréscimos não calculados e sinalizados)."),
+    ("multa_acrescimos_pct", "", "Multa de mora em % para estornos/recuperações. Vazio = pendente."),
 ]
 
 
 def _r(cen, desc, sentido, base_legal, obs="", cbs_d=0.0, ibs_d=0.0, cbs_e=0.0, ibs_e=0.0, cred="regime",
-       cbs_f=0.0, ibs_f=0.0, cp_cbs=False, cp_ibs=False, cp_ent="", cp444=None):
+       cbs_f=0.0, ibs_f=0.0, cp_cbs=False, cp_ibs=False, cp_ent=""):
     return {"cenario": cen, "descricao": desc, "sentido": sentido, "cbs_debito": cbs_d, "ibs_debito": ibs_d,
             "cbs_entrada": cbs_e, "ibs_entrada": ibs_e, "entrada_creditavel": cred,
             "cbs_credito_fornecedor": cbs_f, "ibs_credito_fornecedor": ibs_f, "cp_cbs_450": cp_cbs,
-            "cp_ibs_450": cp_ibs, "cp_ibs_entrada": cp_ent, "cp_444_pct": cp444, "base_legal": base_legal,
+            "cp_ibs_450": cp_ibs, "cp_ibs_entrada": cp_ent, "base_legal": base_legal,
             "observacao": obs}
 
 
@@ -321,22 +367,23 @@ _REGRAS_CENARIO = [
        "Não vale para bens excluídos (art. 441) nem uso e consumo pessoal."),
     _r("C1b", "Importação por habilitado (revenda presencial)", "entrada", "LC 214/2025, art. 444",
        "CBS integral (creditável no regime regular); IBS devido menos crédito presumido de 50% da alíquota.",
-       cbs_e=1, ibs_e=1, cp_ent="444", cp444=50.0),
-    _r("C1c", "Importação por habilitado (outros fins)", "entrada", "Regra geral",
-       "CBS e IBS integrais, sem crédito presumido.", cbs_e=1, ibs_e=1),
+       cbs_e=1, ibs_e=1, cp_ent="444"),
+    _r("C1c", "Importação fora dos arts. 443/444 (regra geral)", "entrada", "LC 214/2025, art. 453",
+       "CBS e IBS integrais na importação, creditáveis no regime regular; sem crédito presumido.", cbs_e=1, ibs_e=1),
     _r("C2a", "Compra de outro Estado por indústria incentivada", "entrada", "LC 214/2025, arts. 445 e 447",
        "CBS/IBS zero; crédito presumido de IBS 7,5% (S/SE exc. ES) ou 13,5% (demais e ES) a partir de 2029.",
        cp_ent="447"),
     _r("C2b", "Compra de outro Estado por habilitado (regime regular)", "entrada",
        "LC 214/2025, arts. 445, 446 e 447",
-       "CBS/IBS zero na compra; IBS de 70% da alíquota cobrado na entrada no AM (destinatário contribuinte); "
-       "crédito presumido de 7,5%/13,5%.", ibs_e=0.7, cp_ent="447"),
+       "CBS/IBS zero na compra; IBS na entrada no AM conforme art. 446 (70% da alíquota, em Regras legais); "
+       "crédito presumido do art. 447 (percentuais em Regras legais).", ibs_e=1, cp_ent="447"),
     _r("C2c", "Compra de outro Estado por habilitado do Simples", "entrada", "LC 214/2025, arts. 445 e 446",
-       "CBS/IBS zero; IBS de 70% na entrada; sem crédito presumido do art. 447.", ibs_e=0.7),
+       "CBS/IBS zero; IBS na entrada conforme art. 446 (percentual em Regras legais); sem crédito presumido do "
+       "art. 447.", ibs_e=1),
     _r("C3a", "Compra na ZFM: intermediário de indústria incentivada para indústria incentivada", "entrada",
        "LC 214/2025, arts. 448 e 449",
        "CBS/IBS zero; compradora do regime regular recebe crédito presumido de IBS de 7,5%.", cp_ent="449"),
-    _r("C3b", "Demais compras de PJ na ZFM", "entrada", "LC 214/2025, art. 451",
+    _r("C3b", "Compra dentro da ZFM de fornecedor da ZFM (art. 451)", "entrada", "LC 214/2025, art. 451",
        "CBS zero; IBS pela regra geral (cobrado pelo fornecedor e creditado no regime regular).", ibs_f=1),
     _r("C4a", "Venda para fora da ZFM a contribuinte regular", "saida", "LC 214/2025, art. 450",
        "CBS/IBS integrais; crédito presumido de CBS 6%/2% e de IBS sobre o saldo devedor.",
@@ -348,15 +395,26 @@ _REGRAS_CENARIO = [
        ibs_d=1, cp_ibs=True),
     _r("C4d", "Venda dentro da ZFM de intermediário para indústria incentivada", "saida",
        "LC 214/2025, art. 448", "CBS/IBS zero; sem crédito presumido do art. 450."),
+    _r("C5M", "Venda dentro da ZFM de bem de origem nacional (art. 451)", "saida", "LC 214/2025, art. 451",
+       "CBS zero (créditos de CBS mantidos); IBS pela regra geral. Fornecedor PJ na ZFM e adquirente na ZFM.",
+       ibs_d=1),
+    _r("C5S", "Serviço prestado fisicamente na ZFM (art. 451)", "saida", "LC 214/2025, art. 451",
+       "CBS zero; IBS pela regra geral. Exige evidência do local físico da prestação (não basta o endereço).",
+       ibs_d=1),
+    _r("GER_S", "Saída pela regra geral (art. 453)", "saida", "LC 214/2025, art. 453",
+       "Operação não contemplada ou requisito não atendido: CBS e IBS integrais, sem crédito presumido.",
+       cbs_d=1, ibs_d=1),
+    _r("GER_E", "Entrada pela regra geral (art. 453)", "entrada", "LC 214/2025, art. 453",
+       "Crédito do tributo cobrado pelo fornecedor (regime regular).", cbs_f=1, ibs_f=1),
     _r("EXP", "Exportação (fora do escopo; sem débito nos dois regimes)", "saida", "Imunidade"),
     _r("TR", "Transferência entre estabelecimentos (à parte)", "ambos", "Conferir LC 214/2025"),
     _r("REM", "Remessas, retornos e outras operações sem receita/crédito", "ambos", "—"),
     _r("SRV", "Serviços tomados", "entrada", "Regra geral", "Crédito do tributo cobrado pelo prestador.",
        cbs_f=1, ibs_f=1),
-    _r("NC_S", "Saída não classificada (tratada pela regra geral)", "saida", "Regra geral",
-       "Débito integral, sem crédito presumido. Ver relatório de não classificados.", cbs_d=1, ibs_d=1),
-    _r("NC_E", "Entrada não classificada (tratada pela regra geral)", "entrada", "Regra geral",
-       "Crédito do tributo cobrado pelo fornecedor. Ver relatório de não classificados.", cbs_f=1, ibs_f=1),
+    _r("NC_S", "Saída com informação insuficiente para classificar", "saida", "—",
+       "Simulada pela regra geral (débito integral) até a classificação. Ver Não classificados.", cbs_d=1, ibs_d=1),
+    _r("NC_E", "Entrada com informação insuficiente para classificar", "entrada", "—",
+       "Simulada pela regra geral (crédito do fornecedor) até a classificação.", cbs_f=1, ibs_f=1),
 ]
 
 _CONFERENCIAS = [
@@ -374,7 +432,85 @@ _CONFERENCIAS = [
     ("C3a;C3b", "IPI", "valor_zero", "", "Compra na ZFM com IPI destacado (esperado isento, DL 288/1967, art. 9º)"),
 ]
 
+_FONTE_LC = "LC 214/2025 (redação vigente); conferir alterações da LC 227/2026 no texto oficial"
+_ATUALIZ = "2026-11-23"
+
+
+def _rl(cod, trib, disp, tipo, desc, pct, ini, fim="", status="vigente", obs=""):
+    return {"codigo": cod, "tributo": trib, "dispositivo": disp, "tipo_regra": tipo, "descricao": desc,
+            "percentual": pct, "inicio_vigencia": ini, "fim_vigencia": fim, "versao": "1",
+            "fonte_normativa": _FONTE_LC, "data_atualizacao": _ATUALIZ, "status": status, "observacao": obs}
+
+
+_A_CONFERIR = "Vigência a conferir no art. 544 da LC 214/2025."
+_REGRAS_LEGAIS = [
+    _rl("ART441_EXCLUSAO", "IBS/CBS", "art. 441", "exclusao",
+        "Produtos não contemplados pelo regime da ZFM (lista no cadastro jurídico do produto: excluido_art441)",
+        None, "2027-01-01", obs="Lista não é fixada no código: validar produto a produto. " + _A_CONFERIR),
+    _rl("ART443_SUSPENSAO", "IBS/CBS", "art. 443", "suspensao",
+        "Importação por indústria incentivada para utilização na ZFM: suspensão convertida em isenção",
+        None, "2027-01-01", obs=_A_CONFERIR),
+    _rl("ART443_PRAZO_MESES", "IBS/CBS", "art. 443", "prazo",
+        "Conversão em isenção do ativo: depreciação integral ou permanência na ZFM (meses), o que ocorrer primeiro",
+        48, "2027-01-01", obs=_A_CONFERIR),
+    _rl("ART444_CP_IBS", "IBS", "art. 444", "credito_presumido",
+        "Importação para revenda presencial por habilitado: crédito presumido de IBS, % da alíquota de IBS na importação",
+        50, "2027-01-01"),
+    _rl("ART445_ALIQ_ZERO", "IBS/CBS", "art. 445", "aliquota_zero",
+        "Venda de bem industrializado de origem nacional de outra UF a contribuinte habilitado na ZFM", None,
+        "2027-01-01", obs=_A_CONFERIR),
+    _rl("ART446_IBS_ENTRADA", "IBS", "art. 446", "percentual_debito",
+        "IBS na entrada no AM, % da alíquota (não se aplica a indústria incentivada com utilização na ZFM)",
+        70, "2029-01-01"),
+    _rl("ART447_SS", "IBS", "art. 447", "credito_presumido",
+        "Crédito presumido de IBS do adquirente regular: origem Sul/Sudeste exceto ES, % do valor da operação",
+        7.5, "2029-01-01"),
+    _rl("ART447_DEMAIS", "IBS", "art. 447", "credito_presumido",
+        "Idem, origem Norte, Nordeste, Centro-Oeste ou Espírito Santo", 13.5, "2029-01-01"),
+    _rl("ART448_ALIQ_ZERO", "IBS/CBS", "art. 448", "aliquota_zero",
+        "Bem intermediário de indústria incentivada para indústria incentivada na ZFM", None, "2027-01-01",
+        obs=_A_CONFERIR),
+    _rl("ART449_CP_IBS", "IBS", "art. 449", "credito_presumido",
+        "Crédito presumido de IBS do adquirente nas operações do art. 448, % do valor da operação", 7.5,
+        "2029-01-01", obs="Exige incorporação ou consumo na produção de bem final."),
+    _rl("ART450_IBS_FINAL", "IBS", "art. 450", "credito_presumido",
+        "Crédito presumido de IBS, % do saldo devedor: bem de consumo final", 55, "2029-01-01"),
+    _rl("ART450_IBS_CAPITAL", "IBS", "art. 450", "credito_presumido", "Idem, bem de capital", 75, "2029-01-01"),
+    _rl("ART450_IBS_INTERMEDIARIO", "IBS", "art. 450", "credito_presumido", "Idem, bem intermediário", 90.25,
+        "2029-01-01"),
+    _rl("ART450_IBS_INFORMATICA", "IBS", "art. 450", "credito_presumido", "Idem, bem de informática", 100,
+        "2029-01-01"),
+    _rl("ART450_IBS_CE100", "IBS", "art. 450", "credito_presumido",
+        "Idem, produto com crédito estímulo de ICMS de 100% no AM em 31/12/2023", 100, "2029-01-01"),
+    _rl("ART450_CBS_454", "CBS", "art. 450", "credito_presumido",
+        "Crédito presumido de CBS, % do valor da operação: produto enquadrado no art. 454", 6, "2027-01-01"),
+    _rl("ART450_CBS_DEMAIS", "CBS", "art. 450", "credito_presumido",
+        "Crédito presumido de CBS, % do valor da operação: demais produtos elegíveis", 2, "2027-01-01"),
+    _rl("ART450_TRAVA_448", "IBS/CBS", "art. 450 (LC 227/2026)", "exclusao",
+        "Operações do art. 448 não recebem o crédito presumido do art. 450", None, "2027-01-01",
+        obs="Conferir a redação dada pela LC 227/2026 no texto oficial."),
+    _rl("ART450_SALDO_DEVEDOR", "IBS", "art. 450, § 6º (LC 227/2026)", "metodo",
+        "Crédito presumido de IBS sobre o saldo devedor do período, apurado por faixa de percentual", None,
+        "2029-01-01", obs="Critério de alocação dos créditos: premissa criterio_alocacao_450. Conferir o § 6º."),
+    _rl("ART451_CBS_ZERO", "CBS", "art. 451", "aliquota_zero",
+        "Venda dentro da ZFM de bem de origem nacional ou serviço prestado fisicamente na ZFM", None,
+        "2027-01-01", obs=_A_CONFERIR),
+    _rl("ART454_LIMITE_TIPI", "IPI", "art. 454", "limite",
+        "Alíquota da TIPI em 31/12/2023 abaixo da qual o IPI é reduzido a zero (produto industrializado na ZFM)",
+        6.5, "2027-01-01"),
+    _rl("ART454_JANELA_CAS", "IPI", "art. 454", "janela",
+        "Projeto técnico-econômico aprovado pelo CAS neste período (alternativa a 'industrializado em 2024')",
+        None, "2022-01-01", "2025-01-16"),
+    _rl("ART455_CP_CBS", "CBS", "art. 455", "credito_presumido",
+        "Produção futura sem similar nacional — alternativa A: crédito presumido de CBS, % da operação", 6,
+        "2027-01-01", status="pendente_regulamentacao", obs="Depende de ato do Poder Executivo."),
+    _rl("ART455_IPI_MIN", "IPI", "art. 455", "limite",
+        "Produção futura sem similar nacional — alternativa B: alíquota de IPI de no mínimo", 6.5, "2027-01-01",
+        status="pendente_regulamentacao", obs="Depende de ato do Poder Executivo; não cumulativa com a A."),
+]
+
 _MODELOS: dict[str, pd.DataFrame] = {
+    "param_regras_legais": pd.DataFrame(_REGRAS_LEGAIS),
     "param_regras_cenario": pd.DataFrame(_REGRAS_CENARIO),
     "param_conferencia_cenario": pd.DataFrame(_CONFERENCIAS,
                                               columns=["cenarios", "tributo", "regra", "valores", "mensagem"]),
@@ -492,6 +628,17 @@ def carregar(nome: str) -> pd.DataFrame:
         # versao anterior gravava 'outros' para codigo sem regra: vira 'nao_classificado' (alerta)
         velho = (df["classe"] == "outros") & (df["regra_automatica"] == "sem regra") & ~df["revisado"]
         df.loc[velho, "classe"] = "nao_classificado"
+    if nome == "param_regras_cenario" and not df.empty:
+        # versao anterior gravava a fracao do art. 446 (0,7) na regra; agora o percentual vem de Regras legais
+        m = df["cenario"].isin(["C2b", "C2c"]) & (df["ibs_entrada"].round(4) == 0.7)
+        df.loc[m, "ibs_entrada"] = 1.0
+        faltam = [x for x in _REGRAS_CENARIO if x["cenario"] not in set(df["cenario"])]
+        if faltam:
+            df = pd.concat([df, normalizar(nome, pd.DataFrame(faltam))], ignore_index=True)
+    if nome == "param_regras_legais" and not df.empty:
+        faltam = [x for x in _REGRAS_LEGAIS if x["codigo"] not in set(df["codigo"])]
+        if faltam:
+            df = pd.concat([df, normalizar(nome, pd.DataFrame(faltam))], ignore_index=True)
     if nome == "param_premissas":  # premissas criadas em versoes novas entram com o valor padrao
         faltam = [x for x in _PREMISSAS if x[0] not in set(df["chave"])]
         if faltam:
@@ -803,6 +950,11 @@ def resumo_premissas() -> pd.DataFrame:
         add("Transição", "Contribuição estadual (art. 457)",
             " · ".join(f"{ano}: {pct(v)}" for ano, v in f["aliq_contrib_art457"].items()),
             "Parâmetros > Alíquotas por cenário", "LC 214/2025 art. 457 — preencher para sensibilidade")
+    for r in carregar("param_regras_legais").itertuples():
+        add("Regras legais (LC 214/2025)", f"{r.codigo} – {r.descricao}",
+            (pct(r.percentual) if r.percentual is not None and not pd.isna(r.percentual) else "—")
+            + f" · vigência {r.inicio_vigencia or '—'} a {r.fim_vigencia or 'indeterminado'} · {r.status}",
+            "Parâmetros > Regras legais", f"{r.dispositivo}; {r.fonte_normativa}. {r.observacao}".strip())
     for r in carregar("param_aliquotas_regime_geral").itertuples():
         add("Regime geral (fora da ZFM)", r.tributo, pct(r.aliquota), "Parâmetros > Regime geral", r.observacao)
     def fr(v):
@@ -823,7 +975,7 @@ def resumo_premissas() -> pd.DataFrame:
             partes.append("CP art. 450: " + "/".join(x for x, y in (("CBS", r.cp_cbs_450), ("IBS", r.cp_ibs_450)) if y))
         if r.cp_ibs_entrada:
             partes.append(f"CP IBS de entrada art. {r.cp_ibs_entrada}"
-                          + (f" ({fr(r.cp_444_pct)}%)" if r.cp_ibs_entrada == "444" else ""))
+                          )
         add("Regras por cenário", f"{r.cenario} – {r.descricao}", "; ".join(partes) or "sem CBS/IBS",
             "Parâmetros > Regras por cenário", r.base_legal)
     ez = carregar("param_empresas_zfm")

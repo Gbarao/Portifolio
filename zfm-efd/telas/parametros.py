@@ -53,10 +53,14 @@ with ui.protegido("verificar pendências"):
             for p in pend:
                 st.markdown(f"- {p}")
 
-ORDEM = ["param_empresas_zfm", "param_produtos", "param_regras_cenario", "param_conferencia_cenario",
-         "param_aliquotas_cenario", "param_codigos_ajuste_icms", "param_cfops", "param_empresas",
+ORDEM = ["param_empresas_zfm", "param_produtos", "param_projetos_suframa", "param_internamento",
+         "param_importacoes", "param_servicos_zfm", "param_regras_legais", "param_regras_cenario",
+         "param_conferencia_cenario", "param_aliquotas_cenario", "param_codigos_ajuste_icms", "param_cfops", "param_empresas",
          "param_municipios_zfm", "param_aliquotas_regime_geral", "param_teses", "param_premissas"]
 TITULOS = {"param_empresas_zfm": "Empresas ZFM", "param_produtos": "Produtos",
+           "param_projetos_suframa": "Projetos SUFRAMA", "param_internamento": "Internamento",
+           "param_importacoes": "Importações", "param_servicos_zfm": "Serviços na ZFM",
+           "param_regras_legais": "Regras legais",
            "param_regras_cenario": "Regras por cenário", "param_conferencia_cenario": "Conferências",
            "param_aliquotas_cenario": "Alíquotas por ano", "param_codigos_ajuste_icms": "Códigos de ajuste",
            "param_cfops": "CFOPs", "param_empresas": "Empresas do grupo", "param_municipios_zfm": "Municípios ZFM",
@@ -65,8 +69,19 @@ abas = st.tabs(["Resumo e alíquotas"] + [TITULOS[n] for n in ORDEM])
 
 SELECOES = {
     "param_empresas_zfm": {"tipo": ["industria_incentivada", "habilitado", "nao_habilitado"],
-                           "regime": ["regular", "simples"]},
-    "param_produtos": {"tipo_bem": ["final", "capital", "intermediario", "informatica"]},
+                           "regime": ["regular", "simples"],
+                           "status_habilitacao": ["", "ativa", "suspensa", "cancelada"]},
+    "param_produtos": {"tipo_bem": ["final", "capital", "intermediario", "informatica"],
+                       "origem": ["", "nacional", "importada"], "excluido_art441": ["", "sim", "nao"],
+                       "uso_consumo_pessoal": ["", "sim", "nao"], "similar_nacional": ["", "sim", "nao"],
+                       "projeto_cas_2022_2025": ["", "sim", "nao"], "consumo_produtivo_comprovado": ["", "sim", "nao"],
+                       "art455_alternativa": ["", "A_cp_cbs_6", "B_ipi_6_5"]},
+    "param_projetos_suframa": {"status": ["aprovado", "suspenso", "cancelado"]},
+    "param_internamento": {"status": ["confirmado", "pendente", "negado"]},
+    "param_importacoes": {"destinacao": ["consumo_producao", "ativo", "revenda_presencial", "revenda_outra",
+                                         "uso_pessoal"]},
+    "param_servicos_zfm": {"local_fisico_zfm": ["", "sim", "nao"]},
+    "param_regras_legais": {"status": ["vigente", "futura", "revogada", "pendente_regulamentacao"]},
     "param_regras_cenario": {"entrada_creditavel": ["sim", "nao", "regime"], "cp_ibs_entrada": ["", "447", "449", "444"],
                              "sentido": ["entrada", "saida"]},
     "param_conferencia_cenario": {"tributo": ["ICMS", "IPI", "PIS", "COFINS"],

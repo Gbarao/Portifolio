@@ -134,7 +134,21 @@ Ordem recomendada:
 3. **Regras por cenário** — tratamento simulado de cada cenário (frações da alíquota: 1 = integral, 0 = zero,
    0,7 = 70%) e créditos presumidos. Valores iniciais com a base legal na própria linha.
 4. **Conferências** — CST/alíquota esperados por cenário (geram alertas de divergência).
-5. **Alíquotas por ano**, **Códigos de ajuste**, **CFOPs**, **Empresas do grupo**, **Municípios ZFM**,
+5. **Cadastros complementares** (nada é presumido; campo vazio = não comprovado):
+   - **Empresas ZFM**: além de tipo e regime, *status_habilitacao* (ativa/suspensa/cancelada), *validade_ini* e
+     *validade_fim* (AAAA-MM-DD) e *evidencia*. Só a linha marcada *revisado* conta como habilitação comprovada.
+   - **Produtos**: *origem* (nacional/importada), *excluido_art441* (sim/nao) e *motivo_exclusao* (ex.: bebida
+     alcoólica), *uso_consumo_pessoal*, *similar_nacional*, *projeto_cas_2022_2025*, *art455_alternativa*,
+     *aliq_ipi_futura*, *consumo_produtivo_comprovado* (art. 449) e *classificacao_aprovada*.
+   - **Projetos SUFRAMA**: uma linha por produto aprovado (CNPJ, projeto, data CAS, vigência, cod_item ou NCM, PPB,
+     status). Exemplo: `11111111000191; PRJ-001; 2023-05-10; 2023-06-01; ; TV50; ; sim; ; aprovado; `
+   - **Internamento**: chave da NF-e e status (confirmado/pendente/negado). Exemplo:
+     `13260155...; 2026-01-20; confirmado; PROT-123; sim; 11111111000191; vistoria`
+   - **Importações**: DI/DUIMP, valor aduaneiro, II, IPI, despesas, destinação e controle das quantidades (art. 443).
+   - **Serviços na ZFM**: documento do A100, município e *local_fisico_zfm* (sim/nao) com a evidência.
+   - **Regras legais**: percentuais, vigências e status das regras da LC 214/2025. Ao mudar um percentual ou a data
+     de início, os cálculos acompanham. Regra "pendente_regulamentacao" não é aplicada.
+6. **Alíquotas por ano**, **Códigos de ajuste**, **CFOPs**, **Empresas do grupo**, **Municípios ZFM**,
    **Regime geral**, **Teses** e **Premissas** — como antes.
 
 **Aba "Resumo e alíquotas" (a primeira):** digite a CBS e o IBS de referência (%) de cada cenário e clique em
@@ -158,7 +172,13 @@ cada tela mostram o filtro em uso.
   Se alguma tela aparecer vazia, o painel explica o motivo (ex.: nenhum estabelecimento no AM).
 - **Base de operações, Saídas, Entradas (Operações):** cartões, abas e **Filtros** (clique para abrir).
   As tabelas mostram as maiores linhas; o CSV traz todas.
-- **Cenários ZFM (C1–C5) (Análise):**
+- **Simulador individual (Análise):** escolha o cenário (arts. 443, 444, 445–447, 448/449, 450 IBS, 450 CBS, 451,
+  454, 455), o ano e as alíquotas; marque cada requisito como *Atendido*, *Não atendido* ou *Não comprovado*. Aparecem
+  o status, a tabela de valores, a **memória de cálculo** (fatos, requisitos, fórmula, fundamento e grau de confiança)
+  e o efeito no preço (preço líquido constante, bruto constante ou repasse parcial).
+- **Cenários ZFM (C1–C6) (Análise):** a aba **Elegibilidade** mostra o valor por status (Elegível, Potencialmente
+  elegível, Informação insuficiente, Não elegível), o que falta comprovar em cada cenário e o **valor em risco**
+  (simulação com as operações não confirmadas pela regra geral × com o incentivo).
   - *Matriz*: cenário × empresa, em valor ou nº de documentos; coluna *intragrupo* sinaliza operações com
     empresas do grupo;
   - *As Is × To Be*: escolha cenário de alíquotas, ano e tributos; tabela por cenário (As Is, To Be,
@@ -167,7 +187,7 @@ cada tela mostram o filtro em uso.
     cenários é igual à diferença total da empresa;
   - *Ponte e ranking*: gráfico As Is → cenários → To Be (vermelho = paga mais; verde = paga menos) e
     rankings de cenários e empresas;
-  - *IPI por produto (C5)*: carga própria de IPI (zero) × vantagem competitiva (IPI do concorrente) hoje e no
+  - *IPI por produto (C6)*: carga própria de IPI (zero) × vantagem competitiva (IPI do concorrente) hoje e no
     To Be, por situação da TIPI; chave para simular sem IPI protegido;
   - *Alertas*: não classificados, divergências de CST/alíquota (com arquivo e linha), comprovação de ingresso,
     produtos candidatos a perda no IBS, produtos sem TIPI, TIC, tipo ZFM não revisado e R5;
@@ -191,7 +211,7 @@ cada tela mostram o filtro em uso.
 ## 8. Exportar para o Excel (menu Relatórios)
 
 Clique em **Gerar Excel** e depois em **Baixar Excel**. Uma aba por visão: Metodologia (cenários, cruzamentos e fontes dos dados), Pareamento Fiscal x Contrib, Cobertura das EFDs, Matriz cenários, Cenários As Is x
-To Be, IPI por produto (C5), Alertas, Não classificados, Diferença por tributo e por empresa, Ponte, Saídas x
+To Be, IPI por produto (C6), Alertas, Não classificados, Diferença por tributo e por empresa, Ponte, Saídas x
 entradas, Vantagem competitiva IPI, Absorção, Carga As Is, R5, Benefício (informativo), divergências das
 conciliações, **Premissas** (lista legível) e **Parâmetros (tabelas)**. Os filtros da barra lateral valem para
 todas as abas.

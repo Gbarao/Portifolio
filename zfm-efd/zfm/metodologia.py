@@ -65,6 +65,17 @@ _CENARIOS = [
      F_SAIDA + " " + F_TIPO + " " + F_TIPO_PART, AS_IS_C4, "R3/Q8, R4/Q7, Q13, Q15, R5, conferências"),
     ("C4d", "Venda para a ZFM de produto intermediário (tipo_bem) a destinatário indústria incentivada.",
      F_SAIDA + " " + F_TIPO + " " + F_TIPO_PART, AS_IS_C4, "R3/Q8, R4/Q7, Q15, R5, conferências"),
+    ("C5M", "Venda (CFOP de receita) para destinatário localizado na ZFM (PF ou PJ; município da ZFM) de bem de origem "
+            "nacional que não é C4 (revenda, produto não incentivado). Fornecedor PJ na ZFM.",
+     F_SAIDA + " " + F_TIPO_PART, AS_IS_SAI, "R3/Q8, R4/Q7, Q15; origem nacional pela CST (inferência sinalizada)"),
+    ("C5S", "Serviço prestado (A100/A170 de saída) a tomador na ZFM; exige evidência do local físico da prestação "
+            "(Parâmetros > Serviços prestados na ZFM). Endereço do prestador ou tomador não é prova.",
+     "EFD Contribuições: A100/A170 (IND_OPER = 1), 0150 do tomador; NFS-e e evidência em cadastro complementar.",
+     AS_IS_SAI, "R3/Q8"),
+    ("GER_S", "Saída pela regra geral (art. 453): venda para fora da ZFM sem incentivo, ou operação que falhou em algum "
+              "requisito (o motivo é mostrado).", F_SAIDA, AS_IS_SAI, "—"),
+    ("GER_E", "Entrada pela regra geral (art. 453): compra fora das hipóteses incentivadas ou que falhou em algum "
+              "requisito.", F_ENTRADA, AS_IS_ENT, "—"),
     ("EXP", "Venda com CFOP 7xxx ou destinatário no exterior. Fora do escopo: fica na base sem débito.", F_SAIDA,
      AS_IS_SAI, "R3/Q8"),
     ("TR", "Transferência entre estabelecimentos (CFOP com categoria 'transferencia' em Parâmetros > CFOPs). Tratada "
@@ -81,8 +92,8 @@ _CENARIOS = [
              "sem SUFRAMA, CFOP 2xxx com fornecedor do AM.", F_ENTRADA, AS_IS_ENT, "Alertas > Não classificado"),
 ]
 
-C5 = ("C5", "IPI por produto (vendas C4)",
-      "Receita C4 anualizada por produto × alíquota TIPI. TIPI de 31/12/2023 ≥ 'limite_tipi_ipi' (6,5%): IPI mantido "
+C6 = ("C6", "IPI por produto (vendas C4) — arts. 454 e 455",
+      "Receita C4 anualizada por produto × alíquota TIPI. TIPI de 31/12/2023 ≥ ART454_LIMITE_TIPI (6,5%): IPI mantido "
       "para o concorrente; abaixo e produzido na ZFM em 2024: IPI zero para todos. TIC: análise manual.",
       "Vendas C4 (EFD Contribuições) + Parâmetros > Produtos (aliq_tipi_2023, produzido_zfm_2024, eh_tic, "
       "nivel_credito_estimulo, tipo_bem).",
@@ -97,35 +108,73 @@ def _fr(v) -> str:
     return "integral" if v == 1 else "zero" if v == 0 else f"{v * 100:g}%".replace(".", ",")
 
 
+def _pct_vig(codigo: str) -> str:
+    from . import regras
+    r = regras.regra(codigo)
+    if r is None:
+        return "não parametrizado"
+    pct = "" if r.percentual is None else f"{r.percentual:g}%".replace(".", ",")
+    ini = r.inicio.strftime("%d/%m/%Y") if r.inicio else "—"
+    st = "" if r.status in ("vigente", "futura") else f", {r.status.replace('_', ' ')}"
+    return f"{pct} (desde {ini}{st})".strip()
+
+
 def tratamento_to_be(r) -> str:
-    """Texto do tratamento To Be de uma linha de param_regras_cenario."""
+    """Texto do tratamento To Be de uma linha de param_regras_cenario, com percentuais e vigencias de
+    Regras legais (param_regras_legais)."""
     p = []
     if r.sentido == "saida" or (r.cbs_debito or 0) or (r.ibs_debito or 0):
         p.append(f"débito sobre a venda: CBS {_fr(r.cbs_debito)}, IBS {_fr(r.ibs_debito)} da alíquota do ano")
     if (r.cbs_entrada or 0) or (r.ibs_entrada or 0):
         cred = {"sim": "creditável", "nao": "não creditável", "regime": "creditável só no regime regular"}.get(
             str(r.entrada_creditavel), str(r.entrada_creditavel))
-        p.append(f"devido na entrada: CBS {_fr(r.cbs_entrada)}, IBS {_fr(r.ibs_entrada)} ({cred})")
+        ibs = (f"IBS conforme art. 446: {_pct_vig('ART446_IBS_ENTRADA')} da alíquota"
+               if str(getattr(r, "cenario", getattr(r, "name", ""))).startswith("C2") else f"IBS {_fr(r.ibs_entrada)}")
+        p.append(f"devido na entrada: CBS {_fr(r.cbs_entrada)}, {ibs} ({cred})")
     if (r.cbs_credito_fornecedor or 0) or (r.ibs_credito_fornecedor or 0):
         p.append(f"crédito do tributo do fornecedor: CBS {_fr(r.cbs_credito_fornecedor)}, "
                  f"IBS {_fr(r.ibs_credito_fornecedor)} (regime regular)")
     if r.cp_cbs_450:
-        p.append("crédito presumido de CBS do art. 450 (6% ou 2% da venda, por produto)")
+        p.append(f"crédito presumido de CBS do art. 450 por item: {_pct_vig('ART450_CBS_454')} se o produto se enquadra "
+                 f"no art. 454, senão {_pct_vig('ART450_CBS_DEMAIS')}, sobre o valor da operação tributada")
     if r.cp_ibs_450:
-        p.append("crédito presumido de IBS do art. 450 (55%/75%/90,25%/100% do saldo devedor, por tipo de bem), "
-                 f"a partir de {params.premissa(None, 'ano_inicio_cp450_ibs', '2029')}")
+        p.append("crédito presumido de IBS do art. 450 sobre o SALDO DEVEDOR do período, por faixa: "
+                 f"final {_pct_vig('ART450_IBS_FINAL')}, capital {_pct_vig('ART450_IBS_CAPITAL')}, intermediário "
+                 f"{_pct_vig('ART450_IBS_INTERMEDIARIO')}, informática {_pct_vig('ART450_IBS_INFORMATICA')}, "
+                 f"crédito estímulo 100% em 2023 {_pct_vig('ART450_IBS_CE100')}")
     if r.cp_ibs_entrada == "447":
-        p.append(f"crédito presumido de IBS do art. 447: {params.premissa(None, 'cp447_sul_sudeste_exceto_es', '7,5')}% "
-                 f"(Sul/Sudeste exceto ES) ou {params.premissa(None, 'cp447_demais_e_es', '13,5')}% (demais e ES) "
-                 "das compras × fator de transição")
+        p.append(f"crédito presumido de IBS do art. 447: {_pct_vig('ART447_SS')} (Sul/Sudeste exceto ES) ou "
+                 f"{_pct_vig('ART447_DEMAIS')} (Norte, Nordeste, Centro-Oeste e ES) do valor da operação, "
+                 "regime regular, sujeito a estorno sem comprovação de ingresso")
     elif r.cp_ibs_entrada == "449":
-        p.append(f"crédito presumido de IBS do art. 449: {params.premissa(None, 'cp449', '7,5')}% das compras × "
-                 "fator de transição")
+        p.append(f"crédito presumido de IBS do art. 449: {_pct_vig('ART449_CP_IBS')} do valor da operação, se o bem for "
+                 "incorporado/consumido na produção de bem final (sem o art. 450 sobre a mesma operação)")
     elif r.cp_ibs_entrada == "444":
-        p.append(f"crédito presumido de IBS de {_fr((r.cp_444_pct or 0) / 100)} da alíquota (art. 444)")
+        p.append(f"crédito presumido de IBS do art. 444: {_pct_vig('ART444_CP_IBS')} da alíquota de IBS na importação, "
+                 "recuperável com acréscimos se a revenda não for presencial ou o bem sair da ZFM")
     if not p:
         return "Sem CBS/IBS."
     return "; ".join(p).capitalize() + "."
+
+
+REQUISITOS = {
+    "C1a": "área ZFM; habilitação válida (indústria incentivada); projeto SUFRAMA ativo; NCM; não excluído (art. 441); "
+           "não é uso e consumo pessoal; utilização na ZFM",
+    "C1b": "área ZFM; habilitação válida; revenda presencial; ingresso comprovado; NCM; não excluído (art. 441); não pessoal",
+    "C1c": "área ZFM; habilitação; NCM (demais: regra geral)",
+    "C2a": "área ZFM; habilitação válida (indústria incentivada); bem industrializado de origem nacional; ingresso "
+           "comprovado; NCM; não excluído (art. 441); não pessoal",
+    "C2b": "idem C2a, habilitado do regime regular",
+    "C2c": "idem C2a, habilitado do Simples Nacional",
+    "C3a": "área ZFM; fornecedor e adquirente indústrias incentivadas validados; projeto ativo; bem intermediário "
+           "incorporado/consumido na produção (Bloco K ou cadastro); NCM; não excluído (art. 441)",
+    "C3b": "fornecedor PJ estabelecido na ZFM; adquirente na ZFM",
+    "C4a": "área ZFM; vendedor indústria incentivada validada; fabricação própria; produto no projeto aprovado; NCM; "
+           "tipo de bem; não excluído (art. 441); operação tributada; não é operação do art. 448",
+    "C4b": "idem C4a", "C4c": "idem C4a (destino ZFM: CBS zero pelo art. 451)", "C4d": "operação do art. 448",
+    "C5M": "fornecedor PJ na ZFM; adquirente na ZFM; bem de origem nacional; não excluído (art. 441)",
+    "C5S": "prestador PJ na ZFM; tomador na ZFM; evidência do local físico da prestação",
+}
 
 
 def cenarios() -> pd.DataFrame:
@@ -137,13 +186,14 @@ def cenarios() -> pd.DataFrame:
         confs = [f"{c.tributo}: {c.mensagem}" for c in conf.itertuples()
                  if cen in [x.strip() for x in str(c.cenarios).split(";")]]
         linhas.append({
+            "requisitos_testados": REQUISITOS.get(cen, "—"),
             "cenario": cen, "descricao": r.descricao if r is not None else "", "sentido":
             (r.sentido if r is not None else ""), "como_identifica": criterio, "dados_lidos": fontes,
             "as_is": asis, "to_be": tratamento_to_be(r) if r is not None else "Sem regra cadastrada.",
             "ICMS e IPI no To Be": "ICMS = As Is × fator do ICMS do ano; IPI = As Is × 'fator_ipi_proprio'; PIS/COFINS = 0.",
             "conferencias_as_is": " | ".join(confs) or "—", "cruzamentos": cruz,
             "base_legal": r.base_legal if r is not None else "", "observacao": r.observacao if r is not None else ""})
-    c5 = C5
+    c5 = C6
     linhas.append({"cenario": c5[0], "descricao": c5[1], "sentido": "saida", "como_identifica": c5[2],
                    "dados_lidos": c5[3], "as_is": c5[4], "to_be": "Vantagem To Be = IPI mantido para o concorrente "
                    "(produtos TIPI ≥ 6,5%); perda = vantagem hoje − To Be. Métrica separada da carga própria.",

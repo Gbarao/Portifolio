@@ -1,19 +1,23 @@
-﻿cenario;descricao;sentido;cbs_debito;ibs_debito;cbs_entrada;ibs_entrada;entrada_creditavel;cbs_credito_fornecedor;ibs_credito_fornecedor;cp_cbs_450;cp_ibs_450;cp_ibs_entrada;cp_444_pct;base_legal;observacao
-C1a;Importação para indústria incentivada;entrada;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;;LC 214/2025, art. 443;CBS/IBS suspensos -> isenção quando consumidos na produção ou após 48 meses no ativo. Sem crédito. Não vale para bens excluídos (art. 441) nem uso e consumo pessoal.
-C1b;Importação por habilitado (revenda presencial);entrada;0,0;0,0;1,0;1,0;regime;0,0;0,0;nao;nao;444;50,0;LC 214/2025, art. 444;"CBS integral (creditável no regime regular); IBS devido menos crédito presumido de 50% da alíquota."
-C1c;Importação por habilitado (outros fins);entrada;0,0;0,0;1,0;1,0;regime;0,0;0,0;nao;nao;;;Regra geral;CBS e IBS integrais, sem crédito presumido.
-C2a;Compra de outro Estado por indústria incentivada;entrada;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;447;;LC 214/2025, arts. 445 e 447;"CBS/IBS zero; crédito presumido de IBS 7,5% (S/SE exc. ES) ou 13,5% (demais e ES) a partir de 2029."
-C2b;Compra de outro Estado por habilitado (regime regular);entrada;0,0;0,0;0,0;0,7;regime;0,0;0,0;nao;nao;447;;LC 214/2025, arts. 445, 446 e 447;"CBS/IBS zero na compra; IBS de 70% da alíquota cobrado na entrada no AM (destinatário contribuinte); crédito presumido de 7,5%/13,5%."
-C2c;Compra de outro Estado por habilitado do Simples;entrada;0,0;0,0;0,0;0,7;regime;0,0;0,0;nao;nao;;;LC 214/2025, arts. 445 e 446;"CBS/IBS zero; IBS de 70% na entrada; sem crédito presumido do art. 447."
-C3a;Compra na ZFM: intermediário de indústria incentivada para indústria incentivada;entrada;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;449;;LC 214/2025, arts. 448 e 449;"CBS/IBS zero; compradora do regime regular recebe crédito presumido de IBS de 7,5%."
-C3b;Demais compras de PJ na ZFM;entrada;0,0;0,0;0,0;0,0;regime;0,0;1,0;nao;nao;;;LC 214/2025, art. 451;"CBS zero; IBS pela regra geral (cobrado pelo fornecedor e creditado no regime regular)."
-C4a;Venda para fora da ZFM a contribuinte regular;saida;1,0;1,0;0,0;0,0;regime;0,0;0,0;sim;sim;;;LC 214/2025, art. 450;"CBS/IBS integrais; crédito presumido de CBS 6%/2% e de IBS sobre o saldo devedor."
-C4b;Venda para fora da ZFM a consumidor final ou não contribuinte;saida;1,0;1,0;0,0;0,0;regime;0,0;0,0;sim;sim;;;LC 214/2025, art. 450;"CBS/IBS integrais; créditos presumidos do art. 450."
-C4c;Venda dentro da ZFM para PJ (bem final);saida;0,0;1,0;0,0;0,0;regime;0,0;0,0;nao;sim;;;LC 214/2025, arts. 450 e 451;"CBS zero (sem crédito presumido de CBS); IBS com crédito presumido do art. 450."
-C4d;Venda dentro da ZFM de intermediário para indústria incentivada;saida;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;;LC 214/2025, art. 448;"CBS/IBS zero; sem crédito presumido do art. 450."
-EXP;"Exportação (fora do escopo; sem débito nos dois regimes)";saida;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;;Imunidade;
-TR;Transferência entre estabelecimentos (à parte);ambos;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;;Conferir LC 214/2025;
-REM;Remessas, retornos e outras operações sem receita/crédito;ambos;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;;—;
-SRV;Serviços tomados;entrada;0,0;0,0;0,0;0,0;regime;1,0;1,0;nao;nao;;;Regra geral;Crédito do tributo cobrado pelo prestador.
-NC_S;Saída não classificada (tratada pela regra geral);saida;1,0;1,0;0,0;0,0;regime;0,0;0,0;nao;nao;;;Regra geral;Débito integral, sem crédito presumido. Ver relatório de não classificados.
-NC_E;Entrada não classificada (tratada pela regra geral);entrada;0,0;0,0;0,0;0,0;regime;1,0;1,0;nao;nao;;;Regra geral;Crédito do tributo cobrado pelo fornecedor. Ver relatório de não classificados.
+﻿cenario;descricao;sentido;cbs_debito;ibs_debito;cbs_entrada;ibs_entrada;entrada_creditavel;cbs_credito_fornecedor;ibs_credito_fornecedor;cp_cbs_450;cp_ibs_450;cp_ibs_entrada;base_legal;observacao
+C1a;Importação para indústria incentivada;entrada;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;LC 214/2025, art. 443;CBS/IBS suspensos -> isenção quando consumidos na produção ou após 48 meses no ativo. Sem crédito. Não vale para bens excluídos (art. 441) nem uso e consumo pessoal.
+C1b;Importação por habilitado (revenda presencial);entrada;0,0;0,0;1,0;1,0;regime;0,0;0,0;nao;nao;444;LC 214/2025, art. 444;"CBS integral (creditável no regime regular); IBS devido menos crédito presumido de 50% da alíquota."
+C1c;Importação fora dos arts. 443/444 (regra geral);entrada;0,0;0,0;1,0;1,0;regime;0,0;0,0;nao;nao;;LC 214/2025, art. 453;"CBS e IBS integrais na importação, creditáveis no regime regular; sem crédito presumido."
+C2a;Compra de outro Estado por indústria incentivada;entrada;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;447;LC 214/2025, arts. 445 e 447;"CBS/IBS zero; crédito presumido de IBS 7,5% (S/SE exc. ES) ou 13,5% (demais e ES) a partir de 2029."
+C2b;Compra de outro Estado por habilitado (regime regular);entrada;0,0;0,0;0,0;1,0;regime;0,0;0,0;nao;nao;447;LC 214/2025, arts. 445, 446 e 447;"CBS/IBS zero na compra; IBS na entrada no AM conforme art. 446 (70% da alíquota, em Regras legais); crédito presumido do art. 447 (percentuais em Regras legais)."
+C2c;Compra de outro Estado por habilitado do Simples;entrada;0,0;0,0;0,0;1,0;regime;0,0;0,0;nao;nao;;LC 214/2025, arts. 445 e 446;"CBS/IBS zero; IBS na entrada conforme art. 446 (percentual em Regras legais); sem crédito presumido do art. 447."
+C3a;Compra na ZFM: intermediário de indústria incentivada para indústria incentivada;entrada;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;449;LC 214/2025, arts. 448 e 449;"CBS/IBS zero; compradora do regime regular recebe crédito presumido de IBS de 7,5%."
+C3b;Compra dentro da ZFM de fornecedor da ZFM (art. 451);entrada;0,0;0,0;0,0;0,0;regime;0,0;1,0;nao;nao;;LC 214/2025, art. 451;"CBS zero; IBS pela regra geral (cobrado pelo fornecedor e creditado no regime regular)."
+C4a;Venda para fora da ZFM a contribuinte regular;saida;1,0;1,0;0,0;0,0;regime;0,0;0,0;sim;sim;;LC 214/2025, art. 450;"CBS/IBS integrais; crédito presumido de CBS 6%/2% e de IBS sobre o saldo devedor."
+C4b;Venda para fora da ZFM a consumidor final ou não contribuinte;saida;1,0;1,0;0,0;0,0;regime;0,0;0,0;sim;sim;;LC 214/2025, art. 450;"CBS/IBS integrais; créditos presumidos do art. 450."
+C4c;Venda dentro da ZFM para PJ (bem final);saida;0,0;1,0;0,0;0,0;regime;0,0;0,0;nao;sim;;LC 214/2025, arts. 450 e 451;"CBS zero (sem crédito presumido de CBS); IBS com crédito presumido do art. 450."
+C4d;Venda dentro da ZFM de intermediário para indústria incentivada;saida;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;LC 214/2025, art. 448;"CBS/IBS zero; sem crédito presumido do art. 450."
+C5M;Venda dentro da ZFM de bem de origem nacional (art. 451);saida;0,0;1,0;0,0;0,0;regime;0,0;0,0;nao;nao;;LC 214/2025, art. 451;"CBS zero (créditos de CBS mantidos); IBS pela regra geral. Fornecedor PJ na ZFM e adquirente na ZFM."
+C5S;Serviço prestado fisicamente na ZFM (art. 451);saida;0,0;1,0;0,0;0,0;regime;0,0;0,0;nao;nao;;LC 214/2025, art. 451;"CBS zero; IBS pela regra geral. Exige evidência do local físico da prestação (não basta o endereço)."
+GER_S;Saída pela regra geral (art. 453);saida;1,0;1,0;0,0;0,0;regime;0,0;0,0;nao;nao;;LC 214/2025, art. 453;Operação não contemplada ou requisito não atendido: CBS e IBS integrais, sem crédito presumido.
+GER_E;Entrada pela regra geral (art. 453);entrada;0,0;0,0;0,0;0,0;regime;1,0;1,0;nao;nao;;LC 214/2025, art. 453;Crédito do tributo cobrado pelo fornecedor (regime regular).
+EXP;"Exportação (fora do escopo; sem débito nos dois regimes)";saida;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;Imunidade;
+TR;Transferência entre estabelecimentos (à parte);ambos;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;Conferir LC 214/2025;
+REM;Remessas, retornos e outras operações sem receita/crédito;ambos;0,0;0,0;0,0;0,0;regime;0,0;0,0;nao;nao;;—;
+SRV;Serviços tomados;entrada;0,0;0,0;0,0;0,0;regime;1,0;1,0;nao;nao;;Regra geral;Crédito do tributo cobrado pelo prestador.
+NC_S;Saída com informação insuficiente para classificar;saida;1,0;1,0;0,0;0,0;regime;0,0;0,0;nao;nao;;—;Simulada pela regra geral (débito integral) até a classificação. Ver Não classificados.
+NC_E;Entrada com informação insuficiente para classificar;entrada;0,0;0,0;0,0;0,0;regime;1,0;1,0;nao;nao;;—;Simulada pela regra geral (crédito do fornecedor) até a classificação.

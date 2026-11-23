@@ -17,7 +17,7 @@ def test_excel(con_param):
                 "Ponte As Is → To Be", "Saídas x entradas", "Vantagem competitiva IPI", "Absorção (anual)",
                 "Carga As Is (anual)", "R5 reconciliação", "Benefício ZFM (informativo)",
                 "Parâmetros (tabelas)", "Completude Q1", "Matriz cenários", "Cenários As Is x To Be",
-                "IPI por produto (C5)", "Alertas"):
+                "IPI por produto (C6)", "Alertas"):
         assert aba in wb.sheetnames, aba
     ws = wb["Diferença por empresa"]
     cab = [c.value for c in ws[1]]

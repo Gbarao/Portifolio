@@ -182,9 +182,14 @@ def test_percentuais_art_450():
     assert simulacao.p_cbs_450(None, True, False) == 0.02
 
 
-def test_percentuais_vem_das_premissas(con_param):
-    _premissa("p_cbs_450_ipi_zerado", "5")
+def test_percentuais_vem_das_regras_legais(con_param):
+    rl = params.carregar("param_regras_legais")
+    rl.loc[rl.codigo == "ART450_CBS_454", "percentual"] = 5
+    params.salvar("param_regras_legais", rl)
     assert simulacao.p_cbs_450(5.0, True, False) == pytest.approx(0.05)
+    # janela do CAS (art. 454): projeto aprovado 2022-2025 substitui 'industrializado em 2024'
+    assert simulacao.p_cbs_450(5.0, False, False, projeto_cas=True) == pytest.approx(0.05)
+    assert simulacao.p_cbs_450(5.0, False, False) == pytest.approx(0.02)
 
 
 def test_composicao_saidas_mais_entradas_igual_carga(con_param):

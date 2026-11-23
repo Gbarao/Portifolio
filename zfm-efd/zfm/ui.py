@@ -170,7 +170,7 @@ def _executar(nome: str, f: Filtro, teses: bool, extra: tuple):
     con = _conexao_base().cursor()
     kw = dict(extra)
     if nome == "simular":
-        return simulacao.simular(con, f, teses)
+        return simulacao.simular(con, f, teses, kw.get("conservador"))
     if nome == "carga_anual":
         return as_is.carga_anual(con, f, teses)
     if nome == "carga_mensal":
@@ -186,8 +186,13 @@ def _executar(nome: str, f: Filtro, teses: bool, extra: tuple):
     if nome == "matriz":
         return cenarios.matriz(con, f)
     if nome == "resultado_cenarios":
-        anual, _ = calcular("simular", f, teses)
-        return cenarios.resultado(con, anual, f, teses)
+        anual, _ = calcular("simular", f, teses, conservador=kw.get("conservador"))
+        return cenarios.resultado(con, anual, f, teses, kw.get("conservador"))
+    if nome == "elegibilidade":
+        return con.execute(f"""
+            SELECT raiz, cenario_candidato, cenario, status_elegibilidade, requisitos_falha, requisitos_insuficientes,
+                   requisitos_pendentes, count(*) AS linhas, sum(valor) AS valor
+            FROM v_cenarios WHERE {f.sql()} GROUP BY ALL""").df()
     if nome == "ipi_produto":
         return cenarios.ipi_por_produto(con, f, kw.get("sem_protegido", False))
     if nome == "alertas":
@@ -345,7 +350,8 @@ ROTULOS = {
     "vantagem_to_be": "Vantagem To Be (R$)", "perda_vantagem": "Perda de vantagem (R$)",
     "classe_ipi": "Situação do IPI", "aliq_tipi_2023": "TIPI 31/12/2023 (%)", "cp_cbs_pct": "CP CBS (%)",
     "cp_ibs_pct": "CP IBS (%)", "tipo_bem": "Tipo de bem", "beneficio": "Benefício (R$)",
-    "situacao": "Situação", "estabelecimentos": "Estabelecimentos", "meses": "Meses", "faltando": "Faltando",
+    "situacao": "Situação", "cenario_candidato": "Cenário candidato", "status_elegibilidade": "Status",
+    "requisitos": "Requisitos (falha, dado ausente ou não comprovado)", "estabelecimentos": "Estabelecimentos", "meses": "Meses", "faltando": "Faltando",
     "o_que_fazer": "O que fazer", "fonte": "Fonte", "problema": "Problema", "participante": "Participante",
     "num_doc": "Número", "chv_nfe": "Chave NF-e", "nivel_cruzamento": "Nível do cruzamento", "vinculo": "Vínculo",
     "pct_linhas": "% das linhas", "pis": "PIS (R$)", "cofins": "COFINS (R$)", "cnpj_part": "CNPJ participante", "uf_part": "UF participante",

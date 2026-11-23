@@ -103,13 +103,15 @@ def test_resumo_lista_todas_as_premissas():
     assert {"Alíquotas CBS/IBS", "Transição", "Regime geral (fora da ZFM)", "Regras por cenário",
             "Premissas de cálculo", "Perímetro", "Método"} <= set(r["grupo"])
     chaves = set(r.loc[r.grupo == "Premissas de cálculo", "premissa"])
-    assert {"prazo_cp_anos", "limite_tipi_ipi", "cp447_demais_e_es", "p_ibs_450_final"} <= chaves
+    assert {"prazo_cp_anos", "tratamento_nao_confirmados", "criterio_alocacao_450"} <= chaves
+    legais = " ".join(r.loc[r.grupo == "Regras legais (LC 214/2025)", "premissa"])
+    assert "ART447_DEMAIS" in legais and "ART450_IBS_FINAL" in legais and "ART454_LIMITE_TIPI" in legais
 
 
 def test_premissa_nova_entra_em_arquivo_antigo():
     pr = params.carregar("param_premissas")
-    params.salvar("param_premissas", pr[pr.chave != "cp449"])
-    assert "cp449" in set(params.carregar("param_premissas")["chave"])
+    params.salvar("param_premissas", pr[pr.chave != "criterio_alocacao_450"])
+    assert "criterio_alocacao_450" in set(params.carregar("param_premissas")["chave"])
 
 
 def test_migracao_de_codigos_da_versao_anterior():

@@ -23,19 +23,12 @@ teses_ativas_ja_na_apuracao;sim;Teses com status 'ativa' já estão refletidas n
 anualizacao_mensal;perfil_observado;Perfil mês a mês do ano simulado: 'perfil_observado' (meses de 2026 + média nos demais) ou 'media_constante' (sensibilidade sem sazonalidade). O total anual é sempre média × 12.
 revenda_presencial;sim;Importações de mercadoria para revenda por habilitado são 'revenda presencial' (C1b, art. 444)? sim/nao.
 c3a_intermediario;compra_industrializacao;Quando a compra na ZFM é 'bem intermediário' (C3a): 'compra_industrializacao' (CFOP de compra para industrialização ou tipo_bem intermediário) ou 'tipo_bem' (só pelo tipo de bem do item).
-ipi_protegido_regra;tipi;"Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= limite_tipi_ipi (até a lista oficial do § 3º); 'tabela' = coluna ipi_protegido de Produtos."
+ipi_protegido_regra;tipi;"Produto com IPI mantido para o concorrente (art. 454): 'tipi' = TIPI de 31/12/2023 >= ART454_LIMITE_TIPI (Regras legais) (até a lista oficial do § 3º); 'tabela' = coluna ipi_protegido de Produtos."
 simular_risco_ingresso_c2;nao;C2 sem comprovação de ingresso perde a alíquota zero e estorna o crédito presumido. Padrão: só alerta.
 fator_ipi_proprio;0;Fração do IPI próprio a recolher (E520) que permanece no To Be (0 = IPI zerado/ZFM isenta).
 aliq_ibs_teste;0,1;IBS de teste em 2027-2028, em % (LC 214/2025: 0,05% estadual + 0,05% municipal).
-ano_inicio_cp450_ibs;2029;Ano a partir do qual vale o crédito presumido de IBS do art. 450 (§ 1º).
 reducao_cbs_2027_2028;0,1;Redução da CBS em 2027-2028, em p.p. (IBS-teste de 0,1% compensável com a CBS).
-limite_tipi_ipi;6,5;"TIPI (%) a partir da qual o IPI é mantido para o produto da ZFM (art. 454); abaixo dela o crédito presumido de CBS é o maior (art. 450)."
-p_cbs_450_ipi_zerado;6;Crédito presumido de CBS (art. 450), % da venda: produto com TIPI abaixo do limite, produzido na ZFM em 2024 e não TIC.
-p_cbs_450_demais;2;Crédito presumido de CBS (art. 450), % da venda: demais produtos.
-p_ibs_450_final;55;Crédito presumido de IBS (art. 450), % do saldo devedor: bens de consumo final.
-p_ibs_450_capital;75;Idem, bens de capital.
-p_ibs_450_intermediario;90,25;Idem, bens intermediários.
-p_ibs_450_informatica_ou_ce100;100;Idem, bens de informática ou produto com crédito estímulo de 100% até 2023.
-cp447_sul_sudeste_exceto_es;7,5;Crédito presumido de IBS (art. 447), % das compras com alíquota zero de Sul/Sudeste exceto ES.
-cp447_demais_e_es;13,5;Idem, compras de Norte, Nordeste, Centro-Oeste e ES.
-cp449;7,5;Crédito presumido de IBS (art. 449), % das compras de intermediários da ZFM.
+tratamento_nao_confirmados;estimativa_com_incentivo;Operações 'potencialmente elegíveis' ou com 'informação insuficiente': 'estimativa_com_incentivo' (calcula o incentivo e mostra o valor em risco) ou 'regra_geral' (conservador). Não elegíveis vão sempre à regra geral.
+criterio_alocacao_450;proporcional_debito;Art. 450 de IBS: como os créditos de IBS do período são alocados às faixas de percentual (55/75/90,25/100% e não elegível) para formar o saldo devedor de cada faixa. 'proporcional_debito' = na proporção dos débitos de cada faixa (demonstrado no razão por faixa).
+taxa_juros_acrescimos_mes;;Acréscimos legais (art. 29, § 2º) para estornos/recuperações: juros em % ao mês. Vazio = pendente (acréscimos não calculados e sinalizados).
+multa_acrescimos_pct;;Multa de mora em % para estornos/recuperações. Vazio = pendente.

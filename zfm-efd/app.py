@@ -24,7 +24,8 @@ paginas = {
         P("telas/entradas.py", title="Entradas", icon=":material/south_west:", url_path="entradas"),
     ],
     "Análise": [
-        P("telas/cenarios.py", title="Cenários ZFM (C1–C5)", icon=":material/account_tree:", url_path="cenarios"),
+        P("telas/cenarios.py", title="Cenários ZFM (C1–C6)", icon=":material/account_tree:", url_path="cenarios"),
+        P("telas/simulador.py", title="Simulador individual", icon=":material/calculate:", url_path="simulador"),
         P("telas/metodologia.py", title="Metodologia e cruzamentos", icon=":material/menu_book:",
           url_path="metodologia"),
         P("telas/carga_as_is.py", title="Carga As Is", icon=":material/receipt_long:", url_path="as-is"),

@@ -168,6 +168,7 @@ VIEWS: list[tuple[str, str]] = [
                 WHEN p.eh_zfm THEN 'zfm_interna' ELSE 'interna' END AS tipo_operacao_exato,
            CASE WHEN u.cod_part IS NULL THEN NULL ELSE coalesce(p.eh_grupo, FALSE) END AS eh_grupo_exato,
            p.uf AS uf_dest_exato, p.contribuinte AS contribuinte_exato, p.tipo_zfm AS tipo_zfm_exato,
+           p.municipio_zfm AS municipio_zfm_exato,
            coalesce(e.no_amazonas, FALSE) AS estab_no_am
     FROM u JOIN arquivos a ON a.arquivo_id = u.arquivo_id AND a.ativo
     LEFT JOIN param_cfops pc ON pc.cfop = u.cfop
@@ -180,7 +181,7 @@ VIEWS: list[tuple[str, str]] = [
     ("v_saidas_dest", """
     WITH sh AS (
         SELECT cnpj_estab, mes, cfop, tipo_operacao, eh_grupo, uf AS uf_dest, contribuinte, tipo_zfm,
-               sum(vl_opr) AS v
+               municipio_zfm, sum(vl_opr) AS v
         FROM v_saidas_doc GROUP BY ALL),
     tot AS (SELECT cnpj_estab, mes, cfop, sum(v) AS t, count(*) AS n FROM sh GROUP BY ALL),
     icms AS (SELECT cnpj_estab, mes, cfop,
@@ -199,6 +200,8 @@ VIEWS: list[tuple[str, str]] = [
                     ELSE coalesce(sh.contribuinte, s.cfop NOT LIKE '7%') END AS contribuinte,
                CASE WHEN s.tipo_operacao_exato IS NOT NULL THEN coalesce(s.tipo_zfm_exato, 'nao_habilitado')
                     ELSE coalesce(sh.tipo_zfm, 'nao_habilitado') END AS tipo_zfm_dest,
+               CASE WHEN s.tipo_operacao_exato IS NOT NULL THEN coalesce(s.municipio_zfm_exato, FALSE)
+                    ELSE coalesce(sh.municipio_zfm, FALSE) END AS municipio_zfm_dest,
                CASE WHEN s.tipo_operacao_exato IS NOT NULL OR sh.v IS NULL THEN 1.0
                     WHEN coalesce(t.t, 0) = 0 THEN 1.0 / t.n
                     ELSE CAST(sh.v AS DOUBLE) / CAST(t.t AS DOUBLE) END AS fator_rateio,
@@ -238,7 +241,8 @@ VIEWS: list[tuple[str, str]] = [
                p.cst_pis, p.vl_pis, p.cst_cofins, p.vl_cofins, p.aliq_pis, p.aliq_cofins,
                coalesce(p.nivel, 'SEM_CREDITO') AS nivel_cruzamento, l.valor,
                v.raiz, v.cnpj_estab, v.ano, v.mes, v.cod_part, v.nome_part, v.cnpj_part, v.chv_nfe, v.uf, v.regiao,
-               v.exterior, v.eh_zfm, v.eh_grupo, v.contribuinte, v.tipo_zfm, v.regime_part
+               v.exterior, v.eh_zfm, v.eh_grupo, v.contribuinte, v.tipo_zfm, v.regime_part,
+               v.municipio_zfm
         FROM v_entradas_linhas l JOIN v_docs v ON v.arquivo_id = l.arquivo_id AND v.doc_linha = l.doc_linha
         LEFT JOIN (SELECT * FROM pc WHERE tipo = 'linha') p ON p.lk = l.lk),
     so AS (
@@ -260,7 +264,8 @@ VIEWS: list[tuple[str, str]] = [
                coalesce(p.eh_grupo, q.eh_grupo, FALSE) AS eh_grupo,
                coalesce(p.contribuinte, q.contribuinte, FALSE) AS contribuinte,
                coalesce(p.tipo_zfm, q.tipo_zfm, 'nao_habilitado') AS tipo_zfm,
-               coalesce(p.regime_part, q.regime_part, 'regular') AS regime_part
+               coalesce(p.regime_part, q.regime_part, 'regular') AS regime_part,
+               coalesce(p.municipio_zfm, q.municipio_zfm, FALSE) AS municipio_zfm
         FROM (SELECT * FROM pc WHERE tipo = 'so_efd') s
         LEFT JOIN raw_contrib_c100 d ON d.arquivo_id = s.ec_arquivo_id AND d.linha_num = s.ec_doc
         LEFT JOIN pcp p ON p.arquivo_id = s.ec_arquivo_id AND p.cnpj_estab = s.cnpj_estab AND p.cod_part = d.COD_PART
@@ -322,7 +327,8 @@ VIEWS: list[tuple[str, str]] = [
                s.cofins_r AS cofins, CAST(NULL AS VARCHAR) AS cst_icms, s.cst_ipi, s.cst_pis,
                CAST(s.aliq_pis AS DOUBLE) AS aliq_pis, s.cst_cofins,
                CAST(s.aliq_cofins AS DOUBLE) AS aliq_cofins, s.fator_rateio, s.rateado, s.icms_estimado,
-               s.contribuinte, s.tipo_zfm_dest AS tipo_zfm_part, CAST(NULL AS VARCHAR) AS regime_part
+               s.contribuinte, s.tipo_zfm_dest AS tipo_zfm_part, CAST(NULL AS VARCHAR) AS regime_part,
+               s.municipio_zfm_dest AS municipio_zfm_part
         FROM v_saidas_dest s LEFT JOIN param_cfops pc ON pc.cfop = s.cfop
         WHERE s.estab_no_am AND coalesce(pc.devolucao_de, '') = ''
     ),
@@ -338,7 +344,7 @@ VIEWS: list[tuple[str, str]] = [
                -CAST(coalesce(e.vl_ipi, 0) AS DOUBLE), -CAST(coalesce(e.vl_pis, 0) AS DOUBLE),
                -CAST(coalesce(e.vl_cofins, 0) AS DOUBLE), e.cst_icms, e.cst_ipi, e.cst_pis,
                CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE,
-               e.contribuinte, e.tipo_zfm, e.regime_part
+               e.contribuinte, e.tipo_zfm, e.regime_part, e.municipio_zfm
         FROM v_entradas_item e
         WHERE e.devolucao_de IN ('venda_producao', 'venda_revenda') AND (SELECT abater FROM prm)
     ),
@@ -354,7 +360,7 @@ VIEWS: list[tuple[str, str]] = [
                CAST(coalesce(e.vl_ipi, 0) AS DOUBLE), CAST(coalesce(e.vl_pis, 0) AS DOUBLE),
                CAST(coalesce(e.vl_cofins, 0) AS DOUBLE), e.cst_icms, e.cst_ipi, e.cst_pis,
                CAST(e.aliq_pis AS DOUBLE), e.cst_cofins, CAST(e.aliq_cofins AS DOUBLE), 1.0, FALSE, FALSE,
-               e.contribuinte, e.tipo_zfm, e.regime_part
+               e.contribuinte, e.tipo_zfm, e.regime_part, e.municipio_zfm
         FROM v_entradas_item e
         WHERE e.devolucao_de NOT IN ('venda_producao', 'venda_revenda')
     ),
@@ -369,7 +375,7 @@ VIEWS: list[tuple[str, str]] = [
                -CAST(d.vl_opr - coalesce(d.vl_ipi_c190, 0) - coalesce(d.vl_icms_st_c190, 0) AS DOUBLE),
                -CAST(coalesce(d.vl_icms_c190, 0) AS DOUBLE), -CAST(coalesce(d.vl_ipi_c190, 0) AS DOUBLE),
                0.0, 0.0, d.cst_icms, NULL, NULL, NULL, NULL, NULL, 1.0, FALSE, FALSE,
-               d.contribuinte, d.tipo_zfm, d.regime_part
+               d.contribuinte, d.tipo_zfm, d.regime_part, d.municipio_zfm
         FROM v_saidas_doc d
         WHERE coalesce(d.devolucao_de, '') IN ('compra_industrializacao', 'compra_revenda', 'ativo', 'uso_consumo')
           AND d.uf_estab = 'AM' AND (SELECT abater FROM prm)
@@ -380,12 +386,32 @@ VIEWS: list[tuple[str, str]] = [
                NULL, 'servicos', FALSE, NULL, NULL, FALSE, CAST(v.valor AS DOUBLE), CAST(v.valor AS DOUBLE),
                0.0, 0.0, coalesce(v.vl_pis, 0.0), coalesce(v.vl_cofins, 0.0), NULL, NULL, v.cst_pis, NULL,
                v.cst_cofins, NULL, 1.0, FALSE, FALSE,
-               NULL, NULL, NULL
+               NULL, NULL, NULL, NULL
         FROM v_entradas_servicos v
         WHERE v.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)
     ),
+    sp AS (  -- servicos prestados (A100/A170 de saida da EFD Contribuicoes): cenario 5 (art. 451) ou regra geral
+        SELECT 'saida', a.raiz, i.cnpj_estab, year(a.dt_ini), month(a.dt_ini),
+               coalesce(nullif(d.CHV_NFSE, ''), d.NUM_DOC), 'A170 (serviço prestado)', i.arquivo_id, i.linha_num,
+               NULL, 'servico_prestado', 'servico_prestado', TRUE, 'servico_prestado', i.COD_ITEM, NULL,
+               CASE WHEN p.exterior THEN 'exportacao' WHEN p.uf IS NOT NULL AND p.uf <> 'AM' THEN 'interestadual'
+                    WHEN p.eh_zfm THEN 'zfm_interna' ELSE 'interna' END,
+               NULL, NULL, p.uf, p.cnpj_part, coalesce(p.eh_grupo, FALSE),
+               CAST(i.VL_ITEM - coalesce(i.VL_DESC, 0) AS DOUBLE), CAST(i.VL_ITEM - coalesce(i.VL_DESC, 0) AS DOUBLE),
+               0.0, 0.0, CAST(coalesce(i.VL_PIS, 0) AS DOUBLE), CAST(coalesce(i.VL_COFINS, 0) AS DOUBLE),
+               NULL, NULL, i.CST_PIS, CAST(i.ALIQ_PIS AS DOUBLE), i.CST_COFINS, CAST(i.ALIQ_COFINS AS DOUBLE),
+               1.0, FALSE, FALSE, coalesce(p.contribuinte, FALSE), coalesce(p.tipo_zfm, 'nao_habilitado'),
+               coalesce(p.regime_part, 'regular'), coalesce(p.municipio_zfm, FALSE)
+        FROM raw_contrib_a170 i JOIN raw_contrib_a100 d ON d.arquivo_id = i.arquivo_id AND d.linha_num = i.pai_linha
+        JOIN arquivos a ON a.arquivo_id = i.arquivo_id
+        LEFT JOIN (SELECT DISTINCT ON (arquivo_id, cnpj_estab, cod_part) * FROM v_participantes_contrib
+                   ORDER BY arquivo_id, cnpj_estab, cod_part) p
+             ON p.arquivo_id = d.arquivo_id AND p.cnpj_estab = d.cnpj_estab AND p.cod_part = d.COD_PART
+        WHERE a.ativo AND d.IND_OPER = '1' AND coalesce(d.COD_SIT, '00') NOT IN ('02','03','04','05')
+          AND i.cnpj_estab IN (SELECT cnpj FROM v_estabelecimentos WHERE no_amazonas)
+    ),
     u AS (SELECT * FROM s UNION ALL SELECT * FROM dv UNION ALL SELECT * FROM en
-          UNION ALL SELECT * FROM dc UNION ALL SELECT * FROM sv)
+          UNION ALL SELECT * FROM dc UNION ALL SELECT * FROM sv UNION ALL SELECT * FROM sp)
     SELECT u.*, coalesce(nullif(u.ncm, ''), p.ncm) AS ncm_produto,
            coalesce(p.incentivado, FALSE) AND u.categoria_origem = 'venda_producao' AS incentivado,
            p.tipo_bem, coalesce(p.aliq_tipi_2026, p.aliq_tipi_2023) AS aliq_tipi,
@@ -393,21 +419,44 @@ VIEWS: list[tuple[str, str]] = [
     FROM u LEFT JOIN param_produtos p ON p.raiz_cnpj = u.raiz AND p.cod_item = u.cod_item
     """),
     ("v_cenarios", """
-    -- Classificacao de cada operacao nos cenarios C1-C4 (C5 = IPI por produto, zfm/cenarios.py)
+    -- Classificacao de cada operacao nos seis macrocenarios (LC 214/2025, arts. 440-455) e teste dos requisitos.
+    -- 1) cenario_candidato: pelos fatos da escrituracao (sentido, CFOP, UF, municipio, tipo ZFM, produto);
+    -- 2) requisitos: 'ok', 'falha', 'pendente' (nao comprovado) ou 'insuficiente' (dado ausente); nada e presumido;
+    -- 3) status_elegibilidade e cenario efetivo: requisito em falha leva a regra geral (art. 453).
     WITH prm AS (
         SELECT coalesce((SELECT lower(valor) FROM param_premissas WHERE chave = 'revenda_presencial'),
                         'sim') IN ('sim', 's') AS revenda,
                coalesce((SELECT lower(valor) FROM param_premissas WHERE chave = 'c3a_intermediario'),
                         'compra_industrializacao') AS c3a),
+    proj AS (SELECT cnpj, lower(coalesce(status, '')) AS st, coalesce(cod_item, '') AS cod_item, coalesce(ncm, '') AS ncm,
+                    try_cast(vigencia_ini AS DATE) AS vi, try_cast(vigencia_fim AS DATE) AS vf
+             FROM param_projetos_suframa),
+    est AS (SELECT DISTINCT ON (cnpj) cnpj, cod_mun FROM v_estabelecimentos ORDER BY cnpj),
     b AS (
         SELECT b.*, coalesce(nullif(e.tipo, ''), 'nao_habilitado') AS tipo_estab,
-               coalesce(nullif(e.regime, ''), 'regular') AS regime_estab,
+               coalesce(nullif(e.regime, ''), 'regular') AS regime_estab, coalesce(e.revisado, FALSE) AS estab_revisado,
+               lower(coalesce(e.status_habilitacao, '')) AS st_hab, try_cast(e.validade_ini AS DATE) AS hab_ini,
+               try_cast(e.validade_fim AS DATE) AS hab_fim, es.cod_mun AS cod_mun_estab,
+               es.cod_mun IN (SELECT cod_ibge FROM param_municipios_zfm) AS estab_area_zfm,
+               make_date(CAST(b.ano AS INTEGER), CAST(b.mes AS INTEGER), 1) AS dt_ref,
+               coalesce(ef.revisado, FALSE) AS part_revisado,
                b.categoria_origem IN ('compra_industrializacao', 'compra_revenda', 'ativo', 'uso_consumo',
                                       'insumo_servico') AS compra,
                CASE WHEN b.natureza = 'devolucao_compra' THEN translate(substr(b.cfop, 1, 1), '567', '123')
-                    ELSE substr(b.cfop, 1, 1) END AS dig
-        FROM v_base_operacoes b LEFT JOIN param_empresas_zfm e ON e.cnpj = b.cnpj_estab)
-    SELECT b.*,
+                    ELSE substr(b.cfop, 1, 1) END AS dig,
+               lower(coalesce(pp.excluido_art441, '')) AS x441, coalesce(pp.motivo_exclusao, '') AS motivo_441,
+               lower(coalesce(pp.uso_consumo_pessoal, '')) AS xpes, lower(coalesce(pp.origem, '')) AS xorig,
+               lower(coalesce(pp.consumo_produtivo_comprovado, '')) AS xcons,
+               lower(coalesce(it.status, '')) AS st_ing, lower(coalesce(sv.local_fisico_zfm, '')) AS st_srv
+        FROM v_base_operacoes b
+        LEFT JOIN param_empresas_zfm e ON e.cnpj = b.cnpj_estab
+        LEFT JOIN param_empresas_zfm ef ON ef.cnpj = b.cnpj_part
+        LEFT JOIN est es ON es.cnpj = b.cnpj_estab
+        LEFT JOIN param_produtos pp ON pp.raiz_cnpj = b.raiz AND pp.cod_item = b.cod_item
+        LEFT JOIN param_internamento it ON it.chv_nfe = b.chv_nfe
+        LEFT JOIN param_servicos_zfm sv ON sv.cnpj_estab = b.cnpj_estab AND sv.documento = b.chv_nfe),
+    c AS (
+        SELECT b.*,
         CASE
             WHEN b.natureza = 'transferencia' THEN 'TR'
             WHEN b.sentido = 'entrada' AND b.origem = 'servicos' THEN 'SRV'
@@ -417,12 +466,12 @@ VIEWS: list[tuple[str, str]] = [
                      WHEN b.tipo_estab = 'habilitado' THEN
                          CASE WHEN b.categoria_origem = 'compra_revenda' AND (SELECT revenda FROM prm)
                               THEN 'C1b' ELSE 'C1c' END
-                     ELSE 'NC_E' END
+                     WHEN NOT b.estab_revisado THEN 'NC_E' ELSE 'GER_E' END
             WHEN b.sentido = 'entrada' AND b.dig = '2' AND coalesce(b.uf_part, '') <> 'AM' THEN
                 CASE WHEN b.tipo_estab = 'industria_incentivada' THEN 'C2a'
                      WHEN b.tipo_estab = 'habilitado' AND b.regime_estab = 'simples' THEN 'C2c'
                      WHEN b.tipo_estab = 'habilitado' THEN 'C2b'
-                     ELSE 'NC_E' END
+                     WHEN NOT b.estab_revisado THEN 'NC_E' ELSE 'GER_E' END
             WHEN b.sentido = 'entrada' AND b.dig = '1'
                  AND b.tipo_zfm_part IN ('industria_incentivada', 'habilitado') THEN
                 CASE WHEN b.tipo_zfm_part = 'industria_incentivada' AND b.tipo_estab = 'industria_incentivada'
@@ -430,35 +479,139 @@ VIEWS: list[tuple[str, str]] = [
                                OR ((SELECT c3a FROM prm) = 'compra_industrializacao'
                                    AND b.categoria_origem = 'compra_industrializacao'))
                      THEN 'C3a' ELSE 'C3b' END
-            WHEN b.sentido = 'entrada' THEN 'NC_E'
+            WHEN b.sentido = 'entrada' AND b.dig = '1' AND coalesce(b.municipio_zfm_part, FALSE) THEN 'C3b'
+            WHEN b.sentido = 'entrada' AND b.dig = '2' AND coalesce(b.uf_part, '') = 'AM' THEN 'NC_E'
+            WHEN b.sentido = 'entrada' THEN 'GER_E'
             WHEN NOT b.eh_receita THEN 'REM'
             WHEN b.tipo_operacao = 'exportacao' THEN 'EXP'
-            WHEN b.categoria_origem = 'venda_producao' AND b.incentivado
-                 AND b.tipo_estab = 'industria_incentivada' THEN
+            WHEN b.categoria_origem = 'servico_prestado' THEN
+                CASE WHEN b.tipo_operacao = 'zfm_interna' OR coalesce(b.municipio_zfm_part, FALSE) THEN 'C5S'
+                     ELSE 'GER_S' END
+            WHEN b.categoria_origem = 'venda_producao' AND b.incentivado AND b.tipo_estab = 'industria_incentivada' THEN
                 CASE WHEN b.tipo_operacao = 'zfm_interna' THEN
                          CASE WHEN b.tipo_zfm_part = 'industria_incentivada' AND b.tipo_bem = 'intermediario'
                               THEN 'C4d' ELSE 'C4c' END
                      WHEN b.contribuinte THEN 'C4a' ELSE 'C4b' END
-            ELSE 'NC_S' END AS cenario,
+            WHEN b.categoria_origem = 'venda_producao' AND b.incentivado AND NOT b.estab_revisado THEN 'NC_S'
+            WHEN b.tipo_operacao = 'zfm_interna'
+                 OR (b.tipo_operacao = 'interna' AND coalesce(b.municipio_zfm_part, FALSE)) THEN 'C5M'
+            ELSE 'GER_S' END AS cenario_candidato,
         CASE
             WHEN b.natureza = 'transferencia' OR NOT (b.sentido = 'entrada' OR b.eh_receita) THEN ''
-            WHEN b.sentido = 'entrada' AND b.origem = 'servicos' THEN ''
-            WHEN b.sentido = 'entrada' AND NOT b.compra THEN ''
+            WHEN b.sentido = 'entrada' AND (b.origem = 'servicos' OR NOT b.compra) THEN ''
             WHEN b.sentido = 'entrada' AND b.tipo_estab = 'nao_habilitado' AND b.dig IN ('2', '3')
-                THEN 'Estabelecimento do grupo sem tipo ZFM (habilitado/indústria) em Empresas ZFM'
+                THEN CASE WHEN b.estab_revisado THEN 'Estabelecimento não habilitado: regra geral'
+                          ELSE 'Estabelecimento do grupo sem tipo ZFM validado (Empresas ZFM)' END
             WHEN b.sentido = 'entrada' AND b.dig = '1' AND b.tipo_zfm_part NOT IN ('industria_incentivada', 'habilitado')
-                THEN 'Compra interna de fornecedor fora da ZFM ou sem SUFRAMA'
+                 AND NOT coalesce(b.municipio_zfm_part, FALSE)
+                THEN 'Compra interna de fornecedor fora da ZFM: regra geral'
             WHEN b.sentido = 'entrada' AND b.dig = '2' AND coalesce(b.uf_part, '') = 'AM'
                 THEN 'CFOP interestadual com fornecedor do AM'
             WHEN b.sentido = 'saida' AND b.tipo_operacao = 'exportacao' THEN ''
-            WHEN b.sentido = 'saida' AND b.categoria_origem = 'venda_revenda'
-                THEN 'Venda de mercadoria adquirida (revenda): cenário não definido'
-            WHEN b.sentido = 'saida' AND NOT b.incentivado
-                THEN 'Produto não marcado como incentivado (Parâmetros > Produtos)'
-            WHEN b.sentido = 'saida' AND b.tipo_estab <> 'industria_incentivada'
-                THEN 'Estabelecimento não é indústria incentivada (Empresas ZFM)'
-            ELSE '' END AS motivo
-    FROM b
+            WHEN b.sentido = 'saida' AND b.categoria_origem = 'venda_producao' AND b.incentivado
+                 AND b.tipo_estab <> 'industria_incentivada' AND NOT b.estab_revisado
+                THEN 'Estabelecimento sem tipo ZFM validado (Empresas ZFM)'
+            WHEN b.sentido = 'saida' AND b.tipo_operacao NOT IN ('zfm_interna') AND NOT coalesce(b.municipio_zfm_part, FALSE)
+                 AND NOT (b.categoria_origem = 'venda_producao' AND b.incentivado AND b.tipo_estab = 'industria_incentivada')
+                THEN 'Venda para fora da ZFM sem incentivo (revenda, produto não incentivado ou vendedor não '
+                     || 'industrial): regra geral'
+            ELSE '' END AS motivo_classificacao
+        FROM b),
+    r AS (
+        SELECT c.*,
+            CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[0-9].*' THEN ''
+                 WHEN c.estab_area_zfm THEN 'ok' WHEN c.cod_mun_estab IS NULL THEN 'pendente' ELSE 'falha' END AS req_area,
+            CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[1-4].*' THEN ''
+                 WHEN c.st_hab IN ('suspensa', 'cancelada', 'vencida') THEN 'falha'
+                 WHEN c.hab_fim IS NOT NULL AND c.dt_ref > c.hab_fim THEN 'falha'
+                 WHEN c.hab_ini IS NOT NULL AND c.dt_ref < date_trunc('month', c.hab_ini) THEN 'falha'
+                 WHEN c.estab_revisado THEN 'ok' ELSE 'pendente' END AS req_habilitacao,
+            CASE WHEN c.cenario_candidato <> 'C3a' THEN ''
+                 WHEN c.part_revisado THEN 'ok' ELSE 'pendente' END AS req_fornecedor,
+            CASE WHEN c.cenario_candidato IN ('C1a', 'C3a') THEN
+                     CASE WHEN NOT EXISTS (SELECT 1 FROM proj p WHERE p.cnpj = c.cnpj_estab) THEN 'pendente'
+                          WHEN EXISTS (SELECT 1 FROM proj p WHERE p.cnpj = c.cnpj_estab AND p.st IN ('aprovado', 'ativo')
+                                       AND (p.vi IS NULL OR c.dt_ref >= date_trunc('month', p.vi))
+                                       AND (p.vf IS NULL OR c.dt_ref <= p.vf)) THEN 'ok'
+                          ELSE 'falha' END
+                 WHEN c.cenario_candidato LIKE 'C4%' THEN
+                     CASE WHEN NOT EXISTS (SELECT 1 FROM proj p WHERE p.cnpj = c.cnpj_estab) THEN 'pendente'
+                          WHEN EXISTS (SELECT 1 FROM proj p WHERE p.cnpj = c.cnpj_estab AND p.st IN ('aprovado', 'ativo')
+                                       AND (p.cod_item = c.cod_item
+                                            OR (p.cod_item = '' AND p.ncm <> '' AND starts_with(coalesce(c.ncm_produto, ''), p.ncm)))
+                                       AND (p.vi IS NULL OR c.dt_ref >= date_trunc('month', p.vi))
+                                       AND (p.vf IS NULL OR c.dt_ref <= p.vf)) THEN 'ok'
+                          ELSE 'falha' END
+                 ELSE '' END AS req_projeto,
+            CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[1-4].*' THEN ''
+                 WHEN coalesce(c.ncm_produto, '') <> '' THEN 'ok' ELSE 'insuficiente' END AS req_ncm,
+            CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[1-4].*' AND c.cenario_candidato <> 'C5M' THEN ''
+                 WHEN c.x441 = 'sim' THEN 'falha' WHEN c.x441 = 'nao' THEN 'ok' ELSE 'pendente' END AS req_art441,
+            CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C[12].*' THEN ''
+                 WHEN c.xpes = 'sim' THEN 'falha' WHEN c.xpes = 'nao' THEN 'ok'
+                 WHEN c.categoria_origem = 'uso_consumo' THEN 'pendente' ELSE 'ok' END AS req_uso_pessoal,
+            CASE WHEN c.cenario_candidato NOT SIMILAR TO 'C2.*' AND c.cenario_candidato <> 'C5M' THEN ''
+                 WHEN c.xorig = 'nacional' THEN 'ok' WHEN c.xorig IN ('importada', 'estrangeira') THEN 'falha'
+                 WHEN substr(coalesce(c.cst_icms, ''), 1, 1) IN ('0', '3', '4', '5', '8') AND length(c.cst_icms) = 3 THEN 'ok'
+                 WHEN substr(coalesce(c.cst_icms, ''), 1, 1) IN ('1', '2', '6', '7') AND length(c.cst_icms) = 3 THEN 'falha'
+                 ELSE 'insuficiente' END AS req_origem,
+            (c.xorig = '' AND length(coalesce(c.cst_icms, '')) = 3) AS origem_inferida,
+            CASE WHEN c.cenario_candidato NOT IN ('C1b', 'C2a', 'C2b', 'C2c') THEN ''
+                 WHEN c.st_ing = 'confirmado' THEN 'ok' WHEN c.st_ing = 'negado' THEN 'falha' ELSE 'pendente' END AS req_ingresso,
+            CASE WHEN c.cenario_candidato <> 'C3a' THEN ''
+                 WHEN c.xcons = 'sim' THEN 'ok' WHEN c.xcons = 'nao' THEN 'falha' ELSE 'pendente' END AS req_consumo_produtivo,
+            CASE WHEN c.cenario_candidato <> 'C5S' THEN ''
+                 WHEN c.st_srv = 'sim' THEN 'ok' WHEN c.st_srv = 'nao' THEN 'falha' ELSE 'pendente' END AS req_servico_fisico,
+            CASE WHEN c.cenario_candidato NOT LIKE 'C4%' THEN ''
+                 WHEN coalesce(c.tipo_bem, '') <> '' THEN 'ok' ELSE 'insuficiente' END AS req_tipo_bem
+        FROM c),
+    t AS (
+        SELECT r.*,
+            concat_ws('; ',
+                CASE WHEN req_area = 'falha' THEN 'estabelecimento fora da área da ZFM' END,
+                CASE WHEN req_habilitacao = 'falha' THEN 'habilitação suspensa, cancelada ou fora da validade' END,
+                CASE WHEN req_projeto = 'falha' THEN CASE WHEN cenario_candidato LIKE 'C4%'
+                     THEN 'produto fora do projeto SUFRAMA aprovado' ELSE 'sem projeto SUFRAMA ativo' END END,
+                CASE WHEN req_art441 = 'falha' THEN 'produto excluído pelo art. 441'
+                     || CASE WHEN motivo_441 <> '' THEN ' (' || motivo_441 || ')' ELSE '' END END,
+                CASE WHEN req_uso_pessoal = 'falha' THEN 'uso e consumo pessoal' END,
+                CASE WHEN req_origem = 'falha' THEN 'bem de origem estrangeira'
+                     || CASE WHEN origem_inferida THEN ' (inferido pela CST)' ELSE '' END END,
+                CASE WHEN req_ingresso = 'falha' THEN 'ingresso na ZFM negado' END,
+                CASE WHEN req_consumo_produtivo = 'falha' THEN 'bem não consumido na produção de bem final' END,
+                CASE WHEN req_servico_fisico = 'falha' THEN 'serviço não prestado fisicamente na ZFM' END) AS requisitos_falha,
+            concat_ws('; ',
+                CASE WHEN req_ncm = 'insuficiente' THEN 'NCM ausente' END,
+                CASE WHEN req_origem = 'insuficiente' THEN 'origem do bem não identificada' END,
+                CASE WHEN req_tipo_bem = 'insuficiente' THEN 'tipo de bem não classificado' END) AS requisitos_insuficientes,
+            concat_ws('; ',
+                CASE WHEN req_area = 'pendente' THEN 'município do estabelecimento não informado' END,
+                CASE WHEN req_habilitacao = 'pendente' THEN 'habilitação não validada (Empresas ZFM)' END,
+                CASE WHEN req_fornecedor = 'pendente' THEN 'tipo do fornecedor não validado' END,
+                CASE WHEN req_projeto = 'pendente' THEN 'projeto SUFRAMA não cadastrado' END,
+                CASE WHEN req_art441 = 'pendente' THEN 'exclusão do art. 441 não validada' END,
+                CASE WHEN req_uso_pessoal = 'pendente' THEN 'uso e consumo: confirmar que não é pessoal' END,
+                CASE WHEN req_origem = 'ok' AND origem_inferida THEN 'origem nacional inferida pela CST' END,
+                CASE WHEN req_ingresso = 'pendente' THEN 'ingresso na ZFM não comprovado' END,
+                CASE WHEN req_consumo_produtivo = 'pendente' THEN 'depende de comprovação produtiva' END,
+                CASE WHEN req_servico_fisico = 'pendente' THEN 'local físico da prestação não comprovado' END
+            ) AS requisitos_pendentes
+        FROM r)
+    SELECT t.*,
+        CASE WHEN cenario_candidato IN ('EXP', 'TR', 'REM', 'SRV') THEN 'Fora dos incentivos'
+             WHEN cenario_candidato IN ('GER_S', 'GER_E') THEN 'Não elegível'
+             WHEN cenario_candidato IN ('NC_S', 'NC_E') THEN 'Informação insuficiente para determinar'
+             WHEN requisitos_falha <> '' THEN 'Não elegível'
+             WHEN requisitos_insuficientes <> '' THEN 'Informação insuficiente para determinar'
+             WHEN requisitos_pendentes <> '' THEN 'Potencialmente elegível - depende de validação'
+             ELSE 'Elegível' END AS status_elegibilidade,
+        CASE WHEN cenario_candidato SIMILAR TO 'C[0-9].*' AND requisitos_falha <> ''
+             THEN CASE sentido WHEN 'saida' THEN 'GER_S' ELSE 'GER_E' END
+             ELSE cenario_candidato END AS cenario,
+        CASE WHEN cenario_candidato SIMILAR TO 'C[0-9].*' AND requisitos_falha <> ''
+             THEN 'Não elegível (' || cenario_candidato || '): ' || requisitos_falha
+             ELSE motivo_classificacao END AS motivo
+    FROM t
     """),
     ("v_ajustes_icms", """
     SELECT a.arquivo_id, a.cnpj AS cnpj_estab, a.raiz, year(a.dt_ini) AS ano, month(a.dt_ini) AS mes,
@@ -555,7 +708,7 @@ MATERIALIZAR = ["v_estabelecimentos", "v_participantes", "v_participantes_contri
                 "v_saidas_doc", "v_saidas_item", "v_saidas_dest", "v_entradas_linhas", "v_entradas_pc",
                 "v_entradas_item",
                 "v_entradas_servicos", "v_base_operacoes", "v_cenarios"]
-VERSAO_CODIGO = "6"  # mudar quando o SQL das visoes mudar (forca reconstrucao)
+VERSAO_CODIGO = "7"  # mudar quando o SQL das visoes mudar (forca reconstrucao)
 
 
 def criar(con: duckdb.DuckDBPyConnection) -> None:

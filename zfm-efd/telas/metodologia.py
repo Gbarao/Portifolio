@@ -37,6 +37,8 @@ with ui.protegido("montar a metodologia"):
                         "Documentos": ui.formatar_num(int(tot.loc[escolha, "documentos"])),
                         "Linhas da base": ui.formatar_num(int(tot.loc[escolha, "linhas"]))})
         blocos = [("Como é identificado", r["como_identifica"]),
+                  ("Requisitos testados (status: elegível / potencialmente elegível / informação insuficiente / "
+                   "não elegível)", r["requisitos_testados"]),
                   ("Registros e campos capturados", r["dados_lidos"]),
                   ("As Is (o que é lido da escrituração)", r["as_is"]),
                   ("To Be (simulação, com os parâmetros atuais)", r["to_be"]),
@@ -53,7 +55,7 @@ with ui.protegido("montar a metodologia"):
     with abas[1]:
         ui.secao("Registros capturados por cenário", "As linhas da base de operações que caíram no cenário, com o "
                  "registro de origem, o arquivo e a linha do .txt, e os campos usados na classificação.")
-        escolha2 = st.selectbox("Cenário", list(cen["cenario"][cen["cenario"] != "C5"]), key="met_cen2",
+        escolha2 = st.selectbox("Cenário", list(cen["cenario"][cen["cenario"] != "C6"]), key="met_cen2",
                                 format_func=lambda c: f"{c} – {cen.set_index('cenario').loc[c, 'descricao']}")
         cond = f"cenario = '{escolha2}' AND {f.sql()}"
         ui.secao("Por CFOP e origem/destino")

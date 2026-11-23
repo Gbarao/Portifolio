@@ -329,6 +329,50 @@ diferente (Q15), crédito de ICMS/IPI sem PIS/COFINS e o inverso para insumo/rev
 CST de PIS 70–75, situação normal na ZFM), CST divergente entre estabelecimentos para o mesmo item e CFOP (Q21),
 item sem C190 (Q14, agora por CST + CFOP + alíquota), NF só na EFD (Q7) e diagnóstico por nível (Qualidade).
 
+**D-056 — Revisão dos seis macrocenários (prompt de especificação de 23/11/2026).** Arquitetura mantida (Python +
+Streamlit + DuckDB, execução local, duplo clique), por causa das restrições definidas pelo usuário: o prompt sugere
+PostgreSQL, Docker, React e controle de acesso, o que exigiria instalar programas externos com permissão de
+administrador. Foi incorporado o conteúdo funcional e jurídico:
+(1) **Regras legais versionadas** (`param_regras_legais`): código, tributo, dispositivo, tipo, percentual, vigência,
+versão, fonte, data de atualização e status (vigente, futura, revogada, pendente_regulamentacao). Os percentuais dos
+arts. 444, 446, 447, 449, 450 e 454 saíram das premissas e passaram para esta tabela; o motor aplica cada
+componente só nos anos de vigência (444 e CBS do 450 a partir de 2027; 446, 447, 449 e IBS do 450 a partir de 2029,
+conforme o prompt). Regras com vigência não informada no prompt (443, 445, 448, 451) ficam marcadas "a conferir no
+art. 544". Art. 455 cadastrado como pendente de regulamentação (não aplicado). Alíquotas gerais de CBS/IBS continuam
+premissas de simulação (não são regras legais).
+(2) **Cadastros complementares**: projetos SUFRAMA, controle de internamento, importações (DI/DUIMP, lote, 48 meses),
+serviços prestados na ZFM; Empresas ZFM com status e validade da habilitação; Produtos com origem, exclusão do art.
+441 (e motivo), uso e consumo pessoal, similar nacional, projeto CAS 2022–2025, alternativa do art. 455, IPI futuro,
+consumo produtivo comprovado e aprovação da classificação. Campo vazio = não validado (nunca presumido).
+(3) **Requisitos e status por operação** (`v_cenarios`): cada operação candidata tem os requisitos testados (área da
+ZFM, habilitação válida na data, fornecedor validado, projeto ativo/produto no projeto, NCM, art. 441, uso pessoal,
+origem nacional, ingresso, consumo produtivo, local físico do serviço, tipo de bem) como ok / falha / pendente /
+insuficiente. Status: Elegível; Potencialmente elegível - depende de validação; Informação insuficiente para
+determinar; Não elegível. Requisito em falha leva a operação à regra geral (GER_S/GER_E, art. 453). A origem
+nacional inferida pela CST é sinalizada. O campo SUFRAMA da EFD não comprova habilitação: só a validação em
+Empresas ZFM.
+(4) **Cenário 5 (art. 451)**: C5M (venda dentro da ZFM de bem de origem nacional que não é C4: revenda, produto não
+incentivado) e C5S (serviço prestado — A100/A170 de saída agora entram na base — com evidência do local físico). C3b
+passa a ser a compra dentro da ZFM pelo art. 451 (fornecedor PJ na ZFM, mesmo sem SUFRAMA). Saídas para fora da ZFM sem
+incentivo deixam de ser "não classificadas" e vão à regra geral com o motivo. IPI passa a ser o cenário 6 (C6).
+(5) **Art. 450 de IBS por faixa**: débitos por faixa (55, 75, 90,25 e 100%), créditos alocados na proporção dos
+débitos (premissa `criterio_alocacao_450`), saldo devedor e crédito presumido por faixa, demonstrados mês a mês. É
+matematicamente igual ao cálculo anterior, mas agora explícito. CBS do 450 por item sobre o valor da operação
+tributada; operações do art. 448 (C4d) sem crédito do 450 (trava), com alerta se a regra for alterada.
+(6) **Art. 454**: enquadramento por TIPI < limite + (industrializado em 2024 OU projeto CAS na janela 01/01/2022 a
+16/01/2025) + não TIC; 6% de CBS do 450 para o produto enquadrado. Art. 455: alternativas A/B cadastráveis, não
+cumulativas, pendentes de regulamentação.
+(7) **Tratamento das operações não confirmadas**: premissa `tratamento_nao_confirmados` = estimativa com incentivo
+(padrão) ou regra geral; a tela Cenários > Elegibilidade mostra o valor em risco (diferença entre os dois).
+(8) **Simulador individual** (`zfm/regras_zfm.py`, Decimal): cálculo por artigo com requisitos, status, grau de
+confiança, memória de cálculo e motor de preços (líquido constante, bruto constante, repasse parcial; tributos por
+fora). Acréscimos legais parametrizados (juros ao mês e multa); vazios = pendentes, não calculados.
+(9) **Testes de aceitação 1 a 14 do prompt** em `tests/test_aceitacao_zfm.py`.
+Não implementado nesta versão: leitura dos blocos K (produção), G (CIAP), C120 (importação), 0300/0305, 0005 e C197;
+controle de acesso por perfil; banco PostgreSQL; integração com campos da NF-e da reforma (gCredPres, cClassTrib).
+LC 227/2026: não foi possível conferir o texto; as regras atribuídas a ela (trava 448/450 e § 6º do art. 450) estão
+marcadas "conferir".
+
 ---
 
 ## Perguntas pendentes
@@ -361,3 +405,7 @@ item sem C190 (Q14, agora por CST + CFOP + alíquota), NF só na EFD (Q7) e diag
 - **P-020** — Documentos repetidos na mesma EFD (Q16): manter na base (padrão) ou excluir a segunda ocorrência.
 - **P-021** — Ler C500/D100/D500 (energia, frete, telecom) e F120/F130 (ativo) da EFD Contribuições, como no
   sped_analytics_app, para que os créditos dessas operações também entrem na base.
+- **P-022** — Conferir no texto oficial: vigência dos arts. 443, 445, 448 e 451 (art. 544), percentual do art. 446
+  e alterações da LC 227/2026 (art. 450, § 6º e trava das operações do art. 448).
+- **P-023** — Ler o Bloco K para comprovar consumo produtivo (art. 449) e o C120/DI para a base de importação.
+- **P-024** — Taxa de juros e multa dos acréscimos legais (art. 29, § 2º) para estornos e recuperações.

@@ -7,15 +7,15 @@ from zfm import conciliacoes, metodologia, params
 def test_todos_os_cenarios_documentados():
     regras = set(params.carregar("param_regras_cenario")["cenario"])
     doc = set(metodologia.cenarios()["cenario"])
-    assert regras <= doc and "C5" in doc
+    assert regras <= doc and "C6" in doc
 
 
 def test_to_be_acompanha_os_parametros():
-    r = params.carregar("param_regras_cenario")
     antes = metodologia.cenarios().set_index("cenario").loc["C2b", "to_be"]
-    assert "70%" in antes and "art. 447" in antes
-    r.loc[r.cenario == "C2b", "ibs_entrada"] = 0.5
-    params.salvar("param_regras_cenario", r)
+    assert "70%" in antes and "art. 447" in antes and "7,5%" in antes
+    rl = params.carregar("param_regras_legais")
+    rl.loc[rl.codigo == "ART446_IBS_ENTRADA", "percentual"] = 50
+    params.salvar("param_regras_legais", rl)
     depois = metodologia.cenarios().set_index("cenario").loc["C2b", "to_be"]
     assert "50%" in depois and "70%" not in depois
 

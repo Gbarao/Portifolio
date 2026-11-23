@@ -1,3 +1,4 @@
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -5,7 +6,7 @@ from zfm import cenarios as cz
 from zfm import simulacao, ui
 
 ctx = ui.contexto(
-    "Cenários ZFM (C1–C5)",
+    "Cenários ZFM (C1–C6)",
     "Cada entrada e saída é classificada num cenário (importação, compra de outro Estado, compra na ZFM, venda "
     "a partir da ZFM, IPI por produto). Para cada cenário: tratamento As Is escriturado, simulação To Be e "
     "diferença por tributo, empresa e ano. Diferença = To Be − As Is (positivo = a empresa paga mais).",
@@ -24,8 +25,8 @@ with ui.protegido("montar a análise por cenário"):
     if mat.empty:
         ui.vazio("Sem operações classificadas", "Confira o período e as empresas na barra lateral.")
         st.stop()
-    abas = st.tabs(["Matriz", "As Is × To Be", "Ponte e ranking", "IPI por produto (C5)", "Alertas",
-                    "Não classificados"])
+    abas = st.tabs(["Matriz", "Elegibilidade", "As Is × To Be", "Ponte e ranking", "IPI por produto (C6)",
+                    "Alertas", "Não classificados"])
 
     # ------------------------------------------------------------------ 1. matriz
     with abas[0]:
@@ -51,9 +52,53 @@ with ui.protegido("montar a análise por cenário"):
             st.warning(f"{ui.formatar_brl(nc['valor'].sum())} em {int(nc['linhas'].sum())} linha(s) não "
                        "classificadas: veja a aba 'Não classificados'.", icon=":material/warning:")
 
+    # ------------------------------------------------------------------ 1b. elegibilidade
+    with abas[1]:
+        ui.secao("Elegibilidade por requisito", "Cada operação candidata a incentivo tem os requisitos testados "
+                 "(área ZFM, habilitação, projeto, NCM, art. 441, uso pessoal, origem, ingresso, consumo produtivo, "
+                 "local do serviço). Nada é presumido: o que não está comprovado fica pendente. Requisito não atendido "
+                 "leva a operação para a regra geral (art. 453).")
+        el = ui.calcular("elegibilidade", f)
+        el = el[el["raiz"].isin(ctx.raizes)] if not el.empty else el
+        cand = el[el["cenario_candidato"].str.match(r"C\d")] if not el.empty else el
+        if cand.empty:
+            ui.vazio("Nenhuma operação candidata a incentivo no período")
+        else:
+            tot = cand.groupby("status_elegibilidade")["valor"].sum()
+            ui.cartoes({s_: (float(tot.get(s_, 0.0)), "valor das operações") for s_ in cz.STATUS[:4]})
+            pv = cand.pivot_table(index="cenario_candidato", columns="status_elegibilidade", values="valor",
+                                  aggfunc="sum", fill_value=0.0).reset_index()
+            pv = cz.ordenar(pv, "cenario_candidato").astype({"cenario_candidato": str})
+            pv.insert(1, "descricao", pv["cenario_candidato"].map(lambda c: desc.get(c, "")))
+            ui.secao("Status por cenário candidato (valor das operações)")
+            ui.tabela(pv)
+            ui.secao("O que falta para confirmar o benefício",
+                     "Requisitos em falha, dados ausentes e requisitos não comprovados, com o valor envolvido.")
+            req = cand[cand["status_elegibilidade"] != "Elegível"].copy()
+            req["requisitos"] = req["requisitos_falha"].where(req["requisitos_falha"] != "",
+                                req["requisitos_insuficientes"].where(req["requisitos_insuficientes"] != "",
+                                                                       req["requisitos_pendentes"]))
+            g = req.groupby(["cenario_candidato", "status_elegibilidade", "requisitos"], as_index=False)[
+                ["linhas", "valor"]].sum().sort_values("valor", ascending=False)
+            ui.tabela(g, moeda=["valor"])
+            ui.secao("Valor em risco (cenário de perda de requisito)",
+                     "Diferença entre simular as operações não confirmadas com o incentivo (estimativa) e pela regra "
+                     "geral (conservador). Cenário de alíquotas 'base'.")
+            with st.spinner("Simulando os dois tratamentos..."):
+                est, _ = ui.calcular("simular", f, ctx.teses, conservador=False)
+                con_, _ = ui.calcular("simular", f, ctx.teses, conservador=True)
+            if not est.empty and not con_.empty:
+                a = est[est.cenario == "base"].groupby("ano")["to_be_total"].sum()
+                b = con_[con_.cenario == "base"].groupby("ano")["to_be_total"].sum()
+                vr = pd.DataFrame({"ano": a.index, "to_be_com_incentivo_estimado": a.values,
+                                   "to_be_conservador": b.reindex(a.index).values})
+                vr["valor_em_risco"] = vr["to_be_conservador"] - vr["to_be_com_incentivo_estimado"]
+                ui.tabela(vr.astype({"ano": str}))
+                st.caption("Tratamento usado nas demais telas: Parâmetros > Premissas > tratamento_nao_confirmados.")
+
     # ------------------------------------------------------------------ 2. As Is x To Be
     res = None
-    with abas[1]:
+    with abas[2]:
         with st.spinner("Simulando por cenário..."):
             res = ui.calcular("resultado_cenarios", f, ctx.teses)
         if res.empty:
@@ -99,7 +144,7 @@ with ui.protegido("montar a análise por cenário"):
             ui.tabela(ev)
 
     # ------------------------------------------------------------------ 3. ponte e ranking
-    with abas[2]:
+    with abas[3]:
         if res is None or res.empty:
             ui.vazio("Sem resultado")
         else:
@@ -137,8 +182,8 @@ with ui.protegido("montar a análise por cenário"):
                 ui.tabela(re_.sort_values("diferenca", ascending=False).drop(columns=["raiz"]))
 
     # ------------------------------------------------------------------ 4. IPI por produto
-    with abas[3]:
-        ui.secao("IPI por produto (C5)", "Duas métricas separadas: carga própria de IPI (zero na ZFM antes e depois) "
+    with abas[4]:
+        ui.secao("IPI por produto (C6)", "Duas métricas separadas: carga própria de IPI (zero na ZFM antes e depois) "
                  "e vantagem competitiva (IPI que o concorrente de fora paga). TIPI ≥ 6,5% em 31/12/2023: IPI mantido "
                  "para o concorrente; TIPI < 6,5% e produzido na ZFM em 2024: IPI zero para todos (vantagem perdida; "
                  "o comprador também perde o crédito de IPI). TIC: análise manual.")
@@ -170,7 +215,7 @@ with ui.protegido("montar a análise por cenário"):
                        "Parâmetros > Produtos.")
 
     # ------------------------------------------------------------------ 5. alertas
-    with abas[4]:
+    with abas[5]:
         al = ui.calcular("alertas", f)
         if al.empty:
             st.success("Nenhum alerta.", icon=":material/check_circle:")
@@ -186,7 +231,7 @@ with ui.protegido("montar a análise por cenário"):
             ui.baixar_csv(al, "alertas")
 
     # ------------------------------------------------------------------ 6. nao classificados
-    with abas[5]:
+    with abas[6]:
         ui.secao("Operações não classificadas", "Entram na simulação com a regra conservadora (saída tributada, "
                  "entrada com crédito do fornecedor). Para classificar: revise o tipo ZFM e o regime do CNPJ "
                  "(Parâmetros > Empresas ZFM), a finalidade do CFOP (Parâmetros > CFOPs) ou o produto.")

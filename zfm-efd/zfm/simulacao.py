@@ -38,44 +38,74 @@ ANOS = list(range(2027, 2034))
 
 
 # ---------------------------------------------------------------------------
-# Percentuais (todos em Parametros > Premissas; nenhum fixo no codigo)
+# Percentuais: tabela de regras legais versionada (Parametros > Regras legais); nada fixo no codigo
 # ---------------------------------------------------------------------------
-_PADROES = {"limite_tipi_ipi": 6.5, "p_cbs_450_ipi_zerado": 6.0, "p_cbs_450_demais": 2.0,
-            "p_ibs_450_final": 55.0, "p_ibs_450_capital": 75.0, "p_ibs_450_intermediario": 90.25,
-            "p_ibs_450_informatica_ou_ce100": 100.0, "cp447_sul_sudeste_exceto_es": 7.5,
-            "cp447_demais_e_es": 13.5, "cp449": 7.5}
+_REGRA = {"limite_tipi_ipi": "ART454_LIMITE_TIPI", "p_cbs_450_ipi_zerado": "ART450_CBS_454",
+          "p_cbs_450_demais": "ART450_CBS_DEMAIS", "p_ibs_450_final": "ART450_IBS_FINAL",
+          "p_ibs_450_capital": "ART450_IBS_CAPITAL", "p_ibs_450_intermediario": "ART450_IBS_INTERMEDIARIO",
+          "p_ibs_450_informatica": "ART450_IBS_INFORMATICA", "p_ibs_450_ce100": "ART450_IBS_CE100",
+          "cp447_sul_sudeste_exceto_es": "ART447_SS", "cp447_demais_e_es": "ART447_DEMAIS",
+          "cp449": "ART449_CP_IBS", "cp444": "ART444_CP_IBS", "ibs_entrada_446": "ART446_IBS_ENTRADA"}
+FAIXAS_450 = {"55": "ART450_IBS_FINAL", "75": "ART450_IBS_CAPITAL", "90_25": "ART450_IBS_INTERMEDIARIO",
+              "100": "ART450_IBS_INFORMATICA"}
 
 
 def percentuais() -> dict[str, float]:
-    df = params.carregar("param_premissas")
-    return {k: params.premissa_num(k, v, df) for k, v in _PADROES.items()}
+    """Percentuais cadastrados (em %). Regra sem percentual cadastrado vale 0 (e gera alerta)."""
+    from . import regras
+    t = regras.carregar()
+    return {k: (regras.pct(c, t) or 0.0) for k, c in _REGRA.items()}
+
+
+def faixa_450(tipo_bem: str, ce_100: bool) -> str:
+    t = (tipo_bem or "").strip().lower()
+    if t == "informatica" or ce_100:
+        return "100"
+    return {"intermediario": "90_25", "capital": "75"}.get(t, "55")
 
 
 def p_ibs_450(tipo_bem: str, ce_100: bool, pc: dict | None = None) -> float:
     pc = pc or percentuais()
     t = (tipo_bem or "").strip().lower()
-    if t == "informatica" or ce_100:
-        return pc["p_ibs_450_informatica_ou_ce100"] / 100
+    if t == "informatica":
+        return pc["p_ibs_450_informatica"] / 100
+    if ce_100:
+        return pc["p_ibs_450_ce100"] / 100
     chave = {"intermediario": "p_ibs_450_intermediario", "capital": "p_ibs_450_capital"}.get(t, "p_ibs_450_final")
     return pc[chave] / 100
 
 
-def p_cbs_450(aliq_tipi_2023, produzido_zfm_2024: bool, eh_tic: bool, pc: dict | None = None) -> float:
+def enquadrado_art454(aliq_tipi_2023, produzido_zfm_2024: bool, eh_tic: bool, projeto_cas: bool = False,
+                      pc: dict | None = None) -> bool:
+    """Art. 454: TIPI de 31/12/2023 abaixo do limite + (industrializado na ZFM em 2024 OU projeto aprovado pelo
+    CAS na janela do art. 454) + nao ser TIC excluido da reducao."""
     pc = pc or percentuais()
-    if aliq_tipi_2023 is not None and pd.notna(aliq_tipi_2023) \
-            and float(aliq_tipi_2023) < pc["limite_tipi_ipi"] and produzido_zfm_2024 and not eh_tic:
-        return pc["p_cbs_450_ipi_zerado"] / 100  # IPI zerado: CP maior
+    if aliq_tipi_2023 is None or pd.isna(aliq_tipi_2023):
+        return False
+    return float(aliq_tipi_2023) < pc["limite_tipi_ipi"] and (produzido_zfm_2024 or projeto_cas) and not eh_tic
+
+
+def p_cbs_450(aliq_tipi_2023, produzido_zfm_2024: bool, eh_tic: bool, pc: dict | None = None,
+              projeto_cas: bool = False) -> float:
+    pc = pc or percentuais()
+    if enquadrado_art454(aliq_tipi_2023, produzido_zfm_2024, eh_tic, projeto_cas, pc):
+        return pc["p_cbs_450_ipi_zerado"] / 100  # produto do art. 454: CP de CBS maior
     return pc["p_cbs_450_demais"] / 100
 
 
 def produtos_com_percentuais(prod: pd.DataFrame) -> pd.DataFrame:
     if prod.empty:
-        return prod.assign(p_ibs_450=[], p_cbs_450=[], alerta_ibs=[])
+        return prod.assign(p_ibs_450=[], p_cbs_450=[], alerta_ibs=[], faixa_450=[], art454=[])
     pc = percentuais()
     out = prod.copy()
+    cas = out["projeto_cas_2022_2025"].astype(str).str.lower().eq("sim") if "projeto_cas_2022_2025" in out \
+        else pd.Series(False, index=out.index)
     out["p_ibs_450"] = [p_ibs_450(t, c, pc) for t, c in zip(out["tipo_bem"], out["ce_100_em_2023"])]
-    out["p_cbs_450"] = [p_cbs_450(a, z, t, pc) for a, z, t in
-                        zip(out["aliq_tipi_2023"], out["produzido_zfm_2024"], out["eh_tic"])]
+    out["faixa_450"] = [faixa_450(t, c) for t, c in zip(out["tipo_bem"], out["ce_100_em_2023"])]
+    out["art454"] = [enquadrado_art454(a, z, t, k, pc) for a, z, t, k in
+                     zip(out["aliq_tipi_2023"], out["produzido_zfm_2024"], out["eh_tic"], cas)]
+    out["p_cbs_450"] = [p_cbs_450(a, z, t, pc, k) for a, z, t, k in
+                        zip(out["aliq_tipi_2023"], out["produzido_zfm_2024"], out["eh_tic"], cas)]
     out["alerta_ibs"] = out["nivel_credito_estimulo"].astype(float) > 100 * out["p_ibs_450"]
     return out
 
@@ -83,8 +113,8 @@ def produtos_com_percentuais(prod: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Insumos mensais por unidade de apuracao
 # ---------------------------------------------------------------------------
-MEDIDAS = ["deb_cbs_base", "deb_ibs_base", "deb_ibs_saidas", "cred_cbs", "cred_ibs", "cp450_cbs",
-           "base_incent_p_ibs", "cp447_cheio", "cp449_cheio", "cp444_base", "receita_incent", "exportacao",
+MEDIDAS = ["deb_cbs_base", "deb_ibs_base", "deb_ibs_ent446", "deb_ibs_saidas", "cred_cbs", "cred_ibs",
+           "cp450_cbs", "base_incent_p_ibs", "deb_b55", "deb_b75", "deb_b90_25", "deb_b100", "cp447_cheio", "cp449_cheio", "cp444_base", "receita_incent", "exportacao",
            "transferencias", "base_zfm_interna", "ipi_conc_as_is", "ipi_conc_prot", "icms_as_is", "ipi_as_is"]
 
 
@@ -105,11 +135,11 @@ class _ProdutosRegistrados:
 
     def __enter__(self):
         prod = produtos_com_percentuais(params.carregar("param_produtos"))
-        cols = ["raiz_cnpj", "cod_item", "p_cbs_450", "p_ibs_450", "eh_tic"]
+        cols = ["raiz_cnpj", "cod_item", "p_cbs_450", "p_ibs_450", "eh_tic", "faixa_450"]
         df = prod[cols] if not prod.empty else pd.DataFrame(
             {"raiz_cnpj": pd.Series(dtype=str), "cod_item": pd.Series(dtype=str),
              "p_cbs_450": pd.Series(dtype=float), "p_ibs_450": pd.Series(dtype=float),
-             "eh_tic": pd.Series(dtype=bool)})
+             "eh_tic": pd.Series(dtype=bool), "faixa_450": pd.Series(dtype=str)})
         self.con.register("_prod_pct", df)
         return self
 
@@ -117,9 +147,17 @@ class _ProdutosRegistrados:
         self.con.unregister("_prod_pct")
 
 
-def sql_base_cenarios(f: Filtro) -> str:
+def conservador_padrao() -> bool:
+    return params.premissa(None, "tratamento_nao_confirmados", "estimativa_com_incentivo").strip() == "regra_geral"
+
+
+def sql_base_cenarios(f: Filtro, conservador: bool | None = None) -> str:
     """Operacoes classificadas + regra To Be do cenario + percentuais (uma linha por operacao).
+    Nao elegivel ja chega como GER_S/GER_E (v_cenarios). conservador=True: operacoes potencialmente
+    elegiveis ou com informacao insuficiente tambem vao para a regra geral (cenario de perda de requisito).
     Requer _ProdutosRegistrados ativo."""
+    if conservador is None:
+        conservador = conservador_padrao()
     pc = percentuais()
     liquida = params.premissa(None, "base_cbs_ibs", "liquida_sem_tributos") == "liquida_sem_tributos"
     transf = _sim("transferencias_na_base_cbs_ibs", "nao")
@@ -137,8 +175,9 @@ def sql_base_cenarios(f: Filtro) -> str:
                coalesce(r.cbs_credito_fornecedor, 0) AS r_cbs_forn, coalesce(r.ibs_credito_fornecedor, 0) AS r_ibs_forn,
                coalesce(r.cp_cbs_450, FALSE) AND c.incentivado AS r_cp_cbs,
                coalesce(r.cp_ibs_450, FALSE) AND c.incentivado AS r_cp_ibs,
-               coalesce(r.cp_ibs_entrada, '') AS r_cp_ent, coalesce(r.cp_444_pct, 0) AS r_cp444,
+               coalesce(r.cp_ibs_entrada, '') AS r_cp_ent,
                coalesce(pp.p_cbs_450, 0) AS p_cbs, coalesce(pp.p_ibs_450, 0) AS p_ibs,
+               coalesce(pp.faixa_450, '55') AS faixa,
                CASE WHEN c.sul_sudeste_exceto_es THEN {pc['cp447_sul_sudeste_exceto_es'] / 100}
                     ELSE {pc['cp447_demais_e_es'] / 100} END AS pct447,
                {pc['cp449'] / 100} AS pct449,
@@ -146,22 +185,31 @@ def sql_base_cenarios(f: Filtro) -> str:
         FROM v_cenarios c
         LEFT JOIN _prod_pct pp ON pp.raiz_cnpj = c.raiz AND pp.cod_item = c.cod_item
         LEFT JOIN param_regras_cenario r ON r.cenario = CASE
-             WHEN c.cenario = 'TR' AND {transf} THEN CASE c.sentido WHEN 'saida' THEN 'NC_S' ELSE 'NC_E' END
+             WHEN c.cenario = 'TR' AND {transf} THEN CASE c.sentido WHEN 'saida' THEN 'GER_S' ELSE 'GER_E' END
+             WHEN {conservador} AND c.cenario SIMILAR TO 'C[0-9].*'
+                  AND c.status_elegibilidade <> 'Elegível' THEN CASE c.sentido WHEN 'saida' THEN 'GER_S' ELSE 'GER_E' END
              ELSE c.cenario END
         WHERE {f.sql('c.raiz', 'c.cnpj_estab', 'c.mes')}"""
 
 
 AGREGADOS = """
     sum(x.base * x.r_cbs_debito) + sum(x.base * x.r_cbs_entrada * (1 - x.credok)) AS deb_cbs_base,
-    sum(x.base * x.r_ibs_debito) + sum(x.base * x.r_ibs_entrada * (1 - x.credok)) AS deb_ibs_base,
+    sum(x.base * x.r_ibs_debito)
+        + coalesce(sum(x.base * x.r_ibs_entrada * (1 - x.credok)) FILTER (WHERE x.cenario NOT LIKE 'C2%'), 0)
+        AS deb_ibs_base,
+    sum(x.base * x.r_ibs_entrada * (1 - x.credok)) FILTER (WHERE x.cenario LIKE 'C2%') AS deb_ibs_ent446,
     sum(x.base * x.r_ibs_debito) AS deb_ibs_saidas,
+    sum(x.base * x.r_ibs_debito) FILTER (WHERE x.r_cp_ibs AND x.faixa = '55') AS deb_b55,
+    sum(x.base * x.r_ibs_debito) FILTER (WHERE x.r_cp_ibs AND x.faixa = '75') AS deb_b75,
+    sum(x.base * x.r_ibs_debito) FILTER (WHERE x.r_cp_ibs AND x.faixa = '90_25') AS deb_b90_25,
+    sum(x.base * x.r_ibs_debito) FILTER (WHERE x.r_cp_ibs AND x.faixa = '100') AS deb_b100,
     sum(x.base * x.r_cbs_forn * x.regular) AS cred_cbs,
     sum(x.base * x.r_ibs_forn * x.regular) AS cred_ibs,
     sum(x.base * x.p_cbs * x.r_cbs_debito) FILTER (WHERE x.r_cp_cbs) AS cp450_cbs,
     sum(x.base * x.p_ibs * x.r_ibs_debito) FILTER (WHERE x.r_cp_ibs) AS base_incent_p_ibs,
     sum(x.base * x.pct447 * x.regular) FILTER (WHERE x.r_cp_ent = '447') AS cp447_cheio,
     sum(x.base * x.pct449 * x.regular) FILTER (WHERE x.r_cp_ent = '449') AS cp449_cheio,
-    sum(x.base * x.r_cp444 / 100) FILTER (WHERE x.r_cp_ent = '444') AS cp444_base,
+    sum(x.base) FILTER (WHERE x.r_cp_ent = '444') AS cp444_base,
     sum(x.valor) FILTER (WHERE x.cenario LIKE 'C4%') AS receita_incent,
     sum(x.valor) FILTER (WHERE x.cenario = 'EXP') AS exportacao,
     sum(x.valor) FILTER (WHERE x.cenario = 'TR' AND x.sentido = 'saida') AS transferencias,
@@ -172,13 +220,13 @@ AGREGADOS = """
 """
 
 
-def insumos_mensais(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS) -> pd.DataFrame:
+def insumos_mensais(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS, conservador: bool | None = None) -> pd.DataFrame:
     """Uma linha por (unidade, raiz, mes) com as medidas que o motor usa, a partir das
     operacoes classificadas nos cenarios e das regras de param_regras_cenario."""
     unid = unidade_apuracao()
     with _ProdutosRegistrados(con):
         ops = con.execute(f"""
-            WITH x AS ({sql_base_cenarios(f)})
+            WITH x AS ({sql_base_cenarios(f, conservador)})
             SELECT x.{unid} AS unidade, x.raiz, x.mes, {AGREGADOS}
             FROM x GROUP BY 1, 2, 3""").df()
     ap = _as_is.carga_mensal(con, f)
@@ -267,17 +315,19 @@ _ACUMULA = ("debito_cbs", "credito_cbs", "cp_cbs_gerado", "cp_cbs_usado", "cp_cb
             "debito_ibs", "credito_ibs", "cp_entrada_gerado", "cp_entrada_usado", "cp_entrada_expirado",
             "cp_ibs_450", "ibs_pagar", "icms_to_be", "ipi_to_be", "contrib_457", "teses_icms", "teses_ipi",
             "ipi_conc_as_is", "ipi_conc_to_be", "base_zfm_interna", "exportacao", "transferencias",
-            "receita_incent")
+            "receita_incent") + tuple(f"sd_{k}" for k in ("55", "75", "90_25", "100")) \
+    + tuple(f"cp450_{k}" for k in ("55", "75", "90_25", "100"))
 
 
 def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
-            com_teses: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
+            com_teses: bool = False, conservador: bool | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Retorna (anual, mensal).
 
     anual: cenario × ano × raiz com carga To Be, carga As Is, diferenca por tributo,
            componentes (saidas × entradas), absorcao e vantagem competitiva do IPI.
     mensal: teste de absorcao mes a mes (cenario × ano × mes × raiz)."""
-    ins = insumos_mensais(con, f)
+    from . import regras
+    ins = insumos_mensais(con, f, conservador)
     if ins.empty:
         return pd.DataFrame(), pd.DataFrame()
     meses_df = _as_is.meses_observados(con, f)
@@ -287,7 +337,9 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
     cen = _cenarios()
     prazo = int(params.premissa_num("prazo_cp_anos", 5) * 12)
     ordem_450_antes = params.premissa(None, "ordem_deducao_ibs", "").strip().endswith("cp450-cp447_449")
-    ano_cp450_ibs = int(params.premissa_num("ano_inicio_cp450_ibs", 2029))
+    tab_regras = regras.carregar()
+    pc = percentuais()
+    p_faixa = {k: (regras.pct(c, tab_regras) or 0.0) / 100 for k, c in FAIXAS_450.items()}
     fator_ipi = params.premissa_num("fator_ipi_proprio", 0.0)
     teses = _as_is.teses_mensais(con, f, False) if com_teses else pd.DataFrame()
     tes_mes = teses.groupby(["raiz", "mes", "tributo"])["valor"].sum().to_dict() if not teses.empty else {}
@@ -312,6 +364,15 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
                 aplica450 = bool(r["aplica_cp_450"])
                 sem_ipi = str(r["ipi_protegido_override"]).strip().lower() in ("nao", "não", "false")
                 a457 = _num(r["aliq_contrib_art457"]) / 100
+                # vigencia das regras (param_regras_legais): fora da vigencia o componente nao se aplica
+                v444 = regras.fator("ART444_CP_IBS", ano, tab_regras)
+                v446 = regras.fator("ART446_IBS_ENTRADA", ano, tab_regras)
+                v447 = regras.fator("ART447_SS", ano, tab_regras)
+                v449 = regras.fator("ART449_CP_IBS", ano, tab_regras)
+                v450i = regras.fator("ART450_IBS_FINAL", ano, tab_regras)
+                v450c = regras.fator("ART450_CBS_DEMAIS", ano, tab_regras)
+                p446 = pc["ibs_entrada_446"] / 100 if pc["ibs_entrada_446"] else 0.0
+                p444 = pc["cp444"] / 100 if pc["cp444"] else 0.0
                 acc = {k: 0.0 for k in _ACUMULA}
                 acc["meses_saldo_credor"] = 0.0
                 for mes in range(1, 13):
@@ -319,7 +380,7 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
                     # ---------------- CBS
                     deb = v["deb_cbs_base"] * a_cbs
                     cred = v["cred_cbs"] * a_cbs
-                    cp_new = v["cp450_cbs"] if aplica450 else 0.0
+                    cp_new = v["cp450_cbs"] if (aplica450 and v450c) else 0.0
                     exp_c = cp_cbs.expirar(idx)
                     liq = deb - cred - normal_cbs
                     normal_cbs = max(0.0, -liq)
@@ -328,25 +389,40 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
                     usado_c = cp_cbs.usar(liq)
                     cbs_pagar = liq - usado_c
                     # ---------------- IBS
-                    deb_i = v["deb_ibs_base"] * a_ibs
+                    # IBS na entrada (art. 446): base × aliquota × percentual legal, a partir da vigencia
+                    deb_i = v["deb_ibs_base"] * a_ibs + v["deb_ibs_ent446"] * a_ibs * p446 * v446
                     cred_i = v["cred_ibs"] * a_ibs
-                    cp_ent = ((v["cp447_cheio"] + v["cp449_cheio"]) * f_cp + v["cp444_base"] * a_ibs
-                              if a_ibs > 0 else 0.0)
+                    cp_ent = ((v["cp447_cheio"] * v447 + v["cp449_cheio"] * v449) * f_cp
+                              + v["cp444_base"] * a_ibs * p444 * v444 if a_ibs > 0 else 0.0)
                     exp_i = cp_ibs.expirar(idx)
                     liq_i = deb_i - cred_i - normal_ibs
                     normal_ibs = max(0.0, -liq_i)
                     liq_i = max(0.0, liq_i)
                     cp_ibs.adicionar(idx, cp_ent)
-                    share = v["base_incent_p_ibs"] / v["deb_ibs_saidas"] if v["deb_ibs_saidas"] > 0 else 0.0
-                    aplica450_ibs = aplica450 and ano >= ano_cp450_ibs
+                    aplica450_ibs = aplica450 and bool(v450i)
+
+                    def faixas_450(saldo: float) -> dict:
+                        """Art. 450 de IBS por faixa: saldo devedor de cada faixa = saldo do periodo × debitos da
+                        faixa ÷ debitos de IBS das saidas (criterio 'proporcional_debito' de alocacao dos creditos);
+                        credito presumido = saldo da faixa × percentual da faixa. A parcela nao elegivel fica sem CP."""
+                        tot = v["deb_ibs_saidas"]
+                        out = {}
+                        for k in FAIXAS_450:
+                            sd = saldo * v[f"deb_b{k}"] / tot if (tot > 0 and aplica450_ibs) else 0.0
+                            out[f"sd_{k}"] = max(0.0, sd)
+                            out[f"cp450_{k}"] = max(0.0, sd) * p_faixa[k]
+                        return out
+
                     if ordem_450_antes:
-                        cp450_ibs = liq_i * share if aplica450_ibs else 0.0
+                        fx = faixas_450(liq_i)
+                        cp450_ibs = sum(fx[f"cp450_{k}"] for k in FAIXAS_450)
                         usado_i = cp_ibs.usar(liq_i - cp450_ibs)
                         ibs_pagar = liq_i - cp450_ibs - usado_i
                     else:
                         usado_i = cp_ibs.usar(liq_i)
                         saldo_dev = liq_i - usado_i
-                        cp450_ibs = saldo_dev * share if aplica450_ibs else 0.0
+                        fx = faixas_450(saldo_dev)
+                        cp450_ibs = sum(fx[f"cp450_{k}"] for k in FAIXAS_450)
                         ibs_pagar = saldo_dev - cp450_ibs
                     # ---------------- ICMS residual, IPI proprio, art. 457, teses
                     icms = v["icms_as_is"] * fator
@@ -368,7 +444,7 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
                                "teses_ipi": t_ipi, "ipi_conc_as_is": v["ipi_conc_as_is"],
                                "ipi_conc_to_be": 0.0 if sem_ipi else v["ipi_conc_prot"],
                                "base_zfm_interna": v["base_zfm_interna"], "exportacao": v["exportacao"],
-                               "transferencias": v["transferencias"], "receita_incent": v["receita_incent"]}
+                               "transferencias": v["transferencias"], "receita_incent": v["receita_incent"], **fx}
                     for k2, val in valores.items():
                         acc[k2] += val
                     acc["meses_saldo_credor"] += 1.0 if saldo_credor else 0.0
@@ -380,7 +456,7 @@ def simular(con: duckdb.DuckDBPyConnection, f: Filtro = TODOS,
                                      "cp_entrada_gerado": cp_ent, "cp_entrada_usado": usado_i,
                                      "cp_entrada_expirado": exp_i, "saldo_cp_ibs": cp_ibs.saldo,
                                      "saldo_credor_normal_cbs": normal_cbs,
-                                     "saldo_credor_normal_ibs": normal_ibs,
+                                     "saldo_credor_normal_ibs": normal_ibs, **fx,
                                      "saldo_credor": bool(saldo_credor)})
                     idx += 1
                 anual_u.append({"cenario": cenario, "ano": ano, "raiz": raiz, "unidade": unidade, **acc})
