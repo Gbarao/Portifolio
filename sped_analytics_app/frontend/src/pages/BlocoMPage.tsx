@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { toast } from 'sonner'
 import { DataGrid, sortRows, useSort, type GridCol, type GridRow } from '../components/DataGrid'
 import { FilterButton, MultiList } from '../components/FilterBar'
+import { IndexBanner } from '../components/IndexBanner'
 import { CollapseToggle, MaxBackdrop, MaxButton, useCollapsed, useDragHeight, useMaximize } from '../components/layout'
 import { Badge, Button, Card, Empty, Kpi, Segmented, Select, Spinner, Switch, Tip, cx } from '../components/ui'
 import { api, waitJob } from '../lib/api'
@@ -44,7 +45,6 @@ export function BlocoMPage() {
   const [ov, setOv] = useState<Overview | null>(null)
   const [res, setRes] = useState<Result | null>(null)
   const [loading, setLoading] = useState(false)
-  const [indexing, setIndexing] = useState<string | null>(null)
   const loadOv = useCallback(() => api.get<Overview>('/api/blocom/overview').then(setOv).catch((e) => toast.error(e.message)), [])
   useEffect(() => { loadOv() }, [loadOv, dataVersion])
   const body = useMemo(() => ({ empresas: bs.empresas, comp_ini: bs.comp_ini, comp_fim: bs.comp_fim }), [bs.empresas, bs.comp_ini, bs.comp_fim])
@@ -57,17 +57,6 @@ export function BlocoMPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
   const [kpiCollapsed, setKpiCollapsed] = useCollapsed('blocom-kpis')
-
-  const runIndex = async () => {
-    setIndexing('Iniciando…')
-    try {
-      const { job } = await api.post('/api/raw/index')
-      const j = await waitJob(job, (x) => setIndexing(`${x.msg} · ${Math.round(x.frac * 100)}%`))
-      if (j.status === 'error') toast.error(j.error || 'Falha')
-      else toast.success(`${j.result.indexados} arquivo(s) indexado(s)`)
-      await loadOv()
-    } catch (e: any) { toast.error(e.message) } finally { setIndexing(null) }
-  }
 
   if (ov && ov.arquivos.length === 0) {
     return (
@@ -105,13 +94,7 @@ export function BlocoMPage() {
         <Button variant="primary" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => runExport('/api/export/blocom', body, 'Excel do Bloco M')}>Excel</Button>
       </div>
 
-      {ov && ov.pendentes > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-[12.5px]">
-          <RefreshCw className="h-4 w-4 shrink-0 text-warn" />
-          <span className="flex-1">{ov.pendentes} arquivo(s) foram importados antes de o programa guardar as linhas originais; o Bloco M deles só aparece depois de indexados.</span>
-          {indexing ? <span className="flex items-center gap-2 text-muted"><Spinner />{indexing}</span> : <Button size="sm" variant="primary" onClick={runIndex}>Indexar agora</Button>}
-        </div>
-      )}
+      <IndexBanner tipo="CONTRIB" onDone={loadOv} />
       {ov && ov.sem_bloco_m > 0 && <div className="flex items-center gap-2 text-[12.5px] text-muted"><Info className="h-4 w-4" />{ov.sem_bloco_m} arquivo(s) sem registros de apuração no Bloco M (escrituração sem movimento ou só com o Bloco M aberto).</div>}
       {res && res.leiaute.length > 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-[12.5px]">

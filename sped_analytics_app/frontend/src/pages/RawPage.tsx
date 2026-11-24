@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { DataGrid, type GridCol, type GridRow } from '../components/DataGrid'
 import { FilterButton, MultiList } from '../components/FilterBar'
+import { IndexBanner } from '../components/IndexBanner'
 import { MaxBackdrop, MaxButton, SidePanel, useMaximize } from '../components/layout'
 import { Badge, Button, Card, Empty, Input, Menu, MenuItem, Popover, Segmented, Select, Spinner, Tip, cx } from '../components/ui'
 import { api, download, waitJob } from '../lib/api'
@@ -44,27 +45,6 @@ export function RawPage({ tipo }: { tipo: RawTipo }) {
     api.post<RegInfo[]>(`/api/raw/${tipo}/registers`, scope).then(setRegs).catch((e) => toast.error(e.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipo, scopeKey, dataVersion])
-
-  const pending = ov?.arquivos.filter((a) => !a.indexado) ?? []
-  const [indexing, setIndexing] = useState<string | null>(null)
-  const runIndex = async () => {
-    setIndexing('Iniciando…')
-    try {
-      const { job } = await api.post('/api/raw/index')
-      const j = await waitJob(job, (x) => setIndexing(`${x.msg} · ${Math.round(x.frac * 100)}%`))
-      if (j.status === 'error') toast.error(j.error || 'Falha')
-      else {
-        const r = j.result
-        toast.success(`${r.indexados} arquivo(s) indexado(s)`, {
-          description: r.nao_encontrados.length || r.alterados.length
-            ? `${r.nao_encontrados.length} não encontrado(s) no caminho original e ${r.alterados.length} alterado(s) desde a importação — reimporte esses arquivos.` : undefined,
-          duration: 10000,
-        })
-      }
-      await loadOverview()
-      setRegs(await api.post(`/api/raw/${tipo}/registers`, scope))
-    } catch (e: any) { toast.error(e.message) } finally { setIndexing(null) }
-  }
 
   // ---------------------------------------------------------------- filtros (barra superior)
   const unitOpts = useMemo(() => (ov?.unidades ?? []).map((u) => [u.cnpj, u.nome || u.cnpj] as [string, string]), [ov])
@@ -133,15 +113,7 @@ export function RawPage({ tipo }: { tipo: RawTipo }) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-3 tall:gap-3 tall:p-5">
       {filterBar}
-      {pending.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-[12.5px]">
-          <RefreshCw className="h-4 w-4 shrink-0 text-warn" />
-          <span className="flex-1">{pending.length} arquivo(s) foram importados antes desta tela existir e ainda não têm as linhas originais guardadas.
-            O programa pode lê-los de novo no caminho de origem, se ainda estiverem lá e sem alteração.</span>
-          {indexing ? <span className="flex items-center gap-2 text-muted"><Spinner />{indexing}</span>
-            : <Button size="sm" variant="primary" onClick={runIndex}>Indexar agora</Button>}
-        </div>
-      )}
+      <IndexBanner tipo={tipo} onDone={() => { loadOverview(); api.post(`/api/raw/${tipo}/registers`, scope).then(setRegs).catch(() => {}) }} />
       <div className="flex min-h-0 flex-1 gap-3">
         <SidePanel id="raw-regs" title="Registros" defaultWidth={300} min={220} max={560}>
           <RegisterList regs={regs} blocos={ov?.blocos ?? {}} rs={rs} upd={upd} />
@@ -259,7 +231,8 @@ export function exportTo(tipo: RawTipo, body: any, fmt: 'xlsx' | 'csv', what: st
 function RegisterView({ tipo, rs, upd, regs, ops }: { tipo: RawTipo; rs: RawState; upd: (p: Partial<RawState>) => void; regs: RegInfo[] | null; ops: Record<string, string> }) {
   const body = { reg: rs.reg, competencias: rs.competencias, comp_ini: rs.comp_ini, comp_fim: rs.comp_fim, unidades: rs.unidades,
     arquivos: rs.arquivos, operacao: rs.operacao, busca: rs.busca, condicoes: rs.condicoes }
-  const key = `${tipo}|${JSON.stringify(body)}`
+  const { dataVersion } = useApp()
+  const key = `${tipo}|${JSON.stringify(body)}|${dataVersion}`
   const { data, loading, loadMore } = useInfinite(`/api/raw/${tipo}/query`, body, key)
   const g = useMemo(() => toGrid(data), [data])
   const info = regs?.find((r) => r.reg === rs.reg)
@@ -349,7 +322,8 @@ function FileView({ tipo, rs, upd, files }: { tipo: RawTipo; rs: RawState; upd: 
   const fid = rs.arquivo && indexed.some((f) => f.id_arquivo === rs.arquivo) ? rs.arquivo : indexed[0]?.id_arquivo
   const registros = rs.registrosArquivo.split(/[,;\s]+/).map((x) => x.trim().toUpperCase()).filter((x) => /^[0-9A-Z]{4}$/.test(x))
   const body = { arquivo: fid, registros, busca: rs.busca }
-  const key = `${tipo}|${JSON.stringify(body)}`
+  const { dataVersion } = useApp()
+  const key = `${tipo}|${JSON.stringify(body)}|${dataVersion}`
   const { data, loading, loadMore } = useInfinite(`/api/raw/${tipo}/lines`, body, key)
   const g = useMemo(() => toGrid(data ? { ...data, labels: { linha_no: 'Linha', reg: 'Registro', unidade: 'Unidade (CNPJ)', linha_original: 'Linha original' } } : null), [data])
   const f = files.find((x) => x.id_arquivo === fid)

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { DataGrid, sortRows, tableToGrid, useSort } from '../components/DataGrid'
 import { MaxBackdrop, MaxButton, SidePanel, useCollapsed, useMaximize, CollapseToggle } from '../components/layout'
+import { IndexBanner } from '../components/IndexBanner'
 import { MiniTable, tableRows, typeOf, type MiniCol } from '../components/MiniTable'
 import { Badge, Button, Card, Empty, Input, Kpi, Segmented, Select, Spinner, Tip, cx } from '../components/ui'
 import { api } from '../lib/api'
@@ -54,6 +55,7 @@ export function FornecedorPage() {
           </Tip>
         )}
       </div>
+      <IndexBanner />
       {fs.cnpjs.length === 0
         ? <Welcome recentes={fs.recentes} onPick={pick} onClear={() => upd({ recentes: [] })} />
         : <Profile fs={fs} upd={upd} />}

@@ -196,7 +196,8 @@ Interface ajustável à tela:
      diferido; saldos do 1100), com tolerância de R$ 0,01;
    - exportação de todas as seções para Excel.
    Fonte: as linhas originais guardadas na importação. Arquivos importados antes da versão 2.1 precisam ser
-   indexados (botão na própria tela).
+   indexados: no caminho original ("Indexar agora") ou na pasta onde estão hoje ("Indicar a pasta dos arquivos";
+   cada arquivo é reconhecido pelo hash, mesmo renomeado). Reimportar os mesmos TXT também guarda as linhas.
 5. **SPED Fiscal** e **EFD-Contribuições** (seção "Arquivos como estão"): o conteúdo dos arquivos exatamente como
    importado, **sem nenhum cruzamento** — inclusive saídas, notas canceladas, apuração (E110, M100, M200…),
    inventário e qualquer outro registro:
@@ -237,7 +238,7 @@ pip install -r requirements-opcional.txt
 python -m pytest -q tests
 ```
 
-São 136 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
+São 138 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_data.py`):
 - `tests/test_pipeline.py` (18): detecção, duplicidade, retificadora, fechamento C170 = C190, rateio de frete,
   N1/N3/DOC, Exceção 2, 0175, filtros, auditoria, cobertura, exportação, snapshot, backup e remoção.
 - `tests/test_cruzamento.py` (22): cenários em que os dois arquivos **não** são espelhos. Numeração de itens
@@ -256,6 +257,9 @@ São 136 testes sobre arquivos sintéticos no leiaute oficial (`tests/sample_dat
   igual ao total da base e ao total devolvido, sem chave repetida (nenhum valor duplicado); PIS do relatório igual
   ao PIS bruto da EFD; colunas por competência somam a coluna total; ordenação, limite, texto, filtros por valor,
   API e exportação.
+- `tests/test_reindex.py` (2): base de versão anterior (sem linhas originais) com os TXT movidos e renomeados —
+  indexação pela pasta nova (reconhecimento por hash, caminho atualizado) e reimportação dos mesmos arquivos
+  (só guarda as linhas, sem duplicar nada nem alterar a consolidação).
 - `tests/test_blocom_fornecedor.py` (12): Bloco M — apuração, indicadores, base do crédito por natureza, ajustes,
   saldos 1100/1500, verificações sem divergência em arquivo coerente e com divergência em arquivo alterado,
   conferência com os documentos (diferença detectada), M210 no leiaute anterior a 2019, seleção sem Bloco M e

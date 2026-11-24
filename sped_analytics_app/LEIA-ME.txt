@@ -58,9 +58,16 @@ ATUALIZAÇÃO DE UMA VERSÃO ANTERIOR
   3. Execute instalar.bat de novo (a interface nova usa outros componentes; leva 1 a 2 minutos).
   4. Abra normalmente. Na primeira abertura a base consolidada é refeita sozinha a partir dos arquivos já
      importados (não é preciso importar de novo); em bases grandes isso pode levar alguns minutos.
-  5. Nas telas "SPED Fiscal" e "EFD-Contribuições", os arquivos importados em versões anteriores aparecem com
-     o aviso "ainda não têm as linhas originais guardadas": clique em "Indexar agora". O programa lê de novo os
-     TXT no mesmo caminho em que foram importados (se tiverem sido movidos ou alterados, reimporte-os).
+  5. Arquivos importados em versões anteriores à 2.1 aparecem com o aviso "importado(s) antes de o programa
+     guardar as linhas originais" (telas SPED Fiscal, EFD-Contribuições, Bloco M e Busca por fornecedor).
+     Não é preciso reimportar nem apagar nada:
+       - se os TXT continuam onde estavam na importação: clique em "Indexar agora";
+       - se foram movidos ou renomeados: clique em "Indicar a pasta dos arquivos", informe a pasta onde estão hoje
+         (subpastas incluídas) e "Procurar e indexar". Cada arquivo é reconhecido pelo conteúdo (hash), não pelo
+         nome;
+       - alternativa: importar de novo os mesmos TXT pela tela Arquivos — os já importados são reconhecidos e só
+         têm as linhas originais guardadas (aparecem como "INDEXADO"; nada é duplicado).
+     A Análise e o Relatório dinâmico não dependem disso.
 
 DADOS
   Tudo fica na subpasta "data" (banco sped_master.duckdb, cache Parquet, filtros, snapshots, exportações).

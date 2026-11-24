@@ -17,7 +17,7 @@ const STATUS: Record<string, { label: string; cls: string; tone: Tone }> = {
   EC: { label: 'só EFD', cls: 'bg-info/15 text-info', tone: 'info' },
   '': { label: 'ausente', cls: 'bg-bad/10 text-bad', tone: 'bad' },
 }
-const ACAO_TONE: Record<string, Tone> = { IMPORTADO: 'ok', SUBSTITUIDO: 'info', DUPLICADO: 'neutral', IGNORADO: 'warn', ERRO: 'bad', REMOVIDO: 'neutral' }
+const ACAO_TONE: Record<string, Tone> = { IMPORTADO: 'ok', SUBSTITUIDO: 'info', INDEXADO: 'info', DUPLICADO: 'neutral', IGNORADO: 'warn', ERRO: 'bad', REMOVIDO: 'neutral' }
 
 export function FilesPage() {
   const { meta, dataChanged, options } = useApp()
@@ -60,7 +60,7 @@ export function FilesPage() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_1fr]">
         <ImportCard running={running} job={job} result={result} onStart={(id) => follow(id, (j) => {
           const c = j.result?.contagem || {}
-          return `Importação concluída em ${j.result?.segundos}s — ${c.IMPORTADO || 0} importado(s), ${c.SUBSTITUIDO || 0} substituído(s), ${c.DUPLICADO || 0} duplicado(s), ${c.ERRO || 0} erro(s)`
+          return `Importação concluída em ${j.result?.segundos}s — ${c.IMPORTADO || 0} importado(s), ${c.SUBSTITUIDO || 0} substituído(s), ${c.INDEXADO ? `${c.INDEXADO} com linhas originais guardadas agora, ` : ''}${c.DUPLICADO || 0} duplicado(s), ${c.ERRO || 0} erro(s)`
         })} />
         <ManageCard running={running} competencias={options?.competencias ?? []} onJob={follow} dataDir={meta.dataDir} />
       </div>

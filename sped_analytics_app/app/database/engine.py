@@ -58,6 +58,13 @@ RAW_EC = [t for t in SCHEMAS if t.startswith("ec_")]
 # --------------------------------------------------------------------------------------
 # Workers (nível de módulo para serem serializáveis no ProcessPool "spawn")
 # --------------------------------------------------------------------------------------
+def _hash_worker(path: str) -> tuple[str, str | None]:
+    try:
+        return path, detector.sha256_file(path)[0]
+    except OSError:
+        return path, None
+
+
 def _parse_worker(args: tuple[str, str, int, str]) -> dict:
     path, tipo, file_id, out_dir = args
     t0 = time.perf_counter()
@@ -223,7 +230,18 @@ class SpedDatabase:
             headers = [detector.inspect_file(str(f)) for f in files]
 
         # Etapa 2: decisão (duplicado / retificadora / ignorado)
-        plan = self._plan_imports(headers, summary)
+        reindex: list[dict] = []
+        plan = self._plan_imports(headers, summary, reindex)
+        if reindex:   # arquivo idêntico já importado, mas sem as linhas originais: guarda as linhas agora
+            prog(f"Guardando linhas originais de {len(reindex)} arquivo(s) já importado(s)...", 0.15)
+            done = self._index_items(reindex, lambda m, f: prog(m, 0.15 + 0.1 * f), workers)
+            for it in reindex:
+                ok = it["id"] in done
+                summary.resultados.append(ImportResult(
+                    it["caminho"], "INDEXADO" if ok else "ERRO",
+                    "Arquivo idêntico já importado — linhas originais guardadas agora (telas SPED Fiscal, "
+                    "EFD-Contribuições, Bloco M e Busca por fornecedor)" if ok else (it.get("erro") or "Falha ao ler"),
+                    it["tipo"], it.get("cnpj") or "", it.get("competencia") or "", it["id"]))
         if not plan:
             self._finish_log(summary)
             summary.segundos = time.perf_counter() - t0
@@ -284,10 +302,14 @@ class SpedDatabase:
             for r in summary.resultados:
                 self._log(r.arquivo, r.acao, r.mensagem)
 
-    def _plan_imports(self, headers: list[dict], summary: ImportSummary) -> list[dict]:
+    def _plan_imports(self, headers: list[dict], summary: ImportSummary, reindex: list[dict] | None = None
+                      ) -> list[dict]:
         cur = self.cursor()
         known = {row[0]: row[1] for row in cur.execute(
             "SELECT hash_sha256, ativo FROM sys_arquivos_importados").fetchall()}
+        sem_linhas = {row[0]: row[1:] for row in cur.execute(
+            "SELECT hash_sha256, id_arquivo, tipo_sped, competencia, cnpj FROM sys_arquivos_importados "
+            "WHERE ativo AND id_arquivo NOT IN (SELECT DISTINCT file_id FROM linhas_contagem)").fetchall()}
         active = {}
         for row in cur.execute("SELECT tipo_sped, cnpj, competencia, id_arquivo, finalidade "
                                "FROM sys_arquivos_importados WHERE ativo").fetchall():
@@ -300,6 +322,12 @@ class SpedDatabase:
             name = h["path"]
             if not h["tipo"] or h["erro"]:
                 summary.resultados.append(ImportResult(name, "IGNORADO", h["erro"] or "Não é arquivo SPED"))
+                continue
+            if h["sha256"] in known and reindex is not None and h["sha256"] in sem_linhas \
+                    and not any(x["hash"] == h["sha256"] for x in reindex):
+                fid, tipo, comp, cnpj = sem_linhas[h["sha256"]]
+                reindex.append({"id": fid, "tipo": tipo, "caminho": h["path"], "hash": h["sha256"],
+                                "competencia": comp, "cnpj": cnpj, "movido": True})
                 continue
             if h["sha256"] in known:
                 msg = "Arquivo idêntico já importado" + ("" if known[h["sha256"]] else " (versão substituída)")
@@ -397,49 +425,90 @@ class SpedDatabase:
     def files_without_lines(self) -> list[dict]:
         """Arquivos ativos importados antes da gravação das linhas originais."""
         rows = self.con.cursor().execute(
-            "SELECT id_arquivo, tipo_sped, caminho_origem, hash_sha256, competencia, cnpj FROM sys_arquivos_importados "
+            "SELECT id_arquivo, tipo_sped, caminho_origem, hash_sha256, competencia, cnpj, tamanho_bytes "
+            "FROM sys_arquivos_importados "
             "WHERE ativo AND id_arquivo NOT IN (SELECT DISTINCT file_id FROM linhas_contagem) ORDER BY id_arquivo"
         ).fetchall()
         return [{"id": r[0], "tipo": r[1], "caminho": r[2], "hash": r[3], "competencia": r[4], "cnpj": r[5],
-                 "encontrado": bool(r[2]) and Path(r[2]).is_file()} for r in rows]
+                 "tamanho": r[6], "encontrado": bool(r[2]) and Path(r[2]).is_file()} for r in rows]
 
-    def index_lines(self, progress: Callable[[str, float], None] | None = None, workers: int | None = None) -> dict:
-        """Lê de novo os TXT originais (se ainda existirem no mesmo caminho e com o mesmo hash) só para guardar
-        as linhas originais dos arquivos importados antes desta funcionalidade."""
-        from app.parser.raw_lines import parse_raw
+    def index_lines(self, progress: Callable[[str, float], None] | None = None, workers: int | None = None,
+                    pastas: list[str] | None = None) -> dict:
+        """Guarda as linhas originais dos arquivos importados antes desta funcionalidade, lendo de novo os TXT:
+        no caminho da importação ou, se foram movidos, nas pastas informadas — cada arquivo é reconhecido pelo
+        conteúdo (SHA-256 igual ao da importação), não pelo nome."""
         prog = progress or (lambda m, f: None)
         pend = self.files_without_lines()
-        ok, falta, alterado = [], [], []
-        todo = []
+        falta, alterado, todo = [], [], []
         for i, f in enumerate(pend, 1):
             prog(f"Conferindo arquivos originais ({i}/{len(pend)})", 0.05 * i / max(1, len(pend)))
             if not f["encontrado"]:
                 falta.append(f)
-                continue
-            if detector.sha256_file(f["caminho"])[0] != f["hash"]:
+            elif detector.sha256_file(f["caminho"])[0] != f["hash"]:
                 alterado.append(f)
-                continue
-            todo.append(f)
+            else:
+                todo.append(f)
+        achados = 0
+        if pastas and (falta or alterado):
+            need = {f["hash"]: f for f in falta + alterado}
+            sizes = {f["tamanho"] for f in need.values() if f["tamanho"]}
+            cands: list[str] = []
+            for root in pastas:
+                if not str(root or "").strip() or not Path(root).exists():
+                    continue
+                for p in detector.discover_files(root):
+                    try:
+                        if not sizes or p.stat().st_size in sizes:
+                            cands.append(str(p))
+                    except OSError:
+                        continue
+            cands = list(dict.fromkeys(cands))
+            if cands:
+                n_workers = max(1, min(workers or config.PARSER_WORKERS, len(cands)))
+                found: dict[str, str] = {}
+                with ProcessPoolExecutor(max_workers=n_workers, mp_context=mp.get_context("spawn")) as ex:
+                    for i, (path, h) in enumerate(ex.map(_hash_worker, cands, chunksize=4), 1):
+                        if h in need and h not in found:
+                            found[h] = path
+                        if i % 10 == 0 or i == len(cands):
+                            prog(f"Procurando os arquivos na pasta ({i}/{len(cands)})", 0.05 + 0.25 * i / len(cands))
+                for h, path in found.items():
+                    f = need[h]
+                    todo.append({**f, "caminho": path, "movido": True})
+                    achados += 1
+                falta = [f for f in falta if f["hash"] not in found]
+                alterado = [f for f in alterado if f["hash"] not in found]
+        done = self._index_items(todo, lambda m, x: prog(m, 0.3 + 0.7 * x), workers)
+        erros = [f for f in todo if f["id"] not in done]
+        return {"indexados": len(done), "encontrados_na_pasta": achados,
+                "nao_encontrados": [f["caminho"] for f in falta],
+                "alterados": [f["caminho"] for f in alterado + erros]}
+
+    def _index_items(self, todo: list[dict], prog: Callable[[str, float], None], workers: int | None = None
+                     ) -> set[int]:
+        """Lê as linhas originais de cada arquivo (id, tipo, caminho) e grava no banco; atualiza o caminho de
+        origem dos arquivos encontrados em outro lugar. Devolve os ids gravados."""
+        from app.parser.raw_lines import parse_raw
         out = self.parquet_dir
-        ctx = mp.get_context("spawn")
-        n_workers = max(1, min(workers or config.PARSER_WORKERS, len(todo) or 1))
         results = {}
         if todo:
-            with ProcessPoolExecutor(max_workers=n_workers, mp_context=ctx) as ex:
+            n_workers = max(1, min(workers or config.PARSER_WORKERS, len(todo)))
+            with ProcessPoolExecutor(max_workers=n_workers, mp_context=mp.get_context("spawn")) as ex:
                 futs = {ex.submit(parse_raw, f["caminho"], f["id"], f["tipo"], out): f for f in todo}
                 for i, fut in enumerate(as_completed(futs), 1):
                     f = futs[fut]
                     try:
                         results[f["id"]] = fut.result()
                     except Exception as e:  # noqa: BLE001
-                        alterado.append({**f, "erro": str(e)})
-                    prog(f"Lendo linhas originais ({i}/{len(todo)})", 0.05 + 0.75 * i / len(todo))
+                        f["erro"] = f"{type(e).__name__}: {e}"
+                    prog(f"Lendo linhas originais ({i}/{len(todo)})", 0.75 * i / len(todo))
+        done: set[int] = set()
         for i, f in enumerate(todo, 1):
             if f["id"] not in results:
                 continue
             t = LINES_TABLE[f["tipo"]]
             pq = out / t / f"{f['id']}.parquet"
-            prog(f"Gravando linhas no banco ({i}/{len(todo)})", 0.8 + 0.2 * i / len(todo))
+            prog(f"Gravando linhas no banco ({i}/{len(todo)})", 0.75 + 0.25 * i / len(todo))
             with self.write_lock:
                 self.con.execute("BEGIN TRANSACTION")
                 try:
@@ -447,14 +516,16 @@ class SpedDatabase:
                     if pq.exists():
                         self.con.execute(f"INSERT INTO {t} BY NAME SELECT * FROM read_parquet(?)", [str(pq)])
                     self._count_lines(f["id"], f["tipo"])
+                    if f.get("movido"):
+                        self.con.execute("UPDATE sys_arquivos_importados SET caminho_origem = ? WHERE id_arquivo = ?",
+                                         [str(Path(f["caminho"]).resolve()), f["id"]])
                     self.con.execute("COMMIT")
                 except Exception:
                     self.con.execute("ROLLBACK")
                     raise
             pq.unlink(missing_ok=True)
-            ok.append(f)
-        return {"indexados": len(ok), "nao_encontrados": [f["caminho"] for f in falta],
-                "alterados": [f["caminho"] for f in alterado]}
+            done.add(f["id"])
+        return done
 
     # ------------------------------------------------------------------ consolidação
     def _consolidation_steps(self) -> list[tuple[str, str]]:

@@ -32,7 +32,7 @@ from app.exporter import excel_writer
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 EXPORT_DIR = config.DATA_DIR / "exports"
 UPLOAD_DIR = config.DATA_DIR / "uploads"
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.3.1"
 STATE_VERSION = 3
 
 
@@ -264,8 +264,12 @@ def create_app(db: SpedDatabase | None = None, native: bool = False) -> FastAPI:
         return _json(db.files_without_lines())
 
     @api.post("/api/raw/index")
-    def raw_index():
-        return {"job": jobs.start("rebuild", lambda prog: db.index_lines(prog))}
+    def raw_index(q: dict = Body(default={})):
+        pastas = [str(p) for p in (q.get("pastas") or []) if str(p or "").strip()]
+        for p in pastas:
+            if not Path(p).exists():
+                raise HTTPException(400, f"Pasta não encontrada: {p}")
+        return {"job": jobs.start("rebuild", lambda prog: db.index_lines(prog, pastas=pastas))}
 
     # ---------------------------------------------------------------- Bloco M (apuração PIS/Cofins)
     @api.exception_handler(fornecedor.FornecedorError)
@@ -868,7 +872,7 @@ def _import_job(prog, db: SpedDatabase, paths: list[str], workers: int) -> dict:
     return {
         "segundos": round(s.segundos, 1),
         "competencias": s.competencias_reconsolidadas,
-        "contagem": {a: s.count(a) for a in ("IMPORTADO", "SUBSTITUIDO", "DUPLICADO", "IGNORADO", "ERRO")},
+        "contagem": {a: s.count(a) for a in ("IMPORTADO", "SUBSTITUIDO", "INDEXADO", "DUPLICADO", "IGNORADO", "ERRO")},
         "resultados": [{"arquivo": Path(r.arquivo).name, "caminho": r.arquivo, "acao": r.acao, "mensagem": r.mensagem,
                         "tipo": r.tipo, "cnpj": r.cnpj, "competencia": r.competencia} for r in s.resultados[:2000]],
     }
