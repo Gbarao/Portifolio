@@ -1,6 +1,6 @@
-# Consolidação Fiscal SPED — especificação completa do que foi construído (v2.3.1)
+# Consolidação Fiscal SPED — regras, cruzamento, layout e arquitetura do programa (v2.3.1)
 
-Documento de referência para recriar ou customizar o sistema. Descreve o que **existe no código**, não o que foi planejado.
+Documento único de referência para recriar ou customizar o sistema: regras de negócio, racional do cruzamento SPED Fiscal × EFD-Contribuições, telas e layout, arquitetura, API, testes e limites. Descreve o que **existe no código**, não o que foi planejado.
 Onde algo não foi implementado ou não foi verificado, está dito.
 
 - Repositório: `gbarao/portifolio`, pasta `sped_analytics_app/`, branch `claude/wonderful-rubin-5qi5sj`.
@@ -100,53 +100,153 @@ Motor SQL em etapas (`-- @step nome`), executado em **uma transação** por `reb
 
 Etapas, em ordem: `dim_filial`, `dim_fornecedor`, `dim_item_depara`, `t_doc`, `t_ec_doc`, `t_docmatch`, `t_ec_it`, `t_item`, `t_anal_k`, `t_item_r`, `t_lin`, `n1`, `pool_n2`, `pool_n3`, `pool_doc`, `t_pc_final`, `t_lin_ec`, `fato_delete`, `fato_stage`, `fato_insert`, e a recarga incremental das agregadas.
 
-### 4.1 Dimensões
-- **Filial:** SPED Fiscal = CNPJ do 0000 (um arquivo por estabelecimento); EFD-Contribuições = CNPJ do 0140/bloco de movimento. Nome/UF pelo registro mais recente.
-- **Fornecedor unificado:** `COD_PART` → 0150 **do próprio arquivo** → CNPJ/CPF (só dígitos); sem CNPJ/CPF usa `EXT:<nome>`; sem 0150, `PART:<cod>`. Raiz = 8 primeiros dígitos. Nome na data do documento via 0175 (campo 3 = nome; vale o conteúdo anterior se a alteração é posterior à data do documento).
-- **Item:** 0200 de cada arquivo (tipo, NCM, CEST, código de barras); `dim_item_depara` a partir do 0205 e de `COD_ANT_ITEM` unifica códigos antigos/novos; `chave_item_global` = `NCM|código`.
 
-### 4.2 Vínculo de documentos (estritamente 1:1) — `t_docmatch`
-1. Pela **chave** do documento eletrônico (CHV_NFE/CHV_CTE/CHV_DOCe) na mesma filial e família (C100, C500, D100, D500/D700→D500), em qualquer competência do escopo. Se há duplicidade de chave, só o primeiro de cada lado participa.
-2. Quando falta chave em um dos lados: filial + competência + CNPJ do fornecedor + modelo + série + número (zeros à esquerda ignorados); o k-ésimo documento de um lado casa com o k-ésimo do outro. **Nunca um para muitos.**
+O racional abaixo (4.1 a 4.10) é a referência das regras de cruzamento; 4.11 e 4.12 descrevem a tabela resultante.
 
-### 4.3 Linhas do SPED Fiscal — `t_item`, `t_anal_k`, `t_item_r`, `t_lin`
-- Itens candidatos: C170 do SPED Fiscal; **Exceção 2** (nota de emissão própria sem C170 no SPED Fiscal): itens do C170 da EFD-Contribuições do documento vinculado (origem `EC_C170_VIA_CHAVE`, já com seu PIS/Cofins).
-- Base do item = `VL_ITEM − VL_DESC + ICMS-ST + IPI`.
-- **Rateio contra o C190:** agrupa itens e C190 por CST + CFOP + alíquota; a diferença entre `VL_OPR` do C190 e a soma das bases é distribuída proporcionalmente ao `VL_ITEM` (frete, seguro, outras despesas), com o resíduo de centavos no maior item — a soma por grupo fecha exatamente com o C190. FCP (C191) é rateado do mesmo modo. `vl_contabil = base + rateio`.
-- Itens **sintéticos**: C190 sem item (`_SEM_ITEM_C190_`), energia/água/gás/telecom/frete — um por registro analítico (C590, D190, D590, D730) com item `_ENERGIA_`, `_AGUA_`, `_GAS_`, `_TELECOM_`, `_FRETE_CTE_` conforme o modelo (`config.ITEM_SINTETICO_POR_MODELO`).
+### 4.1 Princípio
 
-### 4.4 Cascata de PIS/Cofins (`nivel_cruzamento_efd`)
-Cada item da EFD-Contribuições é consumido **no máximo uma vez** (identificador `eid`).
+| Papel | Fonte | O que fornece |
+|---|---|---|
+| Base mestre | SPED Fiscal | documento, item, quantidade, valor contábil, ICMS, ICMS-ST, FCP, IPI |
+| Complemento | EFD-Contribuições | CST, base, alíquota e valor de **PIS e Cofins** (e natureza da base de crédito) |
 
-| Nível | Critério |
-|---|---|
-| `N1_ITEM` | mesmo documento vinculado + mesmo `NUM_ITEM` + mesmo `COD_ITEM` + `VL_ITEM` igual (tolerância R$ 0,01). Inclui os itens da Exceção 2. |
-| `N1V_POSICAO_VALOR` | mesma posição + mesmo `VL_ITEM` + mesmo CFOP, com código de item diferente entre os arquivos |
-| `N2_ITEM_CFOP` | itens da EFD ainda não consumidos, por documento + `COD_ITEM` + CFOP, formam um "pool" rateado entre as linhas do SPED Fiscal da mesma chave (proporcional ao `VL_ITEM`) |
-| `N3_CONSOLIDADO_C190` | C190 + C191/C195 da EFD: filial + competência + CNPJ do fornecedor + CFOP + `COD_ITEM`, rateado pelo `VL_ITEM` |
-| `DOC_CHAVE` / `DOC_NUMERO` | C501/C505 (energia, água, gás), D101/D105 (frete), D501/D505 (telecom) do documento vinculado, rateados entre as linhas analíticas do SPED Fiscal (C590/D190/D590/D730) |
-| `EC_EXCLUSIVO` | só existe na EFD por natureza (A100/A170 serviços, F100, F120, F130) ou a filial/competência não tem SPED Fiscal carregado |
-| `EC_SEM_PAR` | há SPED Fiscal da filial no período, mas o item/documento/consolidação da EFD não achou correspondência: entra com **valor contábil 0** e todo o PIS/Cofins |
+Regras que governam tudo:
 
-O rateio genérico (template `alocar`) distribui um pool sobre as linhas candidatas com a mesma chave, proporcional ao peso, com o resíduo de centavos no maior peso: a soma por pool é exatamente o valor do pool. Quem não passa no N1 nunca recebe crédito de outro item por posição.
+1. O valor contábil, o ICMS e o IPI vêm **sempre** do SPED Fiscal. A EFD-Contribuições só entrega PIS/Cofins.
+2. **Cada item da EFD-Contribuições é consumido no máximo uma vez.**
+3. **Todo PIS/Cofins da EFD termina em exatamente uma linha** da tabela consolidada. O que não acha par no SPED Fiscal vira linha "somente EFD" com valor contábil zero. Nada some, nada duplica.
+4. O vínculo entre documentos é **1:1**: um documento da EFD nunca alimenta dois do SPED Fiscal, nem o inverso.
+5. Só se compara item a item quando há **identidade comprovada**. Na dúvida, desce para um nível mais agregado (com rateio), nunca "chuta" por posição.
 
-Garantia (provada em teste): o PIS/Cofins somado na fato é igual ao PIS/Cofins bruto da EFD (`fechamento_efd` na auditoria deve ser 0); linhas "só EFD" mantêm o crédito sem inflar o valor contábil.
+Prova automatizada: o total de PIS e de Cofins na tabela consolidada é igual ao total bruto dos registros da EFD (verificação `fechamento_efd`, que deve ser zero), inclusive em cenários em que os arquivos não são espelhos (itens em ordem invertida, item só na EFD, código diferente, valor divergente, nota duplicada ou ausente, nota sem chave, notas em meses diferentes).
 
-### 4.5 Colunas derivadas na carga (`fato_insert`)
-- `nat_bc_cred` (Tabela 4.3.7): a informada no registro; senão derivada do CFOP pela tabela `ref_cfop_nat_bc_cred` (padrão: revenda `01`, insumo `02`, serviço insumo `03`, devolução `12`, ativo `11`, demais `13`), apenas quando o CST de PIS é de crédito; `nat_bc_cred_origem` = `INFORMADO` ou `DERIVADO_CFOP`. A tabela é editável/parametrizável.
-- `vl_trib_recuperaveis` = ICMS + IPI (somente CST IPI `00`) + PIS (somente CST 50–56 e 60–66) + Cofins (idem).
-- `vl_custo_liquido` = `vl_contabil − vl_trib_recuperaveis`.
-- `status_efd`: "Escriturado na EFD-Contribuições", "Sem Crédito / Não Escriturado na EFD-Contribuições", "Somente EFD — sem correspondência no SPED Fiscal" (EC_SEM_PAR), "Exclusivo EFD-Contribuições" (EC_EXCLUSIVO).
-- `doc_key` (inteiro) para contagem distinta rápida de documentos; ordenação física da carga por competência/filial/fornecedor/item (permite ao DuckDB pular blocos).
-- Serviços tomados (A170) usam CFOP `SERV`; C500/D100/D500 sem par usam `N/D`; F100/F120/F130 usam `OUTROS`.
 
-### 4.6 Tabela fato `fato_entradas_consolidadas`
+### 4.2 O que entra de cada arquivo
+
+**Somente entradas/aquisições** (`IND_OPER = 0`); documentos com `COD_SIT` 02, 03, 04, 05 (cancelado, cancelado extemporâneo, denegado, inutilizado) são excluídos nos dois arquivos.
+
+| Tipo de operação | SPED Fiscal | EFD-Contribuições |
+|---|---|---|
+| NF / NF-e, com item | C100 + **C170**; totalizador C190 (+ C191 FCP) | C100 + **C170** |
+| NF / NF-e, consolidada | — | C190 + C191 (PIS) / C195 (Cofins) |
+| Energia, água, gás | C500 + C590 (sem item) | C500 + C501 (PIS) / C505 (Cofins) |
+| Frete (CT-e) | D100 + D190 | D100 + D101 / D105 |
+| Telecomunicação | D500 + D590; D700 + D730 | D500 + D501 / D505 |
+| Serviços tomados | não existe | A100 + A170 |
+| Demais créditos | não existe | F100, F120, F130 |
+
+Filial (unidade): SPED Fiscal = CNPJ do registro 0000 (um arquivo por estabelecimento); EFD-Contribuições = CNPJ do bloco de movimento (A010/C010/D010/F010) em que o documento está.
+
+
+### 4.3 Chaves de identidade
+
+**Fornecedor unificado.** `COD_PART` só vale dentro do arquivo: resolve-se no 0150 **do próprio arquivo** (na EFD, no mesmo estabelecimento) para o CNPJ/CPF, só dígitos. Sem CNPJ/CPF usa `EXT:<nome>`; sem 0150, `PART:<cod>`. Raiz = 8 primeiros dígitos. O nome vigente na data do documento vem do 0175 (campo 3).
+
+**Item.** Chave de comparação é `COD_ITEM`, mas códigos antigos são unificados por `dim_item_depara` (0205 e `COD_ANT_ITEM` do 0200). A chave global do item é `NCM|código`.
+
+**Documento.** Família (C100, C500, D100, D500; D700 conta como D500) + chave do documento eletrônico, ou, sem chave, filial + competência + CNPJ do fornecedor + modelo + série + número (zeros à esquerda ignorados).
+
+
+### 4.4 Passo 1 — vincular documentos (1:1)
+
+1. **Pela chave** (CHV_NFE / CHV_CTE / CHV_DOCe): mesma filial e família, **em qualquer competência do escopo**. Isso cobre a nota escriturada em meses diferentes nos dois arquivos. Se a mesma chave aparece duas vezes num lado, só a primeira ocorrência participa.
+2. **Sem chave em um dos lados:** filial + competência + CNPJ do fornecedor + modelo + série + número. O k-ésimo documento de um lado casa com o k-ésimo do outro (ordenados de forma estável); nunca um para muitos.
+
+Consequência: ao reconsolidar uma competência, o escopo é **fechado transitivamente** pelas chaves (as competências ligadas por uma nota são refeitas juntas). Sem isso, o 1:1 entre meses quebraria.
+
+
+### 4.5 Passo 2 — montar as linhas do SPED Fiscal
+
+#### 4.5.1 Quais linhas existem
+- Itens do **C170** do SPED Fiscal.
+- **Exceção — emissão própria sem C170:** se o documento vinculado não tem C170 no SPED Fiscal, os itens vêm do C170 da EFD (origem `EC_C170_VIA_CHAVE`); já nascem com o PIS/Cofins do próprio item (nível `N1_ITEM`).
+- **Itens sintéticos**, um por registro analítico, quando não há item: C190 sem C170 (`_SEM_ITEM_C190_`), C590/D190/D590/D730 (`_ENERGIA_`, `_AGUA_`, `_GAS_`, `_TELECOM_`, `_FRETE_CTE_`, conforme o modelo do documento).
+
+#### 4.5.2 Valor contábil por item (rateio contra o analítico)
+O C170 não carrega frete, seguro e outras despesas do cabeçalho; o C190 sim. Para fechar:
+
+```
+base_item   = VL_ITEM − VL_DESC + VL_ICMS_ST + VL_IPI
+grupo       = itens do mesmo documento com mesmo CST + CFOP + alíquota (= uma linha do C190)
+diferença   = VL_OPR do C190 − Σ base_item do grupo
+rateio_item = diferença × VL_ITEM / Σ VL_ITEM do grupo     (sem peso: divide por igual)
+vl_contabil = base_item + rateio_item
+```
+O resíduo de centavos do arredondamento vai para o **maior item** do grupo, de modo que Σ `vl_contabil` do grupo = `VL_OPR` do C190 exatamente. O FCP do C191 é rateado da mesma forma.
+
+Exemplo (dados de teste): NF com item 1 = 1.000 (IPI 90, CFOP 1102) e item 2 = 500 (CFOP 1101), frete de 10 no cabeçalho.
+C190-1102 = 1.000 + 90 + 10×1.000/1.500 = 1.096,67; C190-1101 = 500 + 10×500/1.500 = 503,33.
+Item 1: base 1.090 + rateio 6,67 = 1.096,67. Item 2: base 500 + rateio 3,33 = 503,33. Soma 1.600 = `VL_DOC`.
+
+
+### 4.6 Passo 3 — levar PIS/Cofins para as linhas (cascata)
+
+Do critério mais forte para o mais fraco. O que é casado em um nível sai da disputa dos seguintes.
+
+| Nível (`nivel_cruzamento_efd`) | Quando | Critério | Como atribui |
+|---|---|---|---|
+| `N1_ITEM` | documento vinculado | mesmo `NUM_ITEM` + mesmo `COD_ITEM` + `VL_ITEM` igual (tolerância R$ 0,01) | o item da EFD alimenta a linha, 1 para 1 |
+| `N1V_POSICAO_VALOR` | documento vinculado | mesmo `NUM_ITEM` + mesmo `VL_ITEM` + mesmo CFOP, **com código de item diferente** | idem (cobre troca de código entre os arquivos) |
+| `N2_ITEM_CFOP` | documento vinculado | sobra da EFD, agrupada por `COD_ITEM` + CFOP | o conjunto vira um "pool" rateado entre as linhas do SPED Fiscal do mesmo documento com o mesmo item + CFOP, proporcional ao `VL_ITEM` |
+| `N3_CONSOLIDADO_C190` | linhas de C100 que o N1 e o N2 não atenderam (com ou sem documento vinculado) | C190 + C191/C195 da EFD: filial + competência + CNPJ do fornecedor + CFOP + `COD_ITEM` | pool rateado entre as linhas de C100 ainda sem PIS/Cofins que tenham a mesma chave, proporcional ao `VL_ITEM` |
+| `DOC_CHAVE` / `DOC_NUMERO` | C500, D100, D500/D700 | documento vinculado por chave ou por número | PIS/Cofins dos C501/C505, D101/D105, D501/D505 rateados entre as linhas analíticas do SPED Fiscal (C590/D190/D590/D730), proporcional ao valor contábil |
+
+Detalhes que importam:
+- **N1 exige identidade**: posição + valor + (código ou CFOP). Quem não passa **nunca** recebe o crédito de outro item só por estar na mesma posição; segue para o N2. Itens da EFD com a mesma posição repetida (`dup > 1`) não entram no N1.
+- **Pool e rateio** (template `alocar`): a soma distribuída por pool é exatamente o valor do pool; resíduo de centavos no maior peso. Para CST/alíquota/natureza do pool usa-se o valor de maior base.
+- No N3, só entram linhas de C100 (mercadorias) que não foram atendidas no N1 nem no N2.
+
+
+### 4.7 Passo 4 — o que sobra da EFD
+
+O que a EFD tem e o SPED Fiscal não absorveu **nunca é descartado**; vira linha própria (`t_lin_ec`):
+
+| Nível | Origem | Tratamento |
+|---|---|---|
+| `EC_EXCLUSIVO` | A100/A170 (serviços tomados, CFOP `SERV`), F100 (CFOP `OUTROS`), F120/F130 (CFOP `OUTROS`) — operações que **por natureza não existem** no SPED Fiscal; ou filial/competência **sem SPED Fiscal carregado** | entra com o valor da própria EFD; nesse último caso a EFD é a única fonte |
+| `EC_SEM_PAR` | há SPED Fiscal da filial no período, mas o item, o documento ou a consolidação da EFD não achou correspondência (C170 não consumido; C190/C191/C195 sem linha; C500/D100/D500 sem documento ou sem analítico — CFOP `N/D`) | entra com **valor contábil 0** (o valor pertence ao SPED Fiscal) e **todo** o PIS/Cofins, para o crédito aparecer no total |
+
+`EC_SEM_PAR` é o sinal de divergência entre os arquivos (nota ausente no SPED Fiscal, item só na EFD, consolidação sem par). A tela de auditoria "Diagnóstico" mostra quanto casou em cada nível; é a primeira coisa a olhar ao carregar arquivos reais.
+
+
+### 4.8 Colunas derivadas (depois do cruzamento)
+
+- **Natureza da base de crédito (`nat_bc_cred`):** a informada no registro da EFD (A170, C501/C505, D101…, F100/F120/F130); no C170 e no C191/C195, que não a trazem, é **derivada do CFOP** pela tabela `ref_cfop_nat_bc_cred` (padrão: revenda 01, insumo 02, serviço insumo 03, devolução 12, ativo 11, demais 13), só quando o CST de PIS é de crédito. `nat_bc_cred_origem` registra `INFORMADO` ou `DERIVADO_CFOP`. A tabela é parametrizável e precisa de revisão por especialista.
+- **Tributos recuperáveis** = ICMS + IPI (somente CST IPI `00`) + PIS (somente CST 50–56 e 60–66) + Cofins (idem).
+- **Custo líquido de entrada** = valor contábil − tributos recuperáveis.
+- **Status:** "Escriturado na EFD-Contribuições", "Sem crédito / não escriturado na EFD-Contribuições" (linha do SPED Fiscal sem PIS/Cofins atribuído), "Somente EFD — sem correspondência no SPED Fiscal" (`EC_SEM_PAR`), "Exclusivo EFD-Contribuições" (`EC_EXCLUSIVO`).
+
+
+### 4.9 Parâmetros que controlam o cruzamento (`config.py`)
+
+| Constante | Valor | Efeito |
+|---|---|---|
+| `COD_SIT_EXCLUIDOS` | 02, 03, 04, 05 | situações removidas nos dois lados |
+| `TOLERANCIA_ITEM` | R$ 0,01 | diferença máxima de `VL_ITEM` para aceitar o N1 |
+| `CST_PIS_COFINS_CREDITO` | 50–56, 60–66 | o que conta como crédito (recuperáveis, natureza derivada) |
+| `CST_IPI_CREDITO` | 00 | IPI recuperável |
+| `ITEM_SINTETICO_POR_MODELO` | por modelo | item dos documentos sem item |
+| `ITEM_SINTETICO_C190` | `_SEM_ITEM_C190_` | item do C190 sem C170 |
+| `TOLERANCIA_DIVERGENCIA` | R$ 0,05 | só afeta a auditoria, não o cruzamento |
+
+
+### 4.10 Por que foi desenhado assim (decisões)
+
+- **Mestre + complemento, e não "união":** unir os dois arquivos linha a linha duplicaria o valor contábil (cada arquivo traz o documento). Mantendo o SPED Fiscal como único dono do valor, a EFD só pode somar PIS/Cofins.
+- **1:1 estrito entre documentos:** evita que uma chave repetida ou um número reaproveitado multiplique crédito.
+- **Identidade antes de posição:** a posição do item, sozinha, não prova que é o mesmo item quando a ordem difere entre os arquivos (o PIS/Cofins iria para o item errado sem aparecer erro). Por isso a posição só vale junto com valor e (código ou CFOP) iguais.
+- **Cascata com rateio em vez de falha:** quando a identidade não é provável (códigos diferentes, itens agrupados na EFD), o crédito é rateado entre candidatos legítimos do mesmo documento (ou da mesma filial/mês/fornecedor/CFOP/item) em vez de ficar sem par; o total sempre fecha.
+- **"Nada some":** crédito sem par vira linha visível (`EC_SEM_PAR`/`EC_EXCLUSIVO`), com valor contábil zero para não inflar o custo. Assim o `fechamento_efd` é verificável.
+- **Fecho transitivo de competências:** nota em meses diferentes nos dois arquivos exige reconsolidar os meses juntos.
+
+### 4.11 Tabela fato `fato_entradas_consolidadas`
 Uma linha por item de entrada. Colunas: competência, filial (CNPJ, nome, UF, raiz), origem, registro do documento, ids de arquivo (SF e EFD), fornecedor (CNPJ/CPF, raiz, razão social, nome na data, UF), modelo, situação, emitente, série, número, chave, datas, item (código, unificado, global, descrição, tipo, NCM, CEST, barras, unidade), CFOP, natureza, CST/alíquota de ICMS, IPI, PIS e Cofins, natureza e origem do crédito, conta contábil, quantidade e todos os valores (item, desconto, rateio C190, contábil, bases e valores de ICMS/ST/FCP/IPI/PIS/Cofins, recuperáveis, custo líquido), `nivel_cruzamento_efd`, `status_efd`, flags de item sintético e sem C190, `doc_key`.
 
-### 4.7 Tabelas agregadas (desempenho do relatório)
+### 4.12 Tabelas agregadas (desempenho do relatório)
 `agg_filial < agg_fornecedor < agg_produto < agg_item < fato`. Cada uma é uma pré-soma (19 medidas + `n_linhas`) por competência + dimensões de baixa cardinalidade, mantida **incrementalmente por competência** ao final da consolidação. O roteador `pick_source(colunas, métricas)` escolhe a menor tabela que contém tudo o que a consulta pede; a fato linha a linha só é lida para documento, chave, contagem de documentos ou condição sobre valores de linha. A tela mostra a tabela usada ("Fonte da consulta") e o tempo.
 
 ---
+
 
 ## 5. Análise
 
@@ -168,6 +268,8 @@ Linhas × coluna opcional (pivô, até 60 valores) × valores. Ordenação por v
 ---
 
 ## 6. Telas (menu lateral)
+
+Resumo funcional; o layout de cada tela está em §11.3.
 
 | Tela | Conteúdo |
 |---|---|
@@ -191,7 +293,7 @@ Linhas × coluna opcional (pivô, até 60 valores) × valores. Ordenação por v
 - Filtros: período, unidade, arquivo, Entradas/Saídas (IND_OPER do registro ou do pai), texto em qualquer campo, condições por campo (igual, diferente, contém, começa com, lista, maior/menor, vazio, preenchido) e, desde a v2.3, **participante** (busca por fornecedor).
 - Modo **Arquivo**: o TXT inteiro na ordem original, com filtro por registro e texto.
 - Nomes de campos: `catalog.py` (catálogo de blocos/registros/descrições/leiautes) + `layouts.py`. Registro fora do catálogo aparece como `CAMPO_02, CAMPO_03…`; leiautes alternativos por quantidade de campos (`LAYOUT_VARIANTS`, hoje M210/M610 anteriores a 2019).
-- Arquivos importados antes da v2.1 não têm linhas originais: banner de indexação (§11).
+- Arquivos importados antes da v2.1 não têm linhas originais: banner de indexação (§11.4).
 
 ---
 
@@ -224,28 +326,105 @@ Endpoints síncronos rodam no pool de threads; cada consulta usa cursor próprio
 
 ---
 
-## 11. Interface — layout e padrões
+## 11. Interface — layout, componentes e comportamento
 
-### Identidade visual
-Tema claro/escuro/sistema (variáveis CSS `--bg --panel --sunken --line --fg --muted --accent --ok --warn --bad --info`, expostas como cores Tailwind), fonte Inter, cantos arredondados (`rounded-xl` em cartões), sombras suaves, tipografia compacta (13 px nos controles, números tabulares na classe `num`), ícones lucide, avisos com sonner no canto inferior direito.
+### 11.1 Identidade visual
+- **Tema** claro, escuro ou "seguir o sistema" (classe `dark` no `<html>`, escolha em `localStorage`). Cores definidas como variáveis CSS (RGB) e expostas ao Tailwind (`bg`, `panel`, `sunken`, `line`, `fg`, `muted`, `accent`, `ok`, `warn`, `bad`, `info`):
 
-### Estrutura
-- Barra lateral (236 px, recolhível a 60 px; começa recolhida abaixo de 1280 px de largura, se o usuário ainda não escolheu) com Análise, Relatório dinâmico e Busca por fornecedor (sem título de seção), e as seções Apuração (Bloco M), Arquivos como estão (SPED Fiscal, EFD-Contribuições), Gestão (Arquivos, Regras e filtros, Auditoria), filtros salvos com 1 clique, tema, aviso de tamanho (Ctrl +/−), versão.
-- Cabeçalho com título e subtítulo da tela; conteúdo em `overflow-hidden` (grades) ou `overflow-auto` (telas longas).
+| Token | Claro | Escuro |
+|---|---|---|
+| `--bg` (fundo da página) | 246 247 249 | 11 13 18 |
+| `--panel` (cartões, barras) | 255 255 255 | 18 21 28 |
+| `--sunken` (áreas rebaixadas, cabeçalho de tabela) | 241 243 246 | 24 28 36 |
+| `--line` (bordas) | 226 230 236 | 39 45 56 |
+| `--fg` (texto) | 17 24 39 | 229 233 240 |
+| `--muted` (texto secundário) | 100 112 132 | 141 151 170 |
+| `--accent` (índigo) | 79 70 229 | 129 140 248 |
+| `--ok` / `--warn` / `--bad` / `--info` | 22 163 74 / 202 138 4 / 220 38 38 / 37 99 235 | 74 222 128 / 250 204 21 / 248 113 113 / 96 165 250 |
 
-### Componentes-chave (`frontend/src/components`)
-- `ui.tsx`: Button, Input, Select, Checkbox, Switch, Segmented, Card, Badge, Kpi, Popover, Dialog, Menu, Tip, Confirm, Field, Empty, Progress.
-- `DataGrid.tsx`: grade **virtualizada** (só as linhas visíveis), colunas redimensionáveis, coluna fixa, largura automática pelas colunas numéricas, ordenação, árvore expansível, seleção, linha de totais fixa, linhas de subtotal, rolagem infinita (`onEndReached`).
-- `FilterBar.tsx`: botões de filtro com busca instantânea (período, filial, fornecedor, CFOP, item, UF, "Mais"), editor de hierarquia, seletor de colunas.
-- `layout.tsx`: `SidePanel` (largura arrastável e recolhível, duplo clique restaura), `useDragHeight` (divisor de altura), `useMaximize`/`MaxButton` (tela cheia por tabela, Esc sai), `CollapseToggle`/`useCollapsed` (indicadores e montagem recolhíveis; começam recolhidos em telas com menos de 820 px de altura). Preferências guardadas em `localStorage` (`ui:*`), por computador.
-- `MiniTable.tsx` (tabelas pequenas com ordenação e total), `IndexBanner.tsx` (indexação de arquivos antigos).
-- Variante Tailwind `tall:` = altura ≥ 821 px; abaixo disso, espaçamentos menores.
+- **Tipografia:** Inter (variável), 13,5 px no corpo, 13 px nos controles, 11–12,5 px em rótulos e textos de apoio; números com algarismos tabulares (classe `num`, `font-feature-settings: tnum`). Rótulos de seção em caixa alta, 11 px, espaçados, cor `muted`.
+- **Forma:** cartões `rounded-xl` com borda e sombra leve (`shadow-card`), controles `rounded-lg` com 34 px de altura (botão pequeno 28 px), popovers com `shadow-pop` e animação curta de entrada, barras de rolagem finas, seleção de texto em índigo translúcido.
+- **Estados:** esqueleto com brilho (`skeleton`) enquanto carrega, barra de carregamento fina no topo das grades, avisos (sonner) no canto inferior direito (sucesso, alerta, erro, com ação "Abrir pasta"), estados vazios com ícone + título + explicação, foco visível em índigo.
+- **Ícones:** lucide-react, 14–18 px.
+- **Cores com significado fixo:** verde = crédito/OK/sem duplicidade; vermelho = a recolher/divergência; âmbar = aviso (arquivos pendentes, truncamento, leiaute); índigo = seleção/ação principal; chips de montagem do relatório: índigo (linhas), azul (colunas), verde (valores).
 
-### Janela nativa (`app/main.py`)
-pywebview: abre maximizada, 960×600 mínimo, zoom do navegador (Ctrl +, Ctrl −, Ctrl 0, Ctrl + roda), seleção de texto. Sem pywebview, abre no navegador em `127.0.0.1`.
+### 11.2 Estrutura geral da janela
+```
+┌ barra lateral 236 px ┬ cabeçalho (título + subtítulo da tela)  48/56 px ───────────────┐
+│ logo + nome          ├────────────────────────────────────────────────────────────────┤
+│ Análise              │                                                                │
+│ Relatório dinâmico   │              área da tela (preenche a altura)                  │
+│ Busca por fornecedor │                                                                │
+│ APURAÇÃO             │   barra de filtros / ações  (quebra em várias linhas se preciso)│
+│  Bloco M (PIS/Cofins)│   cartões, indicadores                                         │
+│ ARQUIVOS COMO ESTÃO  │   GRADE PRINCIPAL (ocupa o espaço restante, com rolagem própria)│
+│  SPED Fiscal         │   painel inferior opcional (notas, detalhes) com divisor       │
+│  EFD-Contribuições   │                                                                │
+│ GESTÃO               │                                                                │
+│  Arquivos            │                                                                │
+│  Regras e filtros    │                                                                │
+│  Auditoria           │                                                                │
+│ FILTROS SALVOS (1 clique)                                                             │
+│ ─ Tema · Recolher menu · Tamanho (Ctrl +/−) · "100% local · vX" ──────────────────────┘
+```
+- Barra lateral recolhível a 60 px (só ícones, com dicas); começa recolhida em janelas com menos de 1280 px de largura quando o usuário ainda não escolheu. A lista de navegação tem rolagem própria em telas baixas.
+- Telas de grade (Análise, Relatório, Busca, Bloco M, SPED, EFD, Auditoria) usam `overflow-hidden` e distribuem a altura entre seus blocos; telas de formulário/gestão (Arquivos, Regras) rolam.
+- Espaçamento: em telas com altura ≥ 821 px (variante `tall:`) o preenchimento é 20 px e o espaço entre blocos 12 px; abaixo disso, 12 px e 8 px; cabeçalho de 56 px vs 48 px; itens do menu de 36 px vs 32 px.
 
-### Estado e desempenho no cliente
-Estado único (`store.tsx`) salvo automaticamente na API em 600 ms; normalizado ao carregar (descarta dimensões/métricas que não existem mais); consultas com debounce; árvore busca só o nível aberto; contagem de documentos chega depois, sem travar a tela.
+### 11.3 Layout de cada tela
+
+**Análise**
+1. Linha de filtros globais: botões **Período, Filial, Fornecedor, CFOP, Item, UF, Mais** (cada um abre um popover com busca instantânea e lista com valor contábil; "Mais" = razão social, raiz de CNPJ, descrição, prefixos de CFOP e NCM). À direita: "Recolher indicadores", tela cheia e a etiqueta da tabela consultada (`agg_*`/itens) com o tempo em ms. Abaixo, chip da regra ativa (se houver).
+2. **Indicadores:** grade de 8 cartões (Valor contábil com nº de documentos/linhas, ICMS, ICMS-ST + FCP, IPI, PIS, COFINS, Tributos recuperáveis com % do valor contábil, Custo líquido) + cartão **Evolução mensal** (barras do valor contábil com a parcela recuperável em verde, últimos 24 meses, dica ao passar o mouse) em telas largas. Recolhido, vira uma linha de resumo.
+3. **Barra de visualização:** alternância **Árvore / Tabela / Mês a mês**; editor da hierarquia (reordenar e escolher níveis); escolha de **Colunas** (contador); "Recolher tudo"; **Exportar** (resumo, itens em xlsx/csv/parquet); **Congelar análise**.
+4. **Grade** (restante da altura, mínimo 220 px) com linha **Total** fixa no rodapé. Árvore: seta ▸ ou duplo clique abre o nível seguinte (Unidade ▸ Fornecedor ▸ CFOP ▸ Item), cada nível carregado só ao abrir.
+5. **Painel de notas fiscais** abaixo da grade ao clicar numa linha: divisor arrastável (altura guardada), botões "Notas" e "Itens" (Excel), contador de documentos; sem seleção, mostra uma dica.
+
+**Relatório dinâmico**
+1. Filtros globais iguais aos da Análise.
+2. Corpo em duas colunas: **painel "Campos"** (264 px, arrastável/recolhível) e a área principal.
+3. Painel Campos: busca; lista de **Dimensões** (alça de arrastar, nome, etiqueta "linha"/"coluna" quando em uso) e de **Valores**; clique adiciona.
+4. Área principal, de cima para baixo: cartão **Montagem** com três zonas tracejadas lado a lado (**Linhas** 1,4 fr, **Colunas** 0,8 fr, **Valores** 1,4 fr), onde os campos viram "chips" numerados, reordenáveis e removíveis (arrastar e soltar nativo); pode recolher para uma linha de resumo.
+5. Barra de controles: **Ordenar por** (valores ou dimensões) + **Maior→menor / Menor→maior** (ou Z→A / A→Z para dimensões) + **Mostrar** (50 a 20.000) + campo de **texto** + **Filtros por valor** (popover, contador) + chave **Subtotais** + (à direita) **Modelos** (6 prontos + "Meus modelos" + salvar montagem atual) + **Excel**.
+6. Chips dos filtros por valor ativos; linha de status (nº de linhas, aviso de truncamento, selo verde "Consolidado SPED Fiscal + EFD-Contribuições, sem duplicidade" com explicação, tabela usada e ms, botão de tela cheia).
+7. Grade com colunas de dimensão fixas à esquerda (largura 110–250 px conforme a dimensão), valores à direita, coluna por competência quando há pivô (`valor · métrica` + `TOTAL`), linhas de subtotal em negrito com ícone Σ, Total fixo; painel de notas com divisor abaixo.
+Modelos prontos: Unidade›Fornecedor›CFOP›Descrição do item (valores e tributos); Fornecedor›Descrição (quantidade e preço médio); CFOP mês a mês; Unidade mês a mês (ICMS, PIS, COFINS); Unidade›CST PIS (bases e créditos); Fornecedor por status na EFD.
+
+**Busca por fornecedor**
+1. Barra: **caixa de busca** (CNPJ, CPF, raiz ou nome) com lista suspensa navegável por teclado — cada sugestão mostra nome, CNPJ·UF e "R$ … em entradas"; opção "todos os N estabelecimentos da raiz"; opção "procurar este CNPJ nos arquivos" quando não consta no cadastro — + período (de/até) + **Excel completo**.
+2. Sem seleção: estado vazio explicativo e chips de **Recentes** (até 8).
+3. Com seleção: cartão-cabeçalho (nome, CNPJ, UF, IE, endereço, etiqueta "N versões de cadastro", tempo) + 8 indicadores recolhíveis (valor contábil e nº de documentos, ICMS, ICMS-ST+FCP, IPI, PIS, Cofins, recuperáveis, linhas nos TXT).
+4. Abas (segmentado): **Visão geral** (entradas por competência com mini-gráfico e tabela, por unidade, por CFOP, situação na EFD, CST PIS, natureza do crédito), **Notas fiscais**, **Itens** (grade com item fixo e tela cheia), **Nos arquivos (n)** (lista lateral de registros agrupados por SPED Fiscal / EFD-Contribuições, com contagem de entradas e saídas; ao lado, grade do registro com **Todas/Entradas/Saídas**, Excel e tela cheia), **Cadastro** (versões do 0150, alterações 0175, todos os 0150).
+
+**Bloco M (PIS/Cofins)**
+1. Barra: filtro **Empresa**, período, chave **PIS/Pasep | Cofins**, tempo, "Recolher indicadores", **Excel**. Abaixo, avisos: arquivos pendentes de indexação (âmbar, com ações), arquivos sem Bloco M, leiaute diferente do esperado.
+2. **Indicadores** (6): apurado (com não cumulativo/cumulativo), créditos apurados (ajustes e disponível), créditos descontados (período/anteriores), retenções e deduções, **a recolher** (vermelho), saldo de créditos.
+3. Abas (8) + selo "verificações sem divergência" (verde) ou "N divergências" (vermelho): **Apuração** (gráfico de 3 barras por mês — contribuição, crédito apurado, a recolher — e demonstrativo com uma coluna por competência + Total, subtotais em negrito, código do campo ao lado de cada linha), **Créditos** e **Ajustes** e **Receitas não tributadas** (mestre acima, detalhe abaixo, divisor arrastável; clicar no mestre filtra o detalhe), **Contribuição**, **Saldos de créditos**, **Conferência com documentos** (caixa explicativa, resumo por competência, detalhe por natureza/CST com chave "Só diferenças"; diferenças em vermelho, zero em verde), **Verificações** (caixa explicativa, grade com selo OK/Divergente e chave "Só divergências").
+
+**SPED Fiscal / EFD-Contribuições (arquivos como estão)**
+1. Filtros: **Período, Unidade, Arquivo**, segmentado **Todas/Entradas/Saídas**, texto em qualquer campo, "Limpar filtros". Banner de indexação quando há arquivos antigos.
+2. **Painel de registros** (300 px, arrastável/recolhível): alternância **Por registro / Arquivo**, busca, registros agrupados por bloco (título do bloco, código em fonte monoespaçada, descrição, contagem).
+3. Cartão principal: cabeçalho com código do registro, descrição, nº de linhas, tempo e "contexto do documento-pai"; **Condições** (popover 560 px com campo, operador, valor), **Exportar** (Excel/CSV), tela cheia; chips das condições; grade densa (linha de 32 px) com colunas de contexto (competência, unidade, linha, dados do pai), campos oficiais do registro, participante/item (0150/0200), arquivo e **Linha original**. Modo Arquivo: seletor do arquivo, filtro de registros, grade com o texto de cada linha.
+
+**Arquivos** (gestão): indicadores da base; cartão de importação (pasta ou arquivo, "Procurar…" na janela nativa, nº de processos, **Importar**, área de arrastar/soltar com barra de envio); progresso e resultado por arquivo (IMPORTADO, SUBSTITUIDO, INDEXADO, DUPLICADO, IGNORADO, ERRO); matriz de **cobertura filial × mês**; lista de arquivos com remoção (por arquivo ou por competência); backup e restauração; log; reconsolidação.
+
+**Regras e filtros:** construtor de regras E/OU com grupos aninhados (campo, operador conforme o tipo, valor), prévia do SQL, teste (linhas e valores), modelos prontos, biblioteca de filtros salvos por categoria (aplicar, excluir), visualizador de análises congeladas (verificar integridade, exportar, restaurar contexto). Em telas largas: construtor à esquerda e biblioteca à direita (420 px).
+
+**Auditoria:** linha com o escopo (usa o período/filiais da Análise), tolerância em R$, **Executar verificações**, **Exportar todas**; grade de 3 colunas com os grupos de verificações (ícone de estado, texto, contagem em vermelho quando há ocorrência; a de diagnóstico é informativa); cartão de detalhe com a grade da verificação escolhida, Excel e tela cheia.
+
+### 11.4 Componentes (`frontend/src/components`)
+- `ui.tsx`: Button (outline, primary, secondary, ghost, danger; tamanhos sm/md/ícone), Input (com ícone), Select, Checkbox, Switch, Segmented, Card, CardHeader, Badge (tons neutro, accent, ok, warn, bad, info), Kpi, Popover, Dialog, Menu/MenuItem, Tip (dica), Confirm, Field, Empty, Progress, Spinner.
+- `DataGrid.tsx`: grade **virtualizada** (renderiza só as linhas visíveis; 16 linhas de reserva), colunas redimensionáveis (arrastar a borda), colunas fixas à esquerda, largura automática das numéricas pelo maior valor formatado, ordenação por clique no cabeçalho, árvore expansível, seleção de linha, caixas de marcação, linha **Total** fixa, linhas de subtotal, rolagem infinita (`onEndReached`), CNPJ formatado, números `pt-BR` (valor com 2 casas, quantidade até 3, preço até 4).
+- `FilterBar.tsx`: botões de filtro com lista pesquisável (`MultiList`), editor de hierarquia, seletor de colunas.
+- `layout.tsx`: `SidePanel` (largura arrastável, duplo clique restaura, recolhe para uma aba vertical), `useDragHeight` (divisor de altura de painel inferior), `useMaximize`/`MaxButton`/`MaxBackdrop` (tela cheia de uma tabela, Esc sai), `CollapseToggle`/`useCollapsed` (recolher indicadores e montagem; começam recolhidos com altura < 820 px), `useLocal` (preferência por computador em `localStorage`, chaves `ui:*`).
+- `MiniTable.tsx` (tabela compacta com ordenação e total), `IndexBanner.tsx` (indexação de arquivos antigos, com "Indicar a pasta dos arquivos").
+- Utilitários: `lib/format.ts` (moeda, número, CNPJ/CPF, data, competência), `lib/api.ts` (cliente HTTP, upload com progresso, acompanhamento de tarefas), `lib/exporting.ts` (gerar exportação, avisar e baixar), `lib/store.tsx` (estado único), `lib/types.ts`.
+
+### 11.5 Ajuste à tela (v2.3)
+Janela nativa abre maximizada (mínimo 960×600) e aceita zoom do navegador (Ctrl +, Ctrl −, Ctrl 0, Ctrl + roda) e seleção/cópia de texto; painéis laterais com largura arrastável e recolhíveis; painéis inferiores com altura arrastável; tela cheia nas tabelas; indicadores e montagem recolhíveis; espaçamentos menores em telas baixas. Sem pywebview, o programa abre no navegador em `127.0.0.1`.
+
+### 11.6 Estado e desempenho no cliente
+Estado único salvo automaticamente na API (600 ms após a última mudança) e restaurado ao abrir; normalizado ao carregar (descarta dimensões/métricas que não existem mais, migra estado de versões anteriores); consultas com debounce e cancelamento por geração; árvore busca só o nível aberto; contagem de documentos chega depois, sem travar a tela; grades virtualizadas; exportações geradas no servidor com aviso e abertura da pasta.
 
 ---
 
